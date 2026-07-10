@@ -4707,6 +4707,9 @@ class TranslationsCompanionRemoteRemoteEn {
 	/// en: 'Libraries'
 	String get tabLibraries => 'Libraries';
 
+	/// en: 'Explore'
+	String get tabExplore => 'Explore';
+
 	/// en: 'Search'
 	String get tabSearch => 'Search';
 
@@ -6038,6 +6041,7 @@ extension on Translations {
 			'companionRemote.remote.tabNavigation' => 'Tab Navigation',
 			'companionRemote.remote.tabDiscover' => 'Discover',
 			'companionRemote.remote.tabLibraries' => 'Libraries',
+			'companionRemote.remote.tabExplore' => 'Explore',
 			'companionRemote.remote.tabSearch' => 'Search',
 			'companionRemote.remote.tabDownloads' => 'Downloads',
 			'companionRemote.remote.tabSettings' => 'Settings',

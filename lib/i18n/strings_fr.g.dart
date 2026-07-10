@@ -1993,6 +1993,7 @@ class _TranslationsCompanionRemoteRemoteFr extends TranslationsCompanionRemoteRe
 	@override String get tabNavigation => 'Navigation par onglets';
 	@override String get tabDiscover => 'Découvrir';
 	@override String get tabLibraries => 'Bibliothèques';
+	@override String get tabExplore => '';
 	@override String get tabSearch => 'Rechercher';
 	@override String get tabDownloads => 'Téléchargements';
 	@override String get tabSettings => 'Paramètres';
@@ -3227,6 +3228,7 @@ extension on TranslationsFr {
 			'companionRemote.remote.tabNavigation' => 'Navigation par onglets',
 			'companionRemote.remote.tabDiscover' => 'Découvrir',
 			'companionRemote.remote.tabLibraries' => 'Bibliothèques',
+			'companionRemote.remote.tabExplore' => '',
 			'companionRemote.remote.tabSearch' => 'Rechercher',
 			'companionRemote.remote.tabDownloads' => 'Téléchargements',
 			'companionRemote.remote.tabSettings' => 'Paramètres',
