@@ -52,6 +52,10 @@ enum RemoteCommandType {
   disconnect,
   ack,
   syncState,
+
+  // Serialized by index (see _RemoteCommandTypeConverter) — only append here.
+  previousChapter,
+  nextChapter,
 }
 
 class _RemoteCommandTypeConverter extends IndexedEnumConverter<RemoteCommandType> {
