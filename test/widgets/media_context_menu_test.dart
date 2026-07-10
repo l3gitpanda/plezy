@@ -105,7 +105,7 @@ void main() {
         isSeerrRequestVisible(
           seerrSource: tvOnly,
           itemBackend: MediaBackend.plex,
-          kind: MediaKind.season,
+          kind: MediaKind.episode,
           mediaVersions: null,
         ),
         isFalse,
@@ -150,6 +150,41 @@ void main() {
           mediaVersions: null,
         ),
         isTrue,
+      );
+    });
+
+    test('seasons offered under the TV permission, regardless of local episodes', () {
+      final source = _seerrSourceWithPermissions(SeerrPermission.request);
+      final movieOnly = _seerrSourceWithPermissions(SeerrPermission.requestMovie);
+
+      expect(
+        isSeerrRequestVisible(
+          seerrSource: source,
+          itemBackend: MediaBackend.plex,
+          kind: MediaKind.season,
+          mediaVersions: null,
+        ),
+        isTrue,
+      );
+      // The Plex no-file gate is movie-only: a season with local episodes is
+      // still offered, since completeness against the aired list is unknown.
+      expect(
+        isSeerrRequestVisible(
+          seerrSource: source,
+          itemBackend: MediaBackend.plex,
+          kind: MediaKind.season,
+          mediaVersions: const [MediaVersion(id: 'v1')],
+        ),
+        isTrue,
+      );
+      expect(
+        isSeerrRequestVisible(
+          seerrSource: movieOnly,
+          itemBackend: MediaBackend.plex,
+          kind: MediaKind.season,
+          mediaVersions: null,
+        ),
+        isFalse,
       );
     });
 

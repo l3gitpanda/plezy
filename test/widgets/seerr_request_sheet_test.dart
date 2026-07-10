@@ -60,6 +60,7 @@ Future<void> _pumpSheet(
   required MediaKind kind,
   required int tmdbId,
   required String title,
+  int? initialSeasonNumber,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -81,6 +82,7 @@ Future<void> _pumpSheet(
                               kind: kind,
                               tmdbId: tmdbId,
                               title: title,
+                              initialSeasonNumber: initialSeasonNumber,
                             ),
                             child: const Text('request'),
                           ),
@@ -177,6 +179,78 @@ void main() {
     expect(find.text('Season 2'), findsNothing);
     expect(find.text('request'), findsOneWidget);
     expect(find.text('Request submitted'), findsOneWidget);
+  });
+
+  // Shared TV fixture for the initialSeasonNumber tests: Season 1 available
+  // on the server, Season 2 missing.
+  MockClient buildSeasonMock(void Function(Map<String, dynamic>) onRequestPosted) => MockClient((request) async {
+    switch (request.url.path) {
+      case '/api/v1/settings/public':
+        return _json(_publicSettings());
+      case '/api/v1/tv/1396':
+        return _json({
+          'id': 1396,
+          'name': 'Breaking Bad',
+          'seasons': [
+            {'seasonNumber': 1, 'episodeCount': 7, 'name': 'Season 1'},
+            {'seasonNumber': 2, 'episodeCount': 13, 'name': 'Season 2'},
+          ],
+          'mediaInfo': {
+            'status': 4,
+            'status4k': 1,
+            'seasons': [
+              {'seasonNumber': 1, 'status': 5, 'status4k': 1},
+            ],
+            'requests': [],
+          },
+        });
+      case '/api/v1/request':
+        onRequestPosted(jsonDecode(request.body) as Map<String, dynamic>);
+        return _json({'id': 10, 'status': 1}, status: 201);
+    }
+    fail('unexpected request ${request.url.path}');
+  });
+
+  testWidgets('initialSeasonNumber pre-selects a requestable season', (tester) async {
+    Map<String, dynamic>? postedBody;
+    // Requesting from Season 2 (missing on the server): arrives pre-selected,
+    // so submit is enabled without any extra tap.
+    await _pumpSheet(
+      tester,
+      source: _source(buildSeasonMock((body) => postedBody = body)),
+      kind: MediaKind.show,
+      tmdbId: 1396,
+      title: 'Breaking Bad',
+      initialSeasonNumber: 2,
+    );
+
+    final submitFinder = find.widgetWithText(FilledButton, 'Request');
+    expect(tester.widget<FilledButton>(submitFinder).onPressed, isNotNull);
+
+    await tester.tap(submitFinder);
+    await tester.pumpAndSettle();
+
+    expect(postedBody, {
+      'mediaType': 'tv',
+      'mediaId': 1396,
+      'seasons': [2],
+      'is4k': false,
+    });
+  });
+
+  testWidgets('initialSeasonNumber pointing at an available season stays unselected', (tester) async {
+    // Requesting from Season 1 (already available): the pre-selection is
+    // dropped, leaving nothing selected and submit disabled.
+    await _pumpSheet(
+      tester,
+      source: _source(buildSeasonMock((_) => fail('nothing should be posted'))),
+      kind: MediaKind.show,
+      tmdbId: 1396,
+      title: 'Breaking Bad',
+      initialSeasonNumber: 1,
+    );
+
+    expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Request')).onPressed, isNull);
   });
 
   testWidgets('movie that is already available offers nothing to request', (tester) async {

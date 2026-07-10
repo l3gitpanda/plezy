@@ -30,12 +30,19 @@ Future<void> showSeerrRequestSheet(
   required MediaKind kind,
   required int tmdbId,
   required String title,
+  int? initialSeasonNumber,
 }) {
   return OverlaySheetController.showAdaptive<void>(
     context,
     isScrollControlled: true,
     showDragHandle: true,
-    builder: (_) => SeerrRequestSheet(source: source, kind: kind, tmdbId: tmdbId, title: title),
+    builder: (_) => SeerrRequestSheet(
+      source: source,
+      kind: kind,
+      tmdbId: tmdbId,
+      title: title,
+      initialSeasonNumber: initialSeasonNumber,
+    ),
   );
 }
 
@@ -49,12 +56,18 @@ class SeerrRequestSheet extends StatefulWidget {
   final int tmdbId;
   final String title;
 
+  /// TV only: pre-selects this season on load when it's still requestable.
+  /// Set when the request originates from a specific season (a season card
+  /// or the season detail screen) rather than the whole show.
+  final int? initialSeasonNumber;
+
   const SeerrRequestSheet({
     super.key,
     required this.source,
     required this.kind,
     required this.tmdbId,
     required this.title,
+    this.initialSeasonNumber,
   });
 
   @override
@@ -147,6 +160,16 @@ class _SeerrRequestSheetState extends State<SeerrRequestSheet> {
         _seasons = seasons;
         _allServers = servers;
         _loading = false;
+        // Pre-select the season the request originated from, if it's still
+        // requestable (fields above are assigned first so the availability
+        // checks read the fresh state).
+        final initial = widget.initialSeasonNumber;
+        if (initial != null &&
+            _partialSeasons &&
+            seasons.any((s) => s.seasonNumber == initial) &&
+            !_seasonBlocked(initial)) {
+          _selectedSeasons.add(initial);
+        }
       });
       _selectDefaultServer();
     } catch (e) {

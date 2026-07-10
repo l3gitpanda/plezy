@@ -85,13 +85,15 @@ bool isAdminActionAllowedForMediaItem({
 
 /// Whether the menu should offer a Seerr "Request" action: Seerr must be
 /// connected with request permission for [kind], and the item must be a
-/// movie or show.
+/// movie, show, or season.
 ///
 /// Plex movies are additionally gated on having no local file, since Plex
 /// inlines `Media[]` in browse listings. Jellyfin's slim browse field set
-/// omits `MediaSources` (see `_browseFields`), so its movies — like shows,
-/// whose season completeness no listing exposes — are always offered;
-/// [SeerrRequestSheet] itself reports when everything is already available.
+/// omits `MediaSources` (see `_browseFields`), so its movies — like shows
+/// and seasons, whose completeness against the aired episode list no
+/// listing exposes — are always offered; [SeerrRequestSheet] itself reports
+/// when everything is already available. Seasons cover the "no episodes
+/// downloaded yet" case too: a placeholder season still gets the entry.
 bool isSeerrRequestVisible({
   required SeerrCatalogSource? seerrSource,
   required MediaBackend? itemBackend,
@@ -99,7 +101,7 @@ bool isSeerrRequestVisible({
   required List<MediaVersion>? mediaVersions,
 }) {
   if (seerrSource == null || kind == null) return false;
-  if (kind != MediaKind.movie && kind != MediaKind.show) return false;
+  if (kind != MediaKind.movie && kind != MediaKind.show && kind != MediaKind.season) return false;
   final moviePlaceholderKnown = itemBackend == MediaBackend.plex;
   if (kind == MediaKind.movie && moviePlaceholderKnown && (mediaVersions?.isNotEmpty ?? false)) {
     return false;
@@ -565,8 +567,8 @@ class MediaContextMenuState extends State<MediaContextMenu> {
         }
       }
 
-      // Request via Seerr — offered for movies/shows when a connected Seerr
-      // instance grants request permission for this kind. See
+      // Request via Seerr — offered for movies/shows/seasons when a connected
+      // Seerr instance grants request permission for this kind. See
       // isSeerrRequestVisible for the movie placeholder-detection caveats.
       if (isSeerrRequestVisible(
         seerrSource: Provider.of<CatalogSourcesProvider?>(context, listen: false)?.seerrSource,
@@ -1040,11 +1042,15 @@ class MediaContextMenuState extends State<MediaContextMenu> {
   /// from the menu's own context so a screen-level OverlaySheetHost is found
   /// (see _showContextMenu). Falls back to an error snackbar when the server
   /// can't resolve external ids or the item carries no TMDB id.
+  ///
+  /// Seerr keys TV requests by the SHOW's TMDB id, so a season resolves ids
+  /// from its parent show and arrives at the sheet with itself pre-selected.
   Future<void> _handleRequestSeerr(BuildContext context) async {
     final seerrSource = Provider.of<CatalogSourcesProvider?>(context, listen: false)?.seerrSource;
     if (seerrSource == null) return;
 
     final item = _mediaItem!;
+    final isSeason = item.kind == MediaKind.season;
     var loadingShown = false;
 
     try {
@@ -1054,14 +1060,19 @@ class MediaContextMenuState extends State<MediaContextMenu> {
         loadingShown = true;
       }
 
-      final externalIds = await client.fetchExternalIds(item.id);
+      var lookupId = isSeason ? item.parentId : item.id;
+      if (lookupId == null && isSeason) {
+        // Slim listings can omit parentId; one metadata round-trip fills it.
+        lookupId = (await client.fetchItem(item.id))?.parentId;
+      }
+      final externalIds = lookupId == null ? null : await client.fetchExternalIds(lookupId);
 
       if (loadingShown && context.mounted) {
         Navigator.pop(context);
         loadingShown = false;
       }
 
-      final tmdbId = externalIds.tmdb;
+      final tmdbId = externalIds?.tmdb;
       if (tmdbId == null) {
         if (context.mounted) {
           showErrorSnackBar(context, t.seerr.requestsLoadFailed);
@@ -1073,9 +1084,10 @@ class MediaContextMenuState extends State<MediaContextMenu> {
         await showSeerrRequestSheet(
           this.context,
           source: seerrSource,
-          kind: item.kind,
+          kind: isSeason ? MediaKind.show : item.kind,
           tmdbId: tmdbId,
           title: item.displayTitle,
+          initialSeasonNumber: isSeason ? item.index : null,
         );
       }
     } catch (e) {
