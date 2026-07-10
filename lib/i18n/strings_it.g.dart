@@ -1112,6 +1112,11 @@ class _TranslationsLiveTvIt extends TranslationsLiveTvEn {
 	@override String get unknownChannel => 'Canale sconosciuto';
 	@override String get live => 'IN DIRETTA';
 	@override String get reloadGuide => 'Ricarica guida';
+	@override String get searchGuide => '';
+	@override String get searchHint => '';
+	@override String searchNoResults({required Object query}) => 'No matches for "${query}"';
+	@override String get channelsSection => '';
+	@override String get programsSection => '';
 	@override String get now => 'Ora';
 	@override String get today => 'Oggi';
 	@override String get tomorrow => 'Domani';
@@ -2926,6 +2931,11 @@ extension on TranslationsIt {
 			'liveTv.unknownChannel' => 'Canale sconosciuto',
 			'liveTv.live' => 'IN DIRETTA',
 			'liveTv.reloadGuide' => 'Ricarica guida',
+			'liveTv.searchGuide' => '',
+			'liveTv.searchHint' => '',
+			'liveTv.searchNoResults' => ({required Object query}) => 'No matches for "${query}"',
+			'liveTv.channelsSection' => '',
+			'liveTv.programsSection' => '',
 			'liveTv.now' => 'Ora',
 			'liveTv.today' => 'Oggi',
 			'liveTv.tomorrow' => 'Domani',
@@ -3121,13 +3131,13 @@ extension on TranslationsIt {
 			'downloads.deleteDownload' => 'Elimina download',
 			'downloads.retryDownload' => 'Riprova download',
 			'downloads.downloadQueued' => 'Download in coda',
+			_ => null,
+		} ?? switch (path) {
 			'downloads.downloadResumed' => 'Download ripreso',
 			'downloads.serverErrorBitrate' => 'Errore server: il file può superare il limite di bitrate remoto',
 			'downloads.episodesQueued' => ({required Object count}) => '${count} episodi in coda per il download',
 			'downloads.downloadDeleted' => 'Download eliminato',
 			'downloads.deleteConfirm' => ({required Object title}) => 'Eliminare "${title}" da questo dispositivo?',
-			_ => null,
-		} ?? switch (path) {
 			'downloads.cancelledDownloadTitle' => 'Download annullato',
 			'downloads.cancelledDownloadMessage' => 'Questo download è stato annullato. Cosa vuoi fare?',
 			'downloads.allEpisodesAlreadyDownloaded' => 'Tutti gli episodi sono già stati scaricati',

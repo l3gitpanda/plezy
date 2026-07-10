@@ -1111,6 +1111,11 @@ class _TranslationsLiveTvJa extends TranslationsLiveTvEn {
 	@override String get unknownChannel => '不明なチャンネル';
 	@override String get live => 'ライブ';
 	@override String get reloadGuide => '番組表を再読込';
+	@override String get searchGuide => '';
+	@override String get searchHint => '';
+	@override String searchNoResults({required Object query}) => 'No matches for "${query}"';
+	@override String get channelsSection => '';
+	@override String get programsSection => '';
 	@override String get now => '現在';
 	@override String get today => '今日';
 	@override String get tomorrow => '明日';
@@ -2924,6 +2929,11 @@ extension on TranslationsJa {
 			'liveTv.unknownChannel' => '不明なチャンネル',
 			'liveTv.live' => 'ライブ',
 			'liveTv.reloadGuide' => '番組表を再読込',
+			'liveTv.searchGuide' => '',
+			'liveTv.searchHint' => '',
+			'liveTv.searchNoResults' => ({required Object query}) => 'No matches for "${query}"',
+			'liveTv.channelsSection' => '',
+			'liveTv.programsSection' => '',
 			'liveTv.now' => '現在',
 			'liveTv.today' => '今日',
 			'liveTv.tomorrow' => '明日',
@@ -3119,13 +3129,13 @@ extension on TranslationsJa {
 			'downloads.deleteDownload' => 'ダウンロードを削除',
 			'downloads.retryDownload' => 'ダウンロードを再試行',
 			'downloads.downloadQueued' => 'ダウンロードをキューに追加しました',
+			_ => null,
+		} ?? switch (path) {
 			'downloads.downloadResumed' => 'ダウンロードを再開しました',
 			'downloads.serverErrorBitrate' => 'サーバーエラー: ファイルがリモートビットレート制限を超えている可能性があります',
 			'downloads.episodesQueued' => ({required Object count}) => '${count}エピソードをダウンロードキューに追加しました',
 			'downloads.downloadDeleted' => 'ダウンロードを削除しました',
 			'downloads.deleteConfirm' => ({required Object title}) => 'このデバイスから「${title}」を削除しますか？',
-			_ => null,
-		} ?? switch (path) {
 			'downloads.cancelledDownloadTitle' => 'キャンセルされたダウンロード',
 			'downloads.cancelledDownloadMessage' => 'このダウンロードはキャンセルされました。どうしますか？',
 			'downloads.allEpisodesAlreadyDownloaded' => 'すべてのエピソードはすでにダウンロード済みです',

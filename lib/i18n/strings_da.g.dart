@@ -1112,6 +1112,11 @@ class _TranslationsLiveTvDa extends TranslationsLiveTvEn {
 	@override String get unknownChannel => 'Ukendt kanal';
 	@override String get live => 'LIVE';
 	@override String get reloadGuide => 'Genindlæs guide';
+	@override String get searchGuide => '';
+	@override String get searchHint => '';
+	@override String searchNoResults({required Object query}) => 'No matches for "${query}"';
+	@override String get channelsSection => '';
+	@override String get programsSection => '';
 	@override String get now => 'Nu';
 	@override String get today => 'I dag';
 	@override String get tomorrow => 'I morgen';
@@ -2926,6 +2931,11 @@ extension on TranslationsDa {
 			'liveTv.unknownChannel' => 'Ukendt kanal',
 			'liveTv.live' => 'LIVE',
 			'liveTv.reloadGuide' => 'Genindlæs guide',
+			'liveTv.searchGuide' => '',
+			'liveTv.searchHint' => '',
+			'liveTv.searchNoResults' => ({required Object query}) => 'No matches for "${query}"',
+			'liveTv.channelsSection' => '',
+			'liveTv.programsSection' => '',
 			'liveTv.now' => 'Nu',
 			'liveTv.today' => 'I dag',
 			'liveTv.tomorrow' => 'I morgen',
@@ -3121,13 +3131,13 @@ extension on TranslationsDa {
 			'downloads.deleteDownload' => 'Slet download',
 			'downloads.retryDownload' => 'Prøv download igen',
 			'downloads.downloadQueued' => 'Download i kø',
+			_ => null,
+		} ?? switch (path) {
 			'downloads.downloadResumed' => 'Download genoptaget',
 			'downloads.serverErrorBitrate' => 'Serverfejl: filen overskrider muligvis grænsen for ekstern bitrate',
 			'downloads.episodesQueued' => ({required Object count}) => '${count} episoder i downloadkø',
 			'downloads.downloadDeleted' => 'Download slettet',
 			'downloads.deleteConfirm' => ({required Object title}) => 'Slet "${title}" fra denne enhed?',
-			_ => null,
-		} ?? switch (path) {
 			'downloads.cancelledDownloadTitle' => 'Annulleret download',
 			'downloads.cancelledDownloadMessage' => 'Denne download blev annulleret. Hvad vil du gøre?',
 			'downloads.allEpisodesAlreadyDownloaded' => 'Alle episoder er allerede downloadet',

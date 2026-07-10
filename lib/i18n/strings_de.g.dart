@@ -1112,6 +1112,11 @@ class _TranslationsLiveTvDe extends TranslationsLiveTvEn {
 	@override String get unknownChannel => 'Unbekannter Kanal';
 	@override String get live => 'LIVE';
 	@override String get reloadGuide => 'Programmführer neu laden';
+	@override String get searchGuide => '';
+	@override String get searchHint => '';
+	@override String searchNoResults({required Object query}) => 'No matches for "${query}"';
+	@override String get channelsSection => '';
+	@override String get programsSection => '';
 	@override String get now => 'Jetzt';
 	@override String get today => 'Heute';
 	@override String get tomorrow => 'Morgen';
@@ -2926,6 +2931,11 @@ extension on TranslationsDe {
 			'liveTv.unknownChannel' => 'Unbekannter Kanal',
 			'liveTv.live' => 'LIVE',
 			'liveTv.reloadGuide' => 'Programmführer neu laden',
+			'liveTv.searchGuide' => '',
+			'liveTv.searchHint' => '',
+			'liveTv.searchNoResults' => ({required Object query}) => 'No matches for "${query}"',
+			'liveTv.channelsSection' => '',
+			'liveTv.programsSection' => '',
 			'liveTv.now' => 'Jetzt',
 			'liveTv.today' => 'Heute',
 			'liveTv.tomorrow' => 'Morgen',
@@ -3121,13 +3131,13 @@ extension on TranslationsDe {
 			'downloads.deleteDownload' => 'Download löschen',
 			'downloads.retryDownload' => 'Download wiederholen',
 			'downloads.downloadQueued' => 'Download in Warteschlange',
+			_ => null,
+		} ?? switch (path) {
 			'downloads.downloadResumed' => 'Download fortgesetzt',
 			'downloads.serverErrorBitrate' => 'Serverfehler: Datei überschreitet möglicherweise das Remote-Bitrate-Limit',
 			'downloads.episodesQueued' => ({required Object count}) => '${count} Episoden zum Download hinzugefügt',
 			'downloads.downloadDeleted' => 'Download gelöscht',
 			'downloads.deleteConfirm' => ({required Object title}) => '"${title}" von diesem Gerät löschen?',
-			_ => null,
-		} ?? switch (path) {
 			'downloads.cancelledDownloadTitle' => 'Abgebrochener Download',
 			'downloads.cancelledDownloadMessage' => 'Dieser Download wurde abgebrochen. Was möchtest du tun?',
 			'downloads.allEpisodesAlreadyDownloaded' => 'Alle Episoden sind bereits heruntergeladen',

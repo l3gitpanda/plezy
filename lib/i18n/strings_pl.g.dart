@@ -1114,6 +1114,11 @@ class _TranslationsLiveTvPl extends TranslationsLiveTvEn {
 	@override String get unknownChannel => 'Nieznany kanał';
 	@override String get live => 'NA ŻYWO';
 	@override String get reloadGuide => 'Odśwież przewodnik';
+	@override String get searchGuide => '';
+	@override String get searchHint => '';
+	@override String searchNoResults({required Object query}) => 'No matches for "${query}"';
+	@override String get channelsSection => '';
+	@override String get programsSection => '';
 	@override String get now => 'Teraz';
 	@override String get today => 'Dzisiaj';
 	@override String get tomorrow => 'Jutro';
@@ -2930,6 +2935,11 @@ extension on TranslationsPl {
 			'liveTv.unknownChannel' => 'Nieznany kanał',
 			'liveTv.live' => 'NA ŻYWO',
 			'liveTv.reloadGuide' => 'Odśwież przewodnik',
+			'liveTv.searchGuide' => '',
+			'liveTv.searchHint' => '',
+			'liveTv.searchNoResults' => ({required Object query}) => 'No matches for "${query}"',
+			'liveTv.channelsSection' => '',
+			'liveTv.programsSection' => '',
 			'liveTv.now' => 'Teraz',
 			'liveTv.today' => 'Dzisiaj',
 			'liveTv.tomorrow' => 'Jutro',
@@ -3125,13 +3135,13 @@ extension on TranslationsPl {
 			'downloads.deleteDownload' => 'Usuń pobranie',
 			'downloads.retryDownload' => 'Ponów pobieranie',
 			'downloads.downloadQueued' => 'Pobranie w kolejce',
+			_ => null,
+		} ?? switch (path) {
 			'downloads.downloadResumed' => 'Pobieranie wznowione',
 			'downloads.serverErrorBitrate' => 'Błąd serwera: plik może przekraczać zdalny limit bitrate',
 			'downloads.episodesQueued' => ({required Object count}) => '${count} odcinków w kolejce pobierania',
 			'downloads.downloadDeleted' => 'Pobranie usunięte',
 			'downloads.deleteConfirm' => ({required Object title}) => 'Usunąć "${title}" z tego urządzenia?',
-			_ => null,
-		} ?? switch (path) {
 			'downloads.cancelledDownloadTitle' => 'Anulowane pobieranie',
 			'downloads.cancelledDownloadMessage' => 'To pobieranie zostało anulowane. Co chcesz zrobić?',
 			'downloads.allEpisodesAlreadyDownloaded' => 'Wszystkie odcinki są już pobrane',
