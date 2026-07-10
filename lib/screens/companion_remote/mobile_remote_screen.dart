@@ -351,6 +351,23 @@ class _RemoteControlContentState extends State<_RemoteControlContent> {
             ),
           ],
         ),
+        const SizedBox(height: 24),
+        Row(
+          mainAxisAlignment: .center,
+          children: [
+            _RemoteButton(
+              icon: Icons.fast_rewind,
+              label: t.videoControls.previousChapterButton,
+              onPressed: () => _sendCommand(RemoteCommandType.previousChapter),
+            ),
+            const SizedBox(width: 16),
+            _RemoteButton(
+              icon: Icons.fast_forward,
+              label: t.videoControls.nextChapterButton,
+              onPressed: () => _sendCommand(RemoteCommandType.nextChapter),
+            ),
+          ],
+        ),
         const SizedBox(height: 32),
         Text(t.companionRemote.remote.volume, style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 16),
