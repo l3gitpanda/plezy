@@ -853,7 +853,9 @@ class _MainScreenState extends State<MainScreen>
       _selectTab(NavigationTabId.explore);
       Navigator.push(
         context,
-        MaterialPageRoute<void>(builder: (_) => CatalogSearchScreen(source: source, initialQuery: query)),
+        MaterialPageRoute<void>(
+          builder: (_) => CatalogSearchScreen(source: source, initialQuery: query),
+        ),
       );
     };
   }
