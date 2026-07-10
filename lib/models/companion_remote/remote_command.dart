@@ -56,6 +56,8 @@ enum RemoteCommandType {
   // Serialized by index (see _RemoteCommandTypeConverter) — only append here.
   tabExplore,
   exploreSearch,
+  previousChapter,
+  nextChapter,
 }
 
 class _RemoteCommandTypeConverter extends IndexedEnumConverter<RemoteCommandType> {

@@ -130,12 +130,14 @@ class _RemoteControlContent extends StatefulWidget {
 class _RemoteControlContentState extends State<_RemoteControlContent> {
   int _selectedTab = 0;
 
-  void _showSearchSheet({bool switchToSearchTab = false}) {
+  void _showSearchSheet({bool switchToSearchTab = false, RemoteCommandType commandType = RemoteCommandType.search}) {
     if (switchToSearchTab) {
       _sendCommand(RemoteCommandType.tabSearch);
     }
     final provider = context.read<CompanionRemoteProvider>();
-    OverlaySheetController.of(context).show(builder: (_) => _SearchBottomSheet(provider: provider));
+    OverlaySheetController.of(context).show(
+      builder: (_) => _SearchBottomSheet(provider: provider, commandType: commandType),
+    );
   }
 
   void _sendCommand(RemoteCommandType type) {
@@ -227,6 +229,12 @@ class _RemoteControlContentState extends State<_RemoteControlContent> {
             ],
           ),
         ),
+        Consumer<CompanionRemoteProvider>(
+          builder: (context, provider, child) {
+            if (!provider.isPlayerActive) return const SizedBox.shrink();
+            return _PersistentPlaybackBar(onCommand: _sendCommand);
+          },
+        ),
       ],
     );
   }
@@ -277,6 +285,11 @@ class _RemoteControlContentState extends State<_RemoteControlContent> {
                 icon: Icons.video_library,
                 label: t.companionRemote.remote.tabLibraries,
                 onPressed: () => _sendCommand(RemoteCommandType.tabLibraries),
+              ),
+              _RemoteChip(
+                icon: Icons.explore,
+                label: t.companionRemote.remote.tabExplore,
+                onPressed: () => _sendCommand(RemoteCommandType.tabExplore),
               ),
               _RemoteChip(
                 icon: Icons.search,
@@ -351,6 +364,23 @@ class _RemoteControlContentState extends State<_RemoteControlContent> {
             ),
           ],
         ),
+        const SizedBox(height: 24),
+        Row(
+          mainAxisAlignment: .center,
+          children: [
+            _RemoteButton(
+              icon: Icons.fast_rewind,
+              label: t.videoControls.previousChapterButton,
+              onPressed: () => _sendCommand(RemoteCommandType.previousChapter),
+            ),
+            const SizedBox(width: 16),
+            _RemoteButton(
+              icon: Icons.fast_forward,
+              label: t.videoControls.nextChapterButton,
+              onPressed: () => _sendCommand(RemoteCommandType.nextChapter),
+            ),
+          ],
+        ),
         const SizedBox(height: 32),
         Text(t.companionRemote.remote.volume, style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 16),
@@ -391,7 +421,14 @@ class _RemoteControlContentState extends State<_RemoteControlContent> {
           runSpacing: 12,
           alignment: WrapAlignment.center,
           children: [
-            if (!isPlayerActive) _RemoteCard(icon: Icons.search, label: t.common.search, onPressed: _showSearchSheet),
+            if (!isPlayerActive) ...[
+              _RemoteCard(icon: Icons.search, label: t.common.search, onPressed: _showSearchSheet),
+              _RemoteCard(
+                icon: Icons.explore,
+                label: t.companionRemote.remote.tabExplore,
+                onPressed: () => _showSearchSheet(commandType: RemoteCommandType.exploreSearch),
+              ),
+            ],
             if (isPlayerActive) ...[
               _RemoteCard(
                 icon: Icons.fullscreen,
@@ -595,6 +632,52 @@ class _SectorClipper extends CustomClipper<Path> {
       startAngle != oldClipper.startAngle || innerRadius != oldClipper.innerRadius || gapWidth != oldClipper.gapWidth;
 }
 
+/// Transport row pinned below the tabbed content while the host is playing
+/// something, so seeking never requires switching to the Play tab.
+class _PersistentPlaybackBar extends StatelessWidget {
+  final void Function(RemoteCommandType) onCommand;
+
+  const _PersistentPlaybackBar({required this.onCommand});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        border: Border(top: BorderSide(color: Theme.of(context).dividerColor)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+          child: Row(
+            mainAxisAlignment: .spaceEvenly,
+            children: [
+              _RemoteButton(
+                icon: Icons.replay_10,
+                label: t.companionRemote.remote.seekBack,
+                onPressed: () => onCommand(RemoteCommandType.seekBackward),
+              ),
+              _RemoteButton(
+                icon: Icons.play_arrow,
+                label: t.companionRemote.remote.playPause,
+                size: 64,
+                iconSize: 36,
+                onPressed: () => onCommand(RemoteCommandType.playPause),
+              ),
+              _RemoteButton(
+                icon: Icons.forward_10,
+                label: t.companionRemote.remote.seekForward,
+                onPressed: () => onCommand(RemoteCommandType.seekForward),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _RemoteButton extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -657,7 +740,12 @@ class _RemoteChip extends StatelessWidget {
 class _SearchBottomSheet extends StatefulWidget {
   final CompanionRemoteProvider provider;
 
-  const _SearchBottomSheet({required this.provider});
+  /// Which search command the typed query is sent as: the host routes
+  /// [RemoteCommandType.search] to its library search tab and
+  /// [RemoteCommandType.exploreSearch] to the Explore catalog search.
+  final RemoteCommandType commandType;
+
+  const _SearchBottomSheet({required this.provider, this.commandType = RemoteCommandType.search});
 
   @override
   State<_SearchBottomSheet> createState() => _SearchBottomSheetState();
@@ -669,7 +757,7 @@ class _SearchBottomSheetState extends State<_SearchBottomSheet> with ControllerD
   void _submit(String text) {
     final trimmed = text.trim();
     if (trimmed.isNotEmpty) {
-      widget.provider.sendCommand(RemoteCommandType.search, data: {'query': trimmed});
+      widget.provider.sendCommand(widget.commandType, data: {'query': trimmed});
     }
     OverlaySheetController.of(context).close();
   }

@@ -38,6 +38,8 @@ class CompanionRemoteReceiver {
   void Function(String? query)? onExploreSearch;
   VoidCallback? onNextTrack;
   VoidCallback? onPreviousTrack;
+  VoidCallback? onNextChapter;
+  VoidCallback? onPreviousChapter;
   VoidCallback? onStop;
   VoidCallback? onSeekForward;
   VoidCallback? onSeekBackward;
@@ -122,6 +124,10 @@ class CompanionRemoteReceiver {
         onNextTrack?.call();
       case RemoteCommandType.previousTrack:
         onPreviousTrack?.call();
+      case RemoteCommandType.nextChapter:
+        onNextChapter?.call();
+      case RemoteCommandType.previousChapter:
+        onPreviousChapter?.call();
 
       case RemoteCommandType.subtitles:
         onSubtitles?.call();
