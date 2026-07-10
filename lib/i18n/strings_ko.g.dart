@@ -1110,6 +1110,11 @@ class _TranslationsLiveTvKo extends TranslationsLiveTvEn {
 	@override String get unknownChannel => '알 수 없는 채널';
 	@override String get live => '실시간';
 	@override String get reloadGuide => '편성표 새로고침';
+	@override String get searchGuide => '';
+	@override String get searchHint => '';
+	@override String get searchNoResults => '';
+	@override String get channelsSection => '';
+	@override String get programsSection => '';
 	@override String get now => '지금';
 	@override String get today => '오늘';
 	@override String get tomorrow => '내일';
@@ -2920,6 +2925,11 @@ extension on TranslationsKo {
 			'liveTv.unknownChannel' => '알 수 없는 채널',
 			'liveTv.live' => '실시간',
 			'liveTv.reloadGuide' => '편성표 새로고침',
+			'liveTv.searchGuide' => '',
+			'liveTv.searchHint' => '',
+			'liveTv.searchNoResults' => '',
+			'liveTv.channelsSection' => '',
+			'liveTv.programsSection' => '',
 			'liveTv.now' => '지금',
 			'liveTv.today' => '오늘',
 			'liveTv.tomorrow' => '내일',
@@ -3116,13 +3126,13 @@ extension on TranslationsKo {
 			'downloads.downloadQueued' => '다운로드 대기 중',
 			'downloads.downloadResumed' => '다운로드를 재개했습니다',
 			'downloads.serverErrorBitrate' => '서버 오류: 파일이 원격 비트레이트 제한을 초과할 수 있습니다',
+			_ => null,
+		} ?? switch (path) {
 			'downloads.episodesQueued' => ({required Object count}) => '${count} 에피소드가 다운로드 대기열에 추가 되었습니다',
 			'downloads.downloadDeleted' => '다운로드 삭제됨',
 			'downloads.deleteConfirm' => ({required Object title}) => '이 기기에서 "${title}"을(를) 삭제할까요?',
 			'downloads.cancelledDownloadTitle' => '취소된 다운로드',
 			'downloads.cancelledDownloadMessage' => '이 다운로드가 취소되었습니다. 어떻게 하시겠습니까?',
-			_ => null,
-		} ?? switch (path) {
 			'downloads.allEpisodesAlreadyDownloaded' => '모든 에피소드가 이미 다운로드되었습니다',
 			'downloads.resumeDownload' => '다운로드 재개',
 			'downloads.cancelledDownload' => '취소된 다운로드',

@@ -1111,6 +1111,11 @@ class _TranslationsLiveTvSv extends TranslationsLiveTvEn {
 	@override String get unknownChannel => 'Okänd kanal';
 	@override String get live => 'LIVE';
 	@override String get reloadGuide => 'Ladda om programguide';
+	@override String get searchGuide => '';
+	@override String get searchHint => '';
+	@override String get searchNoResults => '';
+	@override String get channelsSection => '';
+	@override String get programsSection => '';
 	@override String get now => 'Nu';
 	@override String get today => 'Idag';
 	@override String get tomorrow => 'I morgon';
@@ -2922,6 +2927,11 @@ extension on TranslationsSv {
 			'liveTv.unknownChannel' => 'Okänd kanal',
 			'liveTv.live' => 'LIVE',
 			'liveTv.reloadGuide' => 'Ladda om programguide',
+			'liveTv.searchGuide' => '',
+			'liveTv.searchHint' => '',
+			'liveTv.searchNoResults' => '',
+			'liveTv.channelsSection' => '',
+			'liveTv.programsSection' => '',
 			'liveTv.now' => 'Nu',
 			'liveTv.today' => 'Idag',
 			'liveTv.tomorrow' => 'I morgon',
@@ -3118,13 +3128,13 @@ extension on TranslationsSv {
 			'downloads.downloadQueued' => 'Nedladdning köad',
 			'downloads.downloadResumed' => 'Nedladdning återupptagen',
 			'downloads.serverErrorBitrate' => 'Serverfel: filen kan överskrida gränsen för fjärrbitrate',
+			_ => null,
+		} ?? switch (path) {
 			'downloads.episodesQueued' => ({required Object count}) => '${count} avsnitt köade för nedladdning',
 			'downloads.downloadDeleted' => 'Nedladdning borttagen',
 			'downloads.deleteConfirm' => ({required Object title}) => 'Ta bort "${title}" från den här enheten?',
 			'downloads.cancelledDownloadTitle' => 'Avbruten nedladdning',
 			'downloads.cancelledDownloadMessage' => 'Den här nedladdningen avbröts. Vad vill du göra?',
-			_ => null,
-		} ?? switch (path) {
 			'downloads.allEpisodesAlreadyDownloaded' => 'Alla avsnitt är redan nedladdade',
 			'downloads.resumeDownload' => 'Återuppta nedladdning',
 			'downloads.cancelledDownload' => 'Avbruten nedladdning',
