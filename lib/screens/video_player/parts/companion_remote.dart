@@ -8,6 +8,10 @@ extension _VideoPlayerCompanionRemoteMethods on VideoPlayerScreenState {
     receiver.onStop = () {
       if (mounted) _handleBackButton();
     };
+    receiver.onPlayPause = () {
+      final currentPlayer = player;
+      if (mounted && currentPlayer != null) unawaited(_playOrPauseWithPlaybackIntent(currentPlayer));
+    };
     receiver.onNextTrack = () {
       if (mounted && _nextEpisode != null) _playNext();
     };
@@ -72,6 +76,7 @@ extension _VideoPlayerCompanionRemoteMethods on VideoPlayerScreenState {
       return;
     }
     receiver.onStop = null;
+    receiver.onPlayPause = null;
     receiver.onNextTrack = null;
     receiver.onPreviousTrack = null;
     receiver.onSeekForward = null;

@@ -36,6 +36,7 @@ class CompanionRemoteReceiver {
   VoidCallback? onHome;
   void Function(String? query)? onSearchAction;
   void Function(String? query)? onExploreSearch;
+  VoidCallback? onPlayPause;
   VoidCallback? onNextTrack;
   VoidCallback? onPreviousTrack;
   VoidCallback? onNextChapter;
@@ -75,11 +76,16 @@ class CompanionRemoteReceiver {
         simulateKeyPress(LogicalKeyboardKey.contextMenu);
 
       case RemoteCommandType.play:
-        simulateKeyPress(LogicalKeyboardKey.space);
       case RemoteCommandType.pause:
-        simulateKeyPress(LogicalKeyboardKey.space);
       case RemoteCommandType.playPause:
-        simulateKeyPress(LogicalKeyboardKey.space);
+        // The simulated space bar only reaches focus-tree handlers, not the
+        // player's HardwareKeyboard shortcut, so the player registers a real
+        // callback; the key press remains as an app-level fallback.
+        if (onPlayPause != null) {
+          onPlayPause!.call();
+        } else {
+          simulateKeyPress(LogicalKeyboardKey.space);
+        }
       case RemoteCommandType.seekForward:
         onSeekForward?.call();
       case RemoteCommandType.seekBackward:

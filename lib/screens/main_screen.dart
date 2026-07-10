@@ -832,6 +832,10 @@ class _MainScreenState extends State<MainScreen>
       });
     };
     receiver.onSearchAction = (query) {
+      // A remote-driven search must end up visible: anything pushed over the
+      // main screen (catalog search, detail screens, the player) would
+      // otherwise cover the search tab while it runs underneath.
+      Navigator.of(context).popUntil((route) => route.isFirst);
       final trimmed = query?.trim() ?? '';
       final hasQuery = trimmed.isNotEmpty;
       // With a query, don't focus the input (which would auto-open the TV
@@ -850,6 +854,9 @@ class _MainScreenState extends State<MainScreen>
       // which case the Explore tab isn't visible either — silent no-op.
       final source = context.read<CatalogSourcesProvider>().activeSource;
       if (source == null) return;
+      // Pop pushed screens first so repeated remote searches replace the
+      // catalog search screen instead of stacking on top of it.
+      Navigator.of(context).popUntil((route) => route.isFirst);
       _selectTab(NavigationTabId.explore);
       Navigator.push(
         context,
