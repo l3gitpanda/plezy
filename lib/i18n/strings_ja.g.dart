@@ -1994,6 +1994,7 @@ class _TranslationsCompanionRemoteRemoteJa extends TranslationsCompanionRemoteRe
 	@override String get tabNavigation => 'タブナビゲーション';
 	@override String get tabDiscover => '探す';
 	@override String get tabLibraries => 'ライブラリ';
+	@override String get tabExplore => '';
 	@override String get tabSearch => '検索';
 	@override String get tabDownloads => 'ダウンロード';
 	@override String get tabSettings => '設定';
@@ -3231,6 +3232,7 @@ extension on TranslationsJa {
 			'companionRemote.remote.tabNavigation' => 'タブナビゲーション',
 			'companionRemote.remote.tabDiscover' => '探す',
 			'companionRemote.remote.tabLibraries' => 'ライブラリ',
+			'companionRemote.remote.tabExplore' => '',
 			'companionRemote.remote.tabSearch' => '検索',
 			'companionRemote.remote.tabDownloads' => 'ダウンロード',
 			'companionRemote.remote.tabSettings' => '設定',

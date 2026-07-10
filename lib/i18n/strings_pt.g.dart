@@ -1996,6 +1996,7 @@ class _TranslationsCompanionRemoteRemotePt extends TranslationsCompanionRemoteRe
 	@override String get tabNavigation => 'Navegação';
 	@override String get tabDiscover => 'Descobrir';
 	@override String get tabLibraries => 'Bibliotecas';
+	@override String get tabExplore => '';
 	@override String get tabSearch => 'Buscar';
 	@override String get tabDownloads => 'Downloads';
 	@override String get tabSettings => 'Configurações';
@@ -3233,6 +3234,7 @@ extension on TranslationsPt {
 			'companionRemote.remote.tabNavigation' => 'Navegação',
 			'companionRemote.remote.tabDiscover' => 'Descobrir',
 			'companionRemote.remote.tabLibraries' => 'Bibliotecas',
+			'companionRemote.remote.tabExplore' => '',
 			'companionRemote.remote.tabSearch' => 'Buscar',
 			'companionRemote.remote.tabDownloads' => 'Downloads',
 			'companionRemote.remote.tabSettings' => 'Configurações',

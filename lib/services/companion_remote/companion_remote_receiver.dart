@@ -32,8 +32,10 @@ class CompanionRemoteReceiver {
   VoidCallback? onTabSearch;
   VoidCallback? onTabDownloads;
   VoidCallback? onTabSettings;
+  VoidCallback? onTabExplore;
   VoidCallback? onHome;
   void Function(String? query)? onSearchAction;
+  void Function(String? query)? onExploreSearch;
   VoidCallback? onNextTrack;
   VoidCallback? onPreviousTrack;
   VoidCallback? onNextChapter;
@@ -104,12 +106,17 @@ class CompanionRemoteReceiver {
         onTabDownloads?.call();
       case RemoteCommandType.tabSettings:
         onTabSettings?.call();
+      case RemoteCommandType.tabExplore:
+        onTabExplore?.call();
 
       case RemoteCommandType.home:
         onHome?.call();
       case RemoteCommandType.search:
         final query = command.data?['query'] as String?;
         onSearchAction?.call(query);
+      case RemoteCommandType.exploreSearch:
+        final query = command.data?['query'] as String?;
+        onExploreSearch?.call(query);
 
       case RemoteCommandType.stop:
         onStop?.call();

@@ -55,6 +55,7 @@ import '../widgets/music/mini_player.dart';
 import '../widgets/side_navigation_rail.dart';
 import '../focus/dpad_navigator.dart';
 import '../focus/key_event_utils.dart';
+import 'catalog_search_screen.dart';
 import 'discover_screen.dart';
 import 'explore_screen.dart';
 import 'libraries/library_quick_picker_sheet.dart';
@@ -818,6 +819,7 @@ class _MainScreenState extends State<MainScreen>
     };
     receiver.onTabDiscover = () => _selectTab(NavigationTabId.discover);
     receiver.onTabLibraries = () => _selectTab(NavigationTabId.libraries);
+    receiver.onTabExplore = () => _selectTab(NavigationTabId.explore);
     receiver.onTabSearch = () => _selectTab(NavigationTabId.search);
     receiver.onTabDownloads = () => _selectTab(NavigationTabId.downloads);
     receiver.onTabSettings = () => _selectTab(NavigationTabId.settings);
@@ -842,6 +844,17 @@ class _MainScreenState extends State<MainScreen>
           }
         });
       }
+    };
+    receiver.onExploreSearch = (query) {
+      // activeSource is null exactly when no catalog source is connected, in
+      // which case the Explore tab isn't visible either — silent no-op.
+      final source = context.read<CatalogSourcesProvider>().activeSource;
+      if (source == null) return;
+      _selectTab(NavigationTabId.explore);
+      Navigator.push(
+        context,
+        MaterialPageRoute<void>(builder: (_) => CatalogSearchScreen(source: source, initialQuery: query)),
+      );
     };
   }
 
@@ -888,11 +901,13 @@ class _MainScreenState extends State<MainScreen>
         receiver.onTabPrevious = null;
         receiver.onTabDiscover = null;
         receiver.onTabLibraries = null;
+        receiver.onTabExplore = null;
         receiver.onTabSearch = null;
         receiver.onTabDownloads = null;
         receiver.onTabSettings = null;
         receiver.onHome = null;
         receiver.onSearchAction = null;
+        receiver.onExploreSearch = null;
         receiver.navigationOwner = null;
       }
     }

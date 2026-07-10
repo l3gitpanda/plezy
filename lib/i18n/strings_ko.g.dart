@@ -1994,6 +1994,7 @@ class _TranslationsCompanionRemoteRemoteKo extends TranslationsCompanionRemoteRe
 	@override String get tabNavigation => '탭 탐색';
 	@override String get tabDiscover => '발견';
 	@override String get tabLibraries => '미디어 라이브러리';
+	@override String get tabExplore => '';
 	@override String get tabSearch => '검색';
 	@override String get tabDownloads => '다운로드';
 	@override String get tabSettings => '설정';
@@ -3231,6 +3232,7 @@ extension on TranslationsKo {
 			'companionRemote.remote.tabNavigation' => '탭 탐색',
 			'companionRemote.remote.tabDiscover' => '발견',
 			'companionRemote.remote.tabLibraries' => '미디어 라이브러리',
+			'companionRemote.remote.tabExplore' => '',
 			'companionRemote.remote.tabSearch' => '검색',
 			'companionRemote.remote.tabDownloads' => '다운로드',
 			'companionRemote.remote.tabSettings' => '설정',

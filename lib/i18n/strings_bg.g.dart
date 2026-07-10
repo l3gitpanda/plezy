@@ -1996,6 +1996,7 @@ class _TranslationsCompanionRemoteRemoteBg extends TranslationsCompanionRemoteRe
 	@override String get tabNavigation => 'Навигация с Tab';
 	@override String get tabDiscover => 'Открий';
 	@override String get tabLibraries => 'Библиотеки';
+	@override String get tabExplore => '';
 	@override String get tabSearch => 'Търсене';
 	@override String get tabDownloads => 'Изтегляния';
 	@override String get tabSettings => 'Настройки';
@@ -3233,6 +3234,7 @@ extension on TranslationsBg {
 			'companionRemote.remote.tabNavigation' => 'Навигация с Tab',
 			'companionRemote.remote.tabDiscover' => 'Открий',
 			'companionRemote.remote.tabLibraries' => 'Библиотеки',
+			'companionRemote.remote.tabExplore' => '',
 			'companionRemote.remote.tabSearch' => 'Търсене',
 			'companionRemote.remote.tabDownloads' => 'Изтегляния',
 			'companionRemote.remote.tabSettings' => 'Настройки',
