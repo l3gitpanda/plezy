@@ -115,6 +115,7 @@ KeyEventResult _handleInputKey({
   required FocusNode node,
   required bool usesTvKeyboard,
   required bool enabled,
+  required bool tvKeyboardOpen,
   required VoidCallback openKeyboard,
   required KeyEvent event,
   TextInputType? keyboardType,
@@ -157,12 +158,12 @@ KeyEventResult _handleInputKey({
     return finish(KeyEventResult.skipRemainingHandlers, 'pass-native-tv-key-to-platform');
   }
 
-  if (usesTvKeyboard && enabled && event.isTvSelectEvent) {
+  if (usesTvKeyboard && enabled && !tvKeyboardOpen && event.isTvSelectEvent) {
     if (event is KeyDownEvent) openKeyboard();
     return finish(KeyEventResult.handled, 'open-custom-tv-keyboard');
   }
 
-  if (usesTvKeyboard && enabled && event.isPhysicalKeyboardEvent) {
+  if (usesTvKeyboard && enabled && !tvKeyboardOpen && event.isPhysicalKeyboardEvent) {
     final result = _handleTvHardwareKeyboardKey(
       controller: controller,
       keyboardType: keyboardType,
@@ -646,12 +647,19 @@ abstract class _FocusableTextInputBase extends StatelessWidget {
     );
   }
 
-  KeyEventResult _handleKey(BuildContext context, FocusNode node, KeyEvent event, VoidCallback openKeyboard) {
+  KeyEventResult _handleKey(
+    BuildContext context,
+    FocusNode node,
+    KeyEvent event,
+    VoidCallback openKeyboard,
+    bool tvKeyboardOpen,
+  ) {
     return _handleInputKey(
       controller: controller,
       node: node,
       usesTvKeyboard: _hasTvKeyboard,
       enabled: enabled,
+      tvKeyboardOpen: tvKeyboardOpen,
       openKeyboard: openKeyboard,
       event: event,
       keyboardType: keyboardType,
@@ -930,7 +938,7 @@ class _FocusableTextInputHostState extends State<_FocusableTextInputHost> {
       );
       if (result != KeyEventResult.ignored) return result;
     }
-    return widget.input._handleKey(context, node, event, _openTvKeyboard);
+    return widget.input._handleKey(context, node, event, _openTvKeyboard, _tvKeyboardOpen);
   }
 
   void _installKeyHandler(FocusNode node) {
