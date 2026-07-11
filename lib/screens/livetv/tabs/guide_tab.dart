@@ -122,6 +122,11 @@ class GuideTabState extends State<GuideTab> with MountedSetStateMixin, WidgetsBi
   bool _pendingFocus = false;
   bool _isProgramSelectKeyDown = false;
 
+  // Jump requested while programs were still loading (guide search from
+  // another tab lands on a freshly built guide) — replayed by _loadPrograms.
+  LiveTvChannel? _pendingJumpChannel;
+  LiveTvProgram? _pendingJumpProgram;
+
   /// Focus into the guide content (called from tab bar navigation or initial load).
   void focusContent() {
     if (!InputModeTracker.isKeyboardMode(context)) return;
@@ -148,6 +153,11 @@ class GuideTabState extends State<GuideTab> with MountedSetStateMixin, WidgetsBi
   /// Jump the guide to [channel] (from guide search): scroll to its row and
   /// land d-pad focus on the channel cell in keyboard mode.
   void jumpToChannel(LiveTvChannel channel) {
+    if (_isLoading) {
+      _pendingJumpChannel = channel;
+      _pendingJumpProgram = null;
+      return;
+    }
     final index = _channelIndexFor(channel);
     if (index == null) return;
 
@@ -166,6 +176,11 @@ class GuideTabState extends State<GuideTab> with MountedSetStateMixin, WidgetsBi
   /// Jump the guide to [program] on [channel] (from guide search), shifting
   /// the time window first when the airing isn't visible in the current one.
   Future<void> jumpToProgram(LiveTvChannel channel, LiveTvProgram program) async {
+    if (_isLoading) {
+      _pendingJumpChannel = channel;
+      _pendingJumpProgram = program;
+      return;
+    }
     final index = _channelIndexFor(channel);
     if (index == null) return;
 
@@ -415,6 +430,10 @@ class GuideTabState extends State<GuideTab> with MountedSetStateMixin, WidgetsBi
       if (!mounted) return;
 
       final shouldFocus = _pendingFocus;
+      final pendingJumpChannel = _pendingJumpChannel;
+      final pendingJumpProgram = _pendingJumpProgram;
+      _pendingJumpChannel = null;
+      _pendingJumpProgram = null;
 
       setState(() {
         _programs = allPrograms;
@@ -429,6 +448,18 @@ class GuideTabState extends State<GuideTab> with MountedSetStateMixin, WidgetsBi
           }
         }
       });
+
+      if (pendingJumpChannel != null) {
+        // A stashed search jump wins over the default live-line anchoring and
+        // over any focus request queued during the load.
+        _pendingFocus = false;
+        if (pendingJumpProgram != null) {
+          unawaited(jumpToProgram(pendingJumpChannel, pendingJumpProgram));
+        } else {
+          jumpToChannel(pendingJumpChannel);
+        }
+        return;
+      }
 
       _scrollToNow();
 
