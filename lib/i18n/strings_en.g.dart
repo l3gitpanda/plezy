@@ -1269,6 +1269,9 @@ class TranslationsMediaMenuEn {
 
 	/// en: 'Play Version...'
 	String get playVersion => 'Play Version...';
+
+	/// en: 'Play on Connected Device'
+	String get playOnConnectedDevice => 'Play on Connected Device';
 }
 
 // Path: rateSheet
@@ -3458,6 +3461,9 @@ class TranslationsCompanionRemoteEn {
 	/// en: 'Unknown Device'
 	String get unknownDevice => 'Unknown Device';
 
+	/// en: 'Sent to ${device}'
+	String playSentToDevice({required Object device}) => 'Sent to ${device}';
+
 	late final TranslationsCompanionRemoteSessionEn session = TranslationsCompanionRemoteSessionEn.internal(_root);
 	late final TranslationsCompanionRemotePairingEn pairing = TranslationsCompanionRemotePairingEn.internal(_root);
 	late final TranslationsCompanionRemoteRemoteEn remote = TranslationsCompanionRemoteRemoteEn.internal(_root);
@@ -5305,6 +5311,7 @@ extension on Translations {
 			'mediaMenu.rate' => 'Rate',
 			'mediaMenu.playFromBeginning' => 'Play from Beginning',
 			'mediaMenu.playVersion' => 'Play Version...',
+			'mediaMenu.playOnConnectedDevice' => 'Play on Connected Device',
 			'rateSheet.title' => 'Rate',
 			'rateSheet.server' => 'Server',
 			'rateSheet.favorite' => 'Favorite',
@@ -5428,9 +5435,9 @@ extension on Translations {
 			'messages.musicNotSupported' => 'Music playback is not yet supported',
 			'messages.noDescriptionAvailable' => 'No description available',
 			'messages.noProfilesAvailable' => 'No profiles available',
-			'messages.contactAdminForProfiles' => 'Contact your server administrator to add profiles',
 			_ => null,
 		} ?? switch (path) {
+			'messages.contactAdminForProfiles' => 'Contact your server administrator to add profiles',
 			'messages.unableToDetermineLibrarySection' => 'Unable to determine library section for this item',
 			'messages.logsCleared' => 'Logs cleared',
 			'messages.logsCopied' => 'Logs copied to clipboard',
@@ -5942,9 +5949,9 @@ extension on Translations {
 			'downloads.serverErrorBitrate' => 'Server error: file may exceed the remote bitrate limit',
 			'downloads.episodesQueued' => ({required Object count}) => '${count} episodes queued for download',
 			'downloads.downloadDeleted' => 'Download deleted',
-			'downloads.deleteConfirm' => ({required Object title}) => 'Delete "${title}" from this device?',
 			_ => null,
 		} ?? switch (path) {
+			'downloads.deleteConfirm' => ({required Object title}) => 'Delete "${title}" from this device?',
 			'downloads.cancelledDownloadTitle' => 'Cancelled Download',
 			'downloads.cancelledDownloadMessage' => 'This download was cancelled. What would you like to do?',
 			'downloads.allEpisodesAlreadyDownloaded' => 'All episodes already downloaded',
@@ -6013,6 +6020,7 @@ extension on Translations {
 			'companionRemote.title' => 'Companion Remote',
 			'companionRemote.connectedTo' => ({required Object name}) => 'Connected to ${name}',
 			'companionRemote.unknownDevice' => 'Unknown Device',
+			'companionRemote.playSentToDevice' => ({required Object device}) => 'Sent to ${device}',
 			'companionRemote.session.startingServer' => 'Starting remote server...',
 			'companionRemote.session.hostAddress' => 'Host Address',
 			'companionRemote.session.connected' => 'Connected',
