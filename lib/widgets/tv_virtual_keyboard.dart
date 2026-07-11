@@ -45,26 +45,36 @@ void warmUpTvVirtualKeyboardText(BuildContext context) {
 
 /// Handle to a TV virtual keyboard pushed by [showTvVirtualKeyboard].
 class TvVirtualKeyboardHandle {
-  TvVirtualKeyboardHandle._(this._navigator, this._route);
+  TvVirtualKeyboardHandle._(this._closeImpl, this._closed);
 
-  final NavigatorState _navigator;
-  final DialogRoute<void> _route;
+  /// Backs keyboard sessions implemented outside this library (the native
+  /// Apple TV keyboard) — Dart privacy is per-library, so they can't reach
+  /// the private constructor.
+  factory TvVirtualKeyboardHandle.fromCallbacks({required VoidCallback close, required Future<void> closed}) =>
+      TvVirtualKeyboardHandle._(close, closed);
 
-  /// Completes when the keyboard leaves the navigator — submit, cancel,
-  /// barrier/back dismiss, or [close].
-  Future<void> get closed => _route.popped;
-
-  /// Dismiss the keyboard if it is still up. No-ops once the route is gone
-  /// or the navigator is being torn down.
-  void close() {
-    if (!_navigator.mounted) return;
-    if (_route.isCurrent) {
-      _navigator.pop();
-    } else if (_route.isActive) {
-      // removeRoute also completes route.popped, which backs [closed].
-      _navigator.removeRoute(_route);
-    }
+  factory TvVirtualKeyboardHandle._dialog(NavigatorState navigator, DialogRoute<void> route) {
+    return TvVirtualKeyboardHandle._(() {
+      if (!navigator.mounted) return;
+      if (route.isCurrent) {
+        navigator.pop();
+      } else if (route.isActive) {
+        // removeRoute also completes route.popped, which backs [closed].
+        navigator.removeRoute(route);
+      }
+    }, route.popped);
   }
+
+  final VoidCallback _closeImpl;
+  final Future<void> _closed;
+
+  /// Completes when the keyboard session ends — submit, cancel,
+  /// barrier/back dismiss, or [close].
+  Future<void> get closed => _closed;
+
+  /// Dismiss the keyboard if it is still up. No-ops once the session is
+  /// already gone or being torn down.
+  void close() => _closeImpl();
 }
 
 TvVirtualKeyboardHandle? showTvVirtualKeyboard({
@@ -110,7 +120,7 @@ TvVirtualKeyboardHandle? showTvVirtualKeyboard({
     ),
   );
   unawaited(navigator.push(route));
-  return TvVirtualKeyboardHandle._(navigator, route);
+  return TvVirtualKeyboardHandle._dialog(navigator, route);
 }
 
 enum _TvKeyType { spacer, character, shift, symbols, space, newline, backspace, clear, cancel, done }
