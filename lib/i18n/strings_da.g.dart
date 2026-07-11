@@ -541,6 +541,7 @@ class _TranslationsMediaMenuDa extends TranslationsMediaMenuEn {
 	@override String get rate => 'Bedøm';
 	@override String get playFromBeginning => 'Afspil fra begyndelsen';
 	@override String get playVersion => 'Afspil version...';
+	@override String get playOnConnectedDevice => '';
 }
 
 // Path: rateSheet
@@ -1443,6 +1444,7 @@ class _TranslationsCompanionRemoteDa extends TranslationsCompanionRemoteEn {
 	@override String get title => 'Fjernbetjening';
 	@override String connectedTo({required Object name}) => 'Forbundet til ${name}';
 	@override String get unknownDevice => 'Ukendt enhed';
+	@override String get playSentToDevice => '';
 	@override late final _TranslationsCompanionRemoteSessionDa session = _TranslationsCompanionRemoteSessionDa._(_root);
 	@override late final _TranslationsCompanionRemotePairingDa pairing = _TranslationsCompanionRemotePairingDa._(_root);
 	@override late final _TranslationsCompanionRemoteRemoteDa remote = _TranslationsCompanionRemoteRemoteDa._(_root);
@@ -2485,6 +2487,7 @@ extension on TranslationsDa {
 			'mediaMenu.rate' => 'Bedøm',
 			'mediaMenu.playFromBeginning' => 'Afspil fra begyndelsen',
 			'mediaMenu.playVersion' => 'Afspil version...',
+			'mediaMenu.playOnConnectedDevice' => '',
 			'rateSheet.title' => 'Bedøm',
 			'rateSheet.server' => 'Server',
 			'rateSheet.favorite' => 'Favorit',
@@ -2608,9 +2611,9 @@ extension on TranslationsDa {
 			'messages.noDescriptionAvailable' => 'Ingen beskrivelse tilgængelig',
 			'messages.noProfilesAvailable' => 'Ingen profiler tilgængelige',
 			'messages.contactAdminForProfiles' => 'Kontakt din serveradministrator for at tilføje profiler',
-			'messages.unableToDetermineLibrarySection' => 'Kan ikke bestemme biblioteksafdeling for dette element',
 			_ => null,
 		} ?? switch (path) {
+			'messages.unableToDetermineLibrarySection' => 'Kan ikke bestemme biblioteksafdeling for dette element',
 			'messages.logsCleared' => 'Logs ryddet',
 			'messages.logsCopied' => 'Logs kopieret til udklipsholder',
 			'messages.noLogsAvailable' => 'Ingen logs tilgængelige',
@@ -3122,9 +3125,9 @@ extension on TranslationsDa {
 			'downloads.downloadDeleted' => 'Download slettet',
 			'downloads.deleteConfirm' => ({required Object title}) => 'Slet "${title}" fra denne enhed?',
 			'downloads.cancelledDownloadTitle' => 'Annulleret download',
-			'downloads.cancelledDownloadMessage' => 'Denne download blev annulleret. Hvad vil du gøre?',
 			_ => null,
 		} ?? switch (path) {
+			'downloads.cancelledDownloadMessage' => 'Denne download blev annulleret. Hvad vil du gøre?',
 			'downloads.allEpisodesAlreadyDownloaded' => 'Alle episoder er allerede downloadet',
 			'downloads.resumeDownload' => 'Genoptag download',
 			'downloads.cancelledDownload' => 'Annulleret download',
@@ -3190,6 +3193,7 @@ extension on TranslationsDa {
 			'companionRemote.title' => 'Fjernbetjening',
 			'companionRemote.connectedTo' => ({required Object name}) => 'Forbundet til ${name}',
 			'companionRemote.unknownDevice' => 'Ukendt enhed',
+			'companionRemote.playSentToDevice' => '',
 			'companionRemote.session.startingServer' => 'Starter fjernserver...',
 			'companionRemote.session.hostAddress' => 'Værtsadresse',
 			'companionRemote.session.connected' => 'Forbundet',

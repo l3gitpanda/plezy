@@ -541,6 +541,7 @@ class _TranslationsMediaMenuKo extends TranslationsMediaMenuEn {
 	@override String get rate => '평가';
 	@override String get playFromBeginning => '처음부터 재생';
 	@override String get playVersion => '버전 재생...';
+	@override String get playOnConnectedDevice => '';
 }
 
 // Path: rateSheet
@@ -1441,6 +1442,7 @@ class _TranslationsCompanionRemoteKo extends TranslationsCompanionRemoteEn {
 	@override String get title => '컴패니언 리모컨';
 	@override String connectedTo({required Object name}) => '${name}에 연결됨';
 	@override String get unknownDevice => '알 수 없는 기기';
+	@override String get playSentToDevice => '';
 	@override late final _TranslationsCompanionRemoteSessionKo session = _TranslationsCompanionRemoteSessionKo._(_root);
 	@override late final _TranslationsCompanionRemotePairingKo pairing = _TranslationsCompanionRemotePairingKo._(_root);
 	@override late final _TranslationsCompanionRemoteRemoteKo remote = _TranslationsCompanionRemoteRemoteKo._(_root);
@@ -2483,6 +2485,7 @@ extension on TranslationsKo {
 			'mediaMenu.rate' => '평가',
 			'mediaMenu.playFromBeginning' => '처음부터 재생',
 			'mediaMenu.playVersion' => '버전 재생...',
+			'mediaMenu.playOnConnectedDevice' => '',
 			'rateSheet.title' => '평가',
 			'rateSheet.server' => '서버',
 			'rateSheet.favorite' => '즐겨찾기',
@@ -2606,9 +2609,9 @@ extension on TranslationsKo {
 			'messages.noDescriptionAvailable' => '설명이 없습니다',
 			'messages.noProfilesAvailable' => '사용 가능한 프로필이 없습니다',
 			'messages.contactAdminForProfiles' => '프로필을 추가하려면 서버 관리자에게 문의하세요',
-			'messages.unableToDetermineLibrarySection' => '이 항목의 라이브러리 섹션을 확인할 수 없습니다',
 			_ => null,
 		} ?? switch (path) {
+			'messages.unableToDetermineLibrarySection' => '이 항목의 라이브러리 섹션을 확인할 수 없습니다',
 			'messages.logsCleared' => '로그가 삭제 되었습니다',
 			'messages.logsCopied' => '로그가 클립보드에 복사 되었습니다',
 			'messages.noLogsAvailable' => '사용 가능한 로그가 없습니다',
@@ -3120,9 +3123,9 @@ extension on TranslationsKo {
 			'downloads.downloadDeleted' => '다운로드 삭제됨',
 			'downloads.deleteConfirm' => ({required Object title}) => '이 기기에서 "${title}"을(를) 삭제할까요?',
 			'downloads.cancelledDownloadTitle' => '취소된 다운로드',
-			'downloads.cancelledDownloadMessage' => '이 다운로드가 취소되었습니다. 어떻게 하시겠습니까?',
 			_ => null,
 		} ?? switch (path) {
+			'downloads.cancelledDownloadMessage' => '이 다운로드가 취소되었습니다. 어떻게 하시겠습니까?',
 			'downloads.allEpisodesAlreadyDownloaded' => '모든 에피소드가 이미 다운로드되었습니다',
 			'downloads.resumeDownload' => '다운로드 재개',
 			'downloads.cancelledDownload' => '취소된 다운로드',
@@ -3188,6 +3191,7 @@ extension on TranslationsKo {
 			'companionRemote.title' => '컴패니언 리모컨',
 			'companionRemote.connectedTo' => ({required Object name}) => '${name}에 연결됨',
 			'companionRemote.unknownDevice' => '알 수 없는 기기',
+			'companionRemote.playSentToDevice' => '',
 			'companionRemote.session.startingServer' => '원격 서버 시작 중...',
 			'companionRemote.session.hostAddress' => '호스트 주소',
 			'companionRemote.session.connected' => '연결됨',

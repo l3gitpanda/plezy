@@ -541,6 +541,7 @@ class _TranslationsMediaMenuNb extends TranslationsMediaMenuEn {
 	@override String get rate => 'Vurder';
 	@override String get playFromBeginning => 'Spill fra begynnelsen';
 	@override String get playVersion => 'Spill av versjon...';
+	@override String get playOnConnectedDevice => '';
 }
 
 // Path: rateSheet
@@ -1443,6 +1444,7 @@ class _TranslationsCompanionRemoteNb extends TranslationsCompanionRemoteEn {
 	@override String get title => 'Følgesvenn-fjernkontroll';
 	@override String connectedTo({required Object name}) => 'Tilkoblet ${name}';
 	@override String get unknownDevice => 'Ukjent enhet';
+	@override String get playSentToDevice => '';
 	@override late final _TranslationsCompanionRemoteSessionNb session = _TranslationsCompanionRemoteSessionNb._(_root);
 	@override late final _TranslationsCompanionRemotePairingNb pairing = _TranslationsCompanionRemotePairingNb._(_root);
 	@override late final _TranslationsCompanionRemoteRemoteNb remote = _TranslationsCompanionRemoteRemoteNb._(_root);
@@ -2485,6 +2487,7 @@ extension on TranslationsNb {
 			'mediaMenu.rate' => 'Vurder',
 			'mediaMenu.playFromBeginning' => 'Spill fra begynnelsen',
 			'mediaMenu.playVersion' => 'Spill av versjon...',
+			'mediaMenu.playOnConnectedDevice' => '',
 			'rateSheet.title' => 'Vurder',
 			'rateSheet.server' => 'Server',
 			'rateSheet.favorite' => 'Favoritt',
@@ -2608,9 +2611,9 @@ extension on TranslationsNb {
 			'messages.noDescriptionAvailable' => 'Ingen beskrivelse tilgjengelig',
 			'messages.noProfilesAvailable' => 'Ingen profiler tilgjengelige',
 			'messages.contactAdminForProfiles' => 'Kontakt serveradministratoren din for å legge til profiler',
-			'messages.unableToDetermineLibrarySection' => 'Kan ikke fastslå bibliotekseksjonen for dette elementet',
 			_ => null,
 		} ?? switch (path) {
+			'messages.unableToDetermineLibrarySection' => 'Kan ikke fastslå bibliotekseksjonen for dette elementet',
 			'messages.logsCleared' => 'Logger tømt',
 			'messages.logsCopied' => 'Logger kopiert til utklippstavle',
 			'messages.noLogsAvailable' => 'Ingen logger tilgjengelig',
@@ -3122,9 +3125,9 @@ extension on TranslationsNb {
 			'downloads.downloadDeleted' => 'Nedlasting slettet',
 			'downloads.deleteConfirm' => ({required Object title}) => 'Slette "${title}" fra denne enheten?',
 			'downloads.cancelledDownloadTitle' => 'Avbrutt nedlasting',
-			'downloads.cancelledDownloadMessage' => 'Denne nedlastingen ble avbrutt. Hva vil du gjøre?',
 			_ => null,
 		} ?? switch (path) {
+			'downloads.cancelledDownloadMessage' => 'Denne nedlastingen ble avbrutt. Hva vil du gjøre?',
 			'downloads.allEpisodesAlreadyDownloaded' => 'Alle episoder er allerede lastet ned',
 			'downloads.resumeDownload' => 'Gjenoppta nedlasting',
 			'downloads.cancelledDownload' => 'Avbrutt nedlasting',
@@ -3190,6 +3193,7 @@ extension on TranslationsNb {
 			'companionRemote.title' => 'Følgesvenn-fjernkontroll',
 			'companionRemote.connectedTo' => ({required Object name}) => 'Tilkoblet ${name}',
 			'companionRemote.unknownDevice' => 'Ukjent enhet',
+			'companionRemote.playSentToDevice' => '',
 			'companionRemote.session.startingServer' => 'Starter fjernserver...',
 			'companionRemote.session.hostAddress' => 'Vertsadresse',
 			'companionRemote.session.connected' => 'Tilkoblet',

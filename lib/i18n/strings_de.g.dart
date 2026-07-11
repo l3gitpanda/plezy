@@ -541,6 +541,7 @@ class _TranslationsMediaMenuDe extends TranslationsMediaMenuEn {
 	@override String get rate => 'Bewerten';
 	@override String get playFromBeginning => 'Von Anfang an abspielen';
 	@override String get playVersion => 'Version abspielen...';
+	@override String get playOnConnectedDevice => '';
 }
 
 // Path: rateSheet
@@ -1443,6 +1444,7 @@ class _TranslationsCompanionRemoteDe extends TranslationsCompanionRemoteEn {
 	@override String get title => 'Companion-Fernbedienung';
 	@override String connectedTo({required Object name}) => 'Verbunden mit ${name}';
 	@override String get unknownDevice => 'Unbekanntes Gerät';
+	@override String get playSentToDevice => '';
 	@override late final _TranslationsCompanionRemoteSessionDe session = _TranslationsCompanionRemoteSessionDe._(_root);
 	@override late final _TranslationsCompanionRemotePairingDe pairing = _TranslationsCompanionRemotePairingDe._(_root);
 	@override late final _TranslationsCompanionRemoteRemoteDe remote = _TranslationsCompanionRemoteRemoteDe._(_root);
@@ -2485,6 +2487,7 @@ extension on TranslationsDe {
 			'mediaMenu.rate' => 'Bewerten',
 			'mediaMenu.playFromBeginning' => 'Von Anfang an abspielen',
 			'mediaMenu.playVersion' => 'Version abspielen...',
+			'mediaMenu.playOnConnectedDevice' => '',
 			'rateSheet.title' => 'Bewerten',
 			'rateSheet.server' => 'Server',
 			'rateSheet.favorite' => 'Favorit',
@@ -2608,9 +2611,9 @@ extension on TranslationsDe {
 			'messages.noDescriptionAvailable' => 'Keine Beschreibung verfügbar',
 			'messages.noProfilesAvailable' => 'Keine Profile verfügbar',
 			'messages.contactAdminForProfiles' => 'Kontaktiere deinen Serveradministrator, um Profile hinzuzufügen',
-			'messages.unableToDetermineLibrarySection' => 'Bibliotheksbereich für dieses Element kann nicht ermittelt werden',
 			_ => null,
 		} ?? switch (path) {
+			'messages.unableToDetermineLibrarySection' => 'Bibliotheksbereich für dieses Element kann nicht ermittelt werden',
 			'messages.logsCleared' => 'Protokolle gelöscht',
 			'messages.logsCopied' => 'Protokolle in Zwischenablage kopiert',
 			'messages.noLogsAvailable' => 'Keine Protokolle verfügbar',
@@ -3122,9 +3125,9 @@ extension on TranslationsDe {
 			'downloads.downloadDeleted' => 'Download gelöscht',
 			'downloads.deleteConfirm' => ({required Object title}) => '"${title}" von diesem Gerät löschen?',
 			'downloads.cancelledDownloadTitle' => 'Abgebrochener Download',
-			'downloads.cancelledDownloadMessage' => 'Dieser Download wurde abgebrochen. Was möchtest du tun?',
 			_ => null,
 		} ?? switch (path) {
+			'downloads.cancelledDownloadMessage' => 'Dieser Download wurde abgebrochen. Was möchtest du tun?',
 			'downloads.allEpisodesAlreadyDownloaded' => 'Alle Episoden sind bereits heruntergeladen',
 			'downloads.resumeDownload' => 'Download fortsetzen',
 			'downloads.cancelledDownload' => 'Abgebrochener Download',
@@ -3190,6 +3193,7 @@ extension on TranslationsDe {
 			'companionRemote.title' => 'Companion-Fernbedienung',
 			'companionRemote.connectedTo' => ({required Object name}) => 'Verbunden mit ${name}',
 			'companionRemote.unknownDevice' => 'Unbekanntes Gerät',
+			'companionRemote.playSentToDevice' => '',
 			'companionRemote.session.startingServer' => 'Remote-Server wird gestartet...',
 			'companionRemote.session.hostAddress' => 'Host-Adresse',
 			'companionRemote.session.connected' => 'Verbunden',

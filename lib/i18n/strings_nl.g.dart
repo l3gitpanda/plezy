@@ -541,6 +541,7 @@ class _TranslationsMediaMenuNl extends TranslationsMediaMenuEn {
 	@override String get rate => 'Beoordelen';
 	@override String get playFromBeginning => 'Afspelen vanaf het begin';
 	@override String get playVersion => 'Versie afspelen...';
+	@override String get playOnConnectedDevice => '';
 }
 
 // Path: rateSheet
@@ -1443,6 +1444,7 @@ class _TranslationsCompanionRemoteNl extends TranslationsCompanionRemoteEn {
 	@override String get title => 'Afstandsbediening';
 	@override String connectedTo({required Object name}) => 'Verbonden met ${name}';
 	@override String get unknownDevice => 'Onbekend apparaat';
+	@override String get playSentToDevice => '';
 	@override late final _TranslationsCompanionRemoteSessionNl session = _TranslationsCompanionRemoteSessionNl._(_root);
 	@override late final _TranslationsCompanionRemotePairingNl pairing = _TranslationsCompanionRemotePairingNl._(_root);
 	@override late final _TranslationsCompanionRemoteRemoteNl remote = _TranslationsCompanionRemoteRemoteNl._(_root);
@@ -2485,6 +2487,7 @@ extension on TranslationsNl {
 			'mediaMenu.rate' => 'Beoordelen',
 			'mediaMenu.playFromBeginning' => 'Afspelen vanaf het begin',
 			'mediaMenu.playVersion' => 'Versie afspelen...',
+			'mediaMenu.playOnConnectedDevice' => '',
 			'rateSheet.title' => 'Beoordelen',
 			'rateSheet.server' => 'Server',
 			'rateSheet.favorite' => 'Favoriet',
@@ -2608,9 +2611,9 @@ extension on TranslationsNl {
 			'messages.noDescriptionAvailable' => 'Geen beschrijving beschikbaar',
 			'messages.noProfilesAvailable' => 'Geen profielen beschikbaar',
 			'messages.contactAdminForProfiles' => 'Neem contact op met je serverbeheerder om profielen toe te voegen',
-			'messages.unableToDetermineLibrarySection' => 'Kan bibliotheeksectie voor dit item niet bepalen',
 			_ => null,
 		} ?? switch (path) {
+			'messages.unableToDetermineLibrarySection' => 'Kan bibliotheeksectie voor dit item niet bepalen',
 			'messages.logsCleared' => 'Logs gewist',
 			'messages.logsCopied' => 'Logs gekopieerd naar klembord',
 			'messages.noLogsAvailable' => 'Geen logs beschikbaar',
@@ -3122,9 +3125,9 @@ extension on TranslationsNl {
 			'downloads.downloadDeleted' => 'Download verwijderd',
 			'downloads.deleteConfirm' => ({required Object title}) => '"${title}" van dit apparaat verwijderen?',
 			'downloads.cancelledDownloadTitle' => 'Geannuleerde download',
-			'downloads.cancelledDownloadMessage' => 'Deze download is geannuleerd. Wat wil je doen?',
 			_ => null,
 		} ?? switch (path) {
+			'downloads.cancelledDownloadMessage' => 'Deze download is geannuleerd. Wat wil je doen?',
 			'downloads.allEpisodesAlreadyDownloaded' => 'Alle afleveringen zijn al gedownload',
 			'downloads.resumeDownload' => 'Download hervatten',
 			'downloads.cancelledDownload' => 'Geannuleerde download',
@@ -3190,6 +3193,7 @@ extension on TranslationsNl {
 			'companionRemote.title' => 'Afstandsbediening',
 			'companionRemote.connectedTo' => ({required Object name}) => 'Verbonden met ${name}',
 			'companionRemote.unknownDevice' => 'Onbekend apparaat',
+			'companionRemote.playSentToDevice' => '',
 			'companionRemote.session.startingServer' => 'Externe server starten...',
 			'companionRemote.session.hostAddress' => 'Hostadres',
 			'companionRemote.session.connected' => 'Verbonden',
