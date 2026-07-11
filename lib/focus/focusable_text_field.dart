@@ -855,6 +855,8 @@ class _FocusableTextInputHostState extends State<_FocusableTextInputHost> {
       obscureText: input.obscureText,
       maxLength: input.maxLength,
       maxLines: input.maxLines,
+      textCapitalization: input.textCapitalization,
+      autocorrect: input.autocorrect,
       onChanged: (text) {
         if (!mounted) return;
         widget.input.onChanged?.call(text);

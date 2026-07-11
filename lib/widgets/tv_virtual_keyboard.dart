@@ -6,6 +6,7 @@ import 'package:material_symbols_icons/symbols.dart';
 
 import '../focus/dpad_navigator.dart';
 import '../i18n/strings.g.dart';
+import '../services/apple_tv_native_keyboard.dart';
 import '../utils/platform_detector.dart';
 import 'clickable_cursor.dart';
 import 'listenable_selector.dart';
@@ -87,11 +88,34 @@ TvVirtualKeyboardHandle? showTvVirtualKeyboard({
   bool obscureText = false,
   int? maxLength,
   int? maxLines,
+  TextCapitalization textCapitalization = TextCapitalization.none,
+  bool autocorrect = true,
   ValueChanged<String>? onChanged,
   ValueChanged<String>? onSubmitted,
   VoidCallback? onAction,
 }) {
   if (!PlatformDetector.isTV()) return null;
+
+  // Apple TV has a native system keyboard (full-screen, with "Type with
+  // iPhone" and Siri Remote dictation) that we prefer for single-line
+  // fields. Multiline stays on the custom keyboard below because the tvOS
+  // system keyboard is single-line only.
+  if (PlatformDetector.isAppleTV() && !_isMultilineRequest(keyboardType: keyboardType, maxLines: maxLines)) {
+    return AppleTvNativeKeyboard.show(
+      controller: controller,
+      hintText: hintText,
+      keyboardType: keyboardType,
+      textInputAction: textInputAction,
+      inputFormatters: inputFormatters,
+      obscureText: obscureText,
+      maxLength: maxLength,
+      textCapitalization: textCapitalization,
+      autocorrect: autocorrect,
+      onChanged: onChanged,
+      onSubmitted: onSubmitted,
+      onAction: onAction,
+    );
+  }
 
   // A hand-built DialogRoute instead of showDialog so the caller gets a
   // handle it can close when the owning field unmounts. Use the nearest
@@ -122,6 +146,9 @@ TvVirtualKeyboardHandle? showTvVirtualKeyboard({
   unawaited(navigator.push(route));
   return TvVirtualKeyboardHandle._dialog(navigator, route);
 }
+
+bool _isMultilineRequest({TextInputType? keyboardType, int? maxLines}) =>
+    keyboardType?.index == TextInputType.multiline.index || (maxLines != null && maxLines != 1);
 
 enum _TvKeyType { spacer, character, shift, symbols, space, newline, backspace, clear, cancel, done }
 
