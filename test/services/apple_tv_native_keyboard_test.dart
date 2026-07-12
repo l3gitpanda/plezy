@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:plezy/services/apple_tv_native_keyboard.dart';
 import 'package:plezy/utils/platform_detector.dart';
 import 'package:plezy/widgets/tv_virtual_keyboard.dart';
 
@@ -19,11 +20,16 @@ void main() {
       calls.add(call);
       return null;
     });
+    // `_nativeKeyboardUnavailable` is a static flag that persists across
+    // tests in this isolate — reset it so the fallback tests below don't
+    // leak into unrelated tests (and vice versa).
+    AppleTvNativeKeyboard.debugResetNativeKeyboardUnavailable();
   });
 
   tearDown(() {
     TvDetectionService.debugSetAppleTVOverride(null);
     setHandler(null);
+    AppleTvNativeKeyboard.debugResetNativeKeyboardUnavailable();
   });
 
   group('AppleTvNativeKeyboard', () {
@@ -122,6 +128,68 @@ void main() {
       final updateCalls = calls.where((call) => call.method == 'update').toList();
       expect(updateCalls, hasLength(1));
       expect((updateCalls.single.arguments as Map)['text'], '1');
+    });
+
+    testWidgets('simulated presentFailed completes closed and falls back to the custom keyboard next open', (
+      tester,
+    ) async {
+      final context = await _pumpAppleTvContext(tester);
+      final controller = TextEditingController();
+      addTearDown(controller.dispose);
+
+      final handle = showTvVirtualKeyboard(context: context, controller: controller);
+      await tester.pump();
+
+      final requestId = _requestIdOf(calls);
+      await _sendNativeCall('presentFailed', {'requestId': requestId});
+
+      expect(AppleTvNativeKeyboard.isKnownUnavailable, isTrue);
+      await expectLater(handle!.closed, completes);
+
+      final showCallCountBefore = calls.where((call) => call.method == 'show').length;
+
+      final secondController = TextEditingController();
+      addTearDown(secondController.dispose);
+      final secondHandle = showTvVirtualKeyboard(context: context, controller: secondController);
+      addTearDown(() => secondHandle?.close());
+      await tester.pumpAndSettle();
+
+      expect(find.byType(Dialog), findsOneWidget);
+      expect(calls.where((call) => call.method == 'show').length, showCallCountBefore);
+    });
+
+    testWidgets('show invoke throwing marks the native keyboard unavailable and falls back next open', (
+      tester,
+    ) async {
+      setHandler((call) async {
+        calls.add(call);
+        if (call.method == 'show') {
+          throw PlatformException(code: 'UNAVAILABLE');
+        }
+        return null;
+      });
+
+      final context = await _pumpAppleTvContext(tester);
+      final controller = TextEditingController();
+      addTearDown(controller.dispose);
+
+      showTvVirtualKeyboard(context: context, controller: controller);
+      // Let the `show` invoke's Future reject and the `.catchError` run.
+      await tester.pump();
+      await tester.pump();
+
+      expect(AppleTvNativeKeyboard.isKnownUnavailable, isTrue);
+
+      final showCallCountBefore = calls.where((call) => call.method == 'show').length;
+
+      final secondController = TextEditingController();
+      addTearDown(secondController.dispose);
+      final secondHandle = showTvVirtualKeyboard(context: context, controller: secondController);
+      addTearDown(() => secondHandle?.close());
+      await tester.pumpAndSettle();
+
+      expect(find.byType(Dialog), findsOneWidget);
+      expect(calls.where((call) => call.method == 'show').length, showCallCountBefore);
     });
   });
 }

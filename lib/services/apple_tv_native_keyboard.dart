@@ -19,6 +19,21 @@ class AppleTvNativeKeyboard {
   static _Session? _activeSession;
   static bool _handlerInstalled = false;
 
+  // Once the native keyboard has failed to present (or the channel itself
+  // is unreachable), stop trying it for the rest of the app session —
+  // `showTvVirtualKeyboard` checks this to fall back to the custom
+  // on-screen keyboard instead of silently doing nothing.
+  static bool _nativeKeyboardUnavailable = false;
+
+  /// Whether the native tvOS keyboard is known to be unusable this session
+  /// (channel missing/threw, or the platform side failed to present it).
+  static bool get isKnownUnavailable => _nativeKeyboardUnavailable;
+
+  @visibleForTesting
+  static void debugResetNativeKeyboardUnavailable() {
+    _nativeKeyboardUnavailable = false;
+  }
+
   static TvVirtualKeyboardHandle show({
     required TextEditingController controller,
     String? hintText,
@@ -70,6 +85,7 @@ class AppleTvNativeKeyboard {
           })
           .catchError((Object error) {
             _log('show failed requestId=$requestId error=$error');
+            _nativeKeyboardUnavailable = true;
             session._finish();
           }),
     );
@@ -113,6 +129,14 @@ class AppleTvNativeKeyboard {
         session._applyNativeText(arguments?['text'] as String? ?? '');
         session._submit();
       case 'closed':
+        session._finish();
+      case 'presentFailed':
+        // The platform side could not make the hidden field first responder
+        // (e.g. tvOS focus engine contention) — stop trying the native
+        // keyboard and let this session close so its caller falls back to
+        // the custom on-screen keyboard.
+        _log('presentFailed requestId=$requestId — native keyboard unavailable');
+        _nativeKeyboardUnavailable = true;
         session._finish();
     }
   }

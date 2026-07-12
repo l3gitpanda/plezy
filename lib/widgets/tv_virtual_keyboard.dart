@@ -99,8 +99,13 @@ TvVirtualKeyboardHandle? showTvVirtualKeyboard({
   // Apple TV has a native system keyboard (full-screen, with "Type with
   // iPhone" and Siri Remote dictation) that we prefer for single-line
   // fields. Multiline stays on the custom keyboard below because the tvOS
-  // system keyboard is single-line only.
-  if (PlatformDetector.isAppleTV() && !_isMultilineRequest(keyboardType: keyboardType, maxLines: maxLines)) {
+  // system keyboard is single-line only. If the native keyboard has already
+  // failed once this session (channel missing, or the platform couldn't
+  // present it), self-heal by falling back to the custom keyboard for every
+  // subsequent open instead of leaving the user with no keyboard at all.
+  if (PlatformDetector.isAppleTV() &&
+      !AppleTvNativeKeyboard.isKnownUnavailable &&
+      !_isMultilineRequest(keyboardType: keyboardType, maxLines: maxLines)) {
     return AppleTvNativeKeyboard.show(
       controller: controller,
       hintText: hintText,
