@@ -24,17 +24,17 @@ void main() {
 
   setUp(() {
     resetSharedPreferencesForTest();
-    TvDetectionService.debugSetAppleTVOverride(null);
+    TvDetectionService.debugSetTvOverride(null);
     LocaleSettings.setLocaleSync(AppLocale.en);
   });
 
   tearDown(() {
-    TvDetectionService.debugSetAppleTVOverride(null);
+    TvDetectionService.debugSetTvOverride(null);
     PlatformDetector.debugSetIsDesktopOSOverride(null);
   });
 
   testWidgets('remote back pops the manage profile page', (tester) async {
-    TvDetectionService.debugSetAppleTVOverride(true);
+    TvDetectionService.debugSetTvOverride(true);
     // Simulated TV device, not desktop force-TV: keep locked keyboard mode.
     PlatformDetector.debugSetIsDesktopOSOverride(false);
     final db = AppDatabase.forTesting(NativeDatabase.memory());
