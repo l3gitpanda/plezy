@@ -30,6 +30,11 @@ import UIKit
     private func makeTextField() -> UITextField {
       let field = UITextField(frame: CGRect(x: 0, y: 0, width: 1, height: 1))
       field.alpha = 0.01
+      // At-rest/disabled ↔ session/enabled contract: interaction stays disabled here so the
+      // tvOS focus engine never lands on this field during normal dpad navigation. `handleShow`
+      // flips it on for the duration of a keyboard session — `becomeFirstResponder()` silently
+      // fails while interaction is disabled — and it is flipped back off as soon as the session
+      // ends (submit, dismiss, or a failed presentation).
       field.isUserInteractionEnabled = false
       field.delegate = self
       field.addTarget(self, action: #selector(textDidChange), for: .editingChanged)
@@ -69,7 +74,13 @@ import UIKit
 
       DispatchQueue.main.async { [weak self] in
         guard let self, self.session?.requestId == requestId else { return }
-        self.textField.becomeFirstResponder()
+        self.textField.isUserInteractionEnabled = true
+        if !self.textField.becomeFirstResponder() {
+          self.textField.isUserInteractionEnabled = false
+          // Dart falls back to the custom on-screen keyboard on this signal.
+          self.channel.invokeMethod("presentFailed", arguments: ["requestId": requestId])
+          self.session = nil
+        }
       }
     }
 
@@ -98,6 +109,7 @@ import UIKit
         // a keyboard for a session Dart has already torn down.
         channel.invokeMethod("closed", arguments: ["requestId": requestId])
         session = nil
+        textField.isUserInteractionEnabled = false
       }
       result(nil)
     }
@@ -176,6 +188,7 @@ import UIKit
       }
       justSubmitted = false
       self.session = nil
+      textField.isUserInteractionEnabled = false
       resolveRootViewController()?.becomeFirstResponder()
     }
 
