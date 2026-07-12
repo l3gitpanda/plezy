@@ -908,7 +908,7 @@
     "reloadGuide": "Перезагрузить программу",
     "searchGuide": "",
     "searchHint": "",
-    "searchNoResults": "",
+    "searchNoResults": "No matches for \"${query}\"",
     "channelsSection": "",
     "programsSection": "",
     "now": "Сейчас",
@@ -1196,7 +1196,7 @@
     "title": "Пульт управления",
     "connectedTo": "Подключено к ${name}",
     "unknownDevice": "Неизвестное устройство",
-    "playSentToDevice": "",
+    "playSentToDevice": "Sent to ${device}",
     "session": {
       "startingServer": "Запуск удалённого сервера...",
       "hostAddress": "Адрес хоста",

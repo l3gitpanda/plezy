@@ -1113,7 +1113,7 @@ class _TranslationsLiveTvZh extends TranslationsLiveTvEn {
 	@override String get reloadGuide => '重新加载节目指南';
 	@override String get searchGuide => '';
 	@override String get searchHint => '';
-	@override String get searchNoResults => '';
+	@override String searchNoResults({required Object query}) => 'No matches for "${query}"';
 	@override String get channelsSection => '';
 	@override String get programsSection => '';
 	@override String get now => '现在';
@@ -1447,7 +1447,7 @@ class _TranslationsCompanionRemoteZh extends TranslationsCompanionRemoteEn {
 	@override String get title => '伴侣遥控';
 	@override String connectedTo({required Object name}) => '已连接到 ${name}';
 	@override String get unknownDevice => '未知设备';
-	@override String get playSentToDevice => '';
+	@override String playSentToDevice({required Object device}) => 'Sent to ${device}';
 	@override late final _TranslationsCompanionRemoteSessionZh session = _TranslationsCompanionRemoteSessionZh._(_root);
 	@override late final _TranslationsCompanionRemotePairingZh pairing = _TranslationsCompanionRemotePairingZh._(_root);
 	@override late final _TranslationsCompanionRemoteRemoteZh remote = _TranslationsCompanionRemoteRemoteZh._(_root);
@@ -2931,7 +2931,7 @@ extension on TranslationsZh {
 			'liveTv.reloadGuide' => '重新加载节目指南',
 			'liveTv.searchGuide' => '',
 			'liveTv.searchHint' => '',
-			'liveTv.searchNoResults' => '',
+			'liveTv.searchNoResults' => ({required Object query}) => 'No matches for "${query}"',
 			'liveTv.channelsSection' => '',
 			'liveTv.programsSection' => '',
 			'liveTv.now' => '现在',
@@ -3202,7 +3202,7 @@ extension on TranslationsZh {
 			'companionRemote.title' => '伴侣遥控',
 			'companionRemote.connectedTo' => ({required Object name}) => '已连接到 ${name}',
 			'companionRemote.unknownDevice' => '未知设备',
-			'companionRemote.playSentToDevice' => '',
+			'companionRemote.playSentToDevice' => ({required Object device}) => 'Sent to ${device}',
 			'companionRemote.session.startingServer' => '正在启动远程服务器...',
 			'companionRemote.session.hostAddress' => '主机地址',
 			'companionRemote.session.connected' => '已连接',

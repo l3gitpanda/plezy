@@ -906,7 +906,7 @@
     "reloadGuide": "Ricarica guida",
     "searchGuide": "",
     "searchHint": "",
-    "searchNoResults": "",
+    "searchNoResults": "No matches for \"${query}\"",
     "channelsSection": "",
     "programsSection": "",
     "now": "Ora",
@@ -1192,7 +1192,7 @@
     "title": "Telecomando",
     "connectedTo": "Connesso a ${name}",
     "unknownDevice": "Dispositivo sconosciuto",
-    "playSentToDevice": "",
+    "playSentToDevice": "Sent to ${device}",
     "session": {
       "startingServer": "Avvio del server remoto...",
       "hostAddress": "Indirizzo host",

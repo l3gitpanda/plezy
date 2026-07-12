@@ -1114,7 +1114,7 @@ class _TranslationsLiveTvSv extends TranslationsLiveTvEn {
 	@override String get reloadGuide => 'Ladda om programguide';
 	@override String get searchGuide => '';
 	@override String get searchHint => '';
-	@override String get searchNoResults => '';
+	@override String searchNoResults({required Object query}) => 'No matches for "${query}"';
 	@override String get channelsSection => '';
 	@override String get programsSection => '';
 	@override String get now => 'Nu';
@@ -1449,7 +1449,7 @@ class _TranslationsCompanionRemoteSv extends TranslationsCompanionRemoteEn {
 	@override String get title => 'Fjärrkontroll';
 	@override String connectedTo({required Object name}) => 'Ansluten till ${name}';
 	@override String get unknownDevice => 'Okänd enhet';
-	@override String get playSentToDevice => '';
+	@override String playSentToDevice({required Object device}) => 'Sent to ${device}';
 	@override late final _TranslationsCompanionRemoteSessionSv session = _TranslationsCompanionRemoteSessionSv._(_root);
 	@override late final _TranslationsCompanionRemotePairingSv pairing = _TranslationsCompanionRemotePairingSv._(_root);
 	@override late final _TranslationsCompanionRemoteRemoteSv remote = _TranslationsCompanionRemoteRemoteSv._(_root);
@@ -2933,7 +2933,7 @@ extension on TranslationsSv {
 			'liveTv.reloadGuide' => 'Ladda om programguide',
 			'liveTv.searchGuide' => '',
 			'liveTv.searchHint' => '',
-			'liveTv.searchNoResults' => '',
+			'liveTv.searchNoResults' => ({required Object query}) => 'No matches for "${query}"',
 			'liveTv.channelsSection' => '',
 			'liveTv.programsSection' => '',
 			'liveTv.now' => 'Nu',
@@ -3204,7 +3204,7 @@ extension on TranslationsSv {
 			'companionRemote.title' => 'Fjärrkontroll',
 			'companionRemote.connectedTo' => ({required Object name}) => 'Ansluten till ${name}',
 			'companionRemote.unknownDevice' => 'Okänd enhet',
-			'companionRemote.playSentToDevice' => '',
+			'companionRemote.playSentToDevice' => ({required Object device}) => 'Sent to ${device}',
 			'companionRemote.session.startingServer' => 'Startar fjärrserver...',
 			'companionRemote.session.hostAddress' => 'Värdadress',
 			'companionRemote.session.connected' => 'Ansluten',

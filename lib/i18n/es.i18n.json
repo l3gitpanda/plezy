@@ -906,7 +906,7 @@
     "reloadGuide": "Recargar guía",
     "searchGuide": "",
     "searchHint": "",
-    "searchNoResults": "",
+    "searchNoResults": "No matches for \"${query}\"",
     "channelsSection": "",
     "programsSection": "",
     "now": "Ahora",
@@ -1192,7 +1192,7 @@
     "title": "Control remoto",
     "connectedTo": "Conectado a ${name}",
     "unknownDevice": "Dispositivo desconocido",
-    "playSentToDevice": "",
+    "playSentToDevice": "Sent to ${device}",
     "session": {
       "startingServer": "Iniciando servidor remoto...",
       "hostAddress": "Dirección del host",

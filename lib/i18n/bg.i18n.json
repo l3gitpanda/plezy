@@ -906,7 +906,7 @@
     "reloadGuide": "Презареди ТВ програмата",
     "searchGuide": "",
     "searchHint": "",
-    "searchNoResults": "",
+    "searchNoResults": "No matches for \"${query}\"",
     "channelsSection": "",
     "programsSection": "",
     "now": "Сега",
@@ -1192,7 +1192,7 @@
     "title": "Дистанционно управление",
     "connectedTo": "Свързан към ${name}",
     "unknownDevice": "Непознато устройство",
-    "playSentToDevice": "",
+    "playSentToDevice": "Sent to ${device}",
     "session": {
       "startingServer": "Стартиране на сървър за дистанционно управление...",
       "hostAddress": "Адрес на хоста",

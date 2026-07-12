@@ -1114,7 +1114,7 @@ class _TranslationsLiveTvPt extends TranslationsLiveTvEn {
 	@override String get reloadGuide => 'Recarregar Guia';
 	@override String get searchGuide => '';
 	@override String get searchHint => '';
-	@override String get searchNoResults => '';
+	@override String searchNoResults({required Object query}) => 'No matches for "${query}"';
 	@override String get channelsSection => '';
 	@override String get programsSection => '';
 	@override String get now => 'Agora';
@@ -1449,7 +1449,7 @@ class _TranslationsCompanionRemotePt extends TranslationsCompanionRemoteEn {
 	@override String get title => 'Controle Remoto';
 	@override String connectedTo({required Object name}) => 'Conectado a ${name}';
 	@override String get unknownDevice => 'Dispositivo desconhecido';
-	@override String get playSentToDevice => '';
+	@override String playSentToDevice({required Object device}) => 'Sent to ${device}';
 	@override late final _TranslationsCompanionRemoteSessionPt session = _TranslationsCompanionRemoteSessionPt._(_root);
 	@override late final _TranslationsCompanionRemotePairingPt pairing = _TranslationsCompanionRemotePairingPt._(_root);
 	@override late final _TranslationsCompanionRemoteRemotePt remote = _TranslationsCompanionRemoteRemotePt._(_root);
@@ -2933,7 +2933,7 @@ extension on TranslationsPt {
 			'liveTv.reloadGuide' => 'Recarregar Guia',
 			'liveTv.searchGuide' => '',
 			'liveTv.searchHint' => '',
-			'liveTv.searchNoResults' => '',
+			'liveTv.searchNoResults' => ({required Object query}) => 'No matches for "${query}"',
 			'liveTv.channelsSection' => '',
 			'liveTv.programsSection' => '',
 			'liveTv.now' => 'Agora',
@@ -3204,7 +3204,7 @@ extension on TranslationsPt {
 			'companionRemote.title' => 'Controle Remoto',
 			'companionRemote.connectedTo' => ({required Object name}) => 'Conectado a ${name}',
 			'companionRemote.unknownDevice' => 'Dispositivo desconhecido',
-			'companionRemote.playSentToDevice' => '',
+			'companionRemote.playSentToDevice' => ({required Object device}) => 'Sent to ${device}',
 			'companionRemote.session.startingServer' => 'A iniciar servidor remoto...',
 			'companionRemote.session.hostAddress' => 'Endereço do host',
 			'companionRemote.session.connected' => 'Conectado',

@@ -1114,7 +1114,7 @@ class _TranslationsLiveTvNb extends TranslationsLiveTvEn {
 	@override String get reloadGuide => 'Last inn programguide på nytt';
 	@override String get searchGuide => '';
 	@override String get searchHint => '';
-	@override String get searchNoResults => '';
+	@override String searchNoResults({required Object query}) => 'No matches for "${query}"';
 	@override String get channelsSection => '';
 	@override String get programsSection => '';
 	@override String get now => 'Nå';
@@ -1449,7 +1449,7 @@ class _TranslationsCompanionRemoteNb extends TranslationsCompanionRemoteEn {
 	@override String get title => 'Følgesvenn-fjernkontroll';
 	@override String connectedTo({required Object name}) => 'Tilkoblet ${name}';
 	@override String get unknownDevice => 'Ukjent enhet';
-	@override String get playSentToDevice => '';
+	@override String playSentToDevice({required Object device}) => 'Sent to ${device}';
 	@override late final _TranslationsCompanionRemoteSessionNb session = _TranslationsCompanionRemoteSessionNb._(_root);
 	@override late final _TranslationsCompanionRemotePairingNb pairing = _TranslationsCompanionRemotePairingNb._(_root);
 	@override late final _TranslationsCompanionRemoteRemoteNb remote = _TranslationsCompanionRemoteRemoteNb._(_root);
@@ -2933,7 +2933,7 @@ extension on TranslationsNb {
 			'liveTv.reloadGuide' => 'Last inn programguide på nytt',
 			'liveTv.searchGuide' => '',
 			'liveTv.searchHint' => '',
-			'liveTv.searchNoResults' => '',
+			'liveTv.searchNoResults' => ({required Object query}) => 'No matches for "${query}"',
 			'liveTv.channelsSection' => '',
 			'liveTv.programsSection' => '',
 			'liveTv.now' => 'Nå',
@@ -3204,7 +3204,7 @@ extension on TranslationsNb {
 			'companionRemote.title' => 'Følgesvenn-fjernkontroll',
 			'companionRemote.connectedTo' => ({required Object name}) => 'Tilkoblet ${name}',
 			'companionRemote.unknownDevice' => 'Ukjent enhet',
-			'companionRemote.playSentToDevice' => '',
+			'companionRemote.playSentToDevice' => ({required Object device}) => 'Sent to ${device}',
 			'companionRemote.session.startingServer' => 'Starter fjernserver...',
 			'companionRemote.session.hostAddress' => 'Vertsadresse',
 			'companionRemote.session.connected' => 'Tilkoblet',

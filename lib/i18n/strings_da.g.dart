@@ -1114,7 +1114,7 @@ class _TranslationsLiveTvDa extends TranslationsLiveTvEn {
 	@override String get reloadGuide => 'Genindlæs guide';
 	@override String get searchGuide => '';
 	@override String get searchHint => '';
-	@override String get searchNoResults => '';
+	@override String searchNoResults({required Object query}) => 'No matches for "${query}"';
 	@override String get channelsSection => '';
 	@override String get programsSection => '';
 	@override String get now => 'Nu';
@@ -1449,7 +1449,7 @@ class _TranslationsCompanionRemoteDa extends TranslationsCompanionRemoteEn {
 	@override String get title => 'Fjernbetjening';
 	@override String connectedTo({required Object name}) => 'Forbundet til ${name}';
 	@override String get unknownDevice => 'Ukendt enhed';
-	@override String get playSentToDevice => '';
+	@override String playSentToDevice({required Object device}) => 'Sent to ${device}';
 	@override late final _TranslationsCompanionRemoteSessionDa session = _TranslationsCompanionRemoteSessionDa._(_root);
 	@override late final _TranslationsCompanionRemotePairingDa pairing = _TranslationsCompanionRemotePairingDa._(_root);
 	@override late final _TranslationsCompanionRemoteRemoteDa remote = _TranslationsCompanionRemoteRemoteDa._(_root);
@@ -2933,7 +2933,7 @@ extension on TranslationsDa {
 			'liveTv.reloadGuide' => 'Genindlæs guide',
 			'liveTv.searchGuide' => '',
 			'liveTv.searchHint' => '',
-			'liveTv.searchNoResults' => '',
+			'liveTv.searchNoResults' => ({required Object query}) => 'No matches for "${query}"',
 			'liveTv.channelsSection' => '',
 			'liveTv.programsSection' => '',
 			'liveTv.now' => 'Nu',
@@ -3204,7 +3204,7 @@ extension on TranslationsDa {
 			'companionRemote.title' => 'Fjernbetjening',
 			'companionRemote.connectedTo' => ({required Object name}) => 'Forbundet til ${name}',
 			'companionRemote.unknownDevice' => 'Ukendt enhed',
-			'companionRemote.playSentToDevice' => '',
+			'companionRemote.playSentToDevice' => ({required Object device}) => 'Sent to ${device}',
 			'companionRemote.session.startingServer' => 'Starter fjernserver...',
 			'companionRemote.session.hostAddress' => 'Værtsadresse',
 			'companionRemote.session.connected' => 'Forbundet',

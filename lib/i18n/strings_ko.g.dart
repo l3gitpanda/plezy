@@ -1113,7 +1113,7 @@ class _TranslationsLiveTvKo extends TranslationsLiveTvEn {
 	@override String get reloadGuide => '편성표 새로고침';
 	@override String get searchGuide => '';
 	@override String get searchHint => '';
-	@override String get searchNoResults => '';
+	@override String searchNoResults({required Object query}) => 'No matches for "${query}"';
 	@override String get channelsSection => '';
 	@override String get programsSection => '';
 	@override String get now => '지금';
@@ -1447,7 +1447,7 @@ class _TranslationsCompanionRemoteKo extends TranslationsCompanionRemoteEn {
 	@override String get title => '컴패니언 리모컨';
 	@override String connectedTo({required Object name}) => '${name}에 연결됨';
 	@override String get unknownDevice => '알 수 없는 기기';
-	@override String get playSentToDevice => '';
+	@override String playSentToDevice({required Object device}) => 'Sent to ${device}';
 	@override late final _TranslationsCompanionRemoteSessionKo session = _TranslationsCompanionRemoteSessionKo._(_root);
 	@override late final _TranslationsCompanionRemotePairingKo pairing = _TranslationsCompanionRemotePairingKo._(_root);
 	@override late final _TranslationsCompanionRemoteRemoteKo remote = _TranslationsCompanionRemoteRemoteKo._(_root);
@@ -2931,7 +2931,7 @@ extension on TranslationsKo {
 			'liveTv.reloadGuide' => '편성표 새로고침',
 			'liveTv.searchGuide' => '',
 			'liveTv.searchHint' => '',
-			'liveTv.searchNoResults' => '',
+			'liveTv.searchNoResults' => ({required Object query}) => 'No matches for "${query}"',
 			'liveTv.channelsSection' => '',
 			'liveTv.programsSection' => '',
 			'liveTv.now' => '지금',
@@ -3202,7 +3202,7 @@ extension on TranslationsKo {
 			'companionRemote.title' => '컴패니언 리모컨',
 			'companionRemote.connectedTo' => ({required Object name}) => '${name}에 연결됨',
 			'companionRemote.unknownDevice' => '알 수 없는 기기',
-			'companionRemote.playSentToDevice' => '',
+			'companionRemote.playSentToDevice' => ({required Object device}) => 'Sent to ${device}',
 			'companionRemote.session.startingServer' => '원격 서버 시작 중...',
 			'companionRemote.session.hostAddress' => '호스트 주소',
 			'companionRemote.session.connected' => '연결됨',

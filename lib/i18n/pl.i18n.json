@@ -908,7 +908,7 @@
     "reloadGuide": "Odśwież przewodnik",
     "searchGuide": "",
     "searchHint": "",
-    "searchNoResults": "",
+    "searchNoResults": "No matches for \"${query}\"",
     "channelsSection": "",
     "programsSection": "",
     "now": "Teraz",
@@ -1196,7 +1196,7 @@
     "title": "Pilot zdalny",
     "connectedTo": "Połączono z ${name}",
     "unknownDevice": "Nieznane urządzenie",
-    "playSentToDevice": "",
+    "playSentToDevice": "Sent to ${device}",
     "session": {
       "startingServer": "Uruchamianie serwera zdalnego...",
       "hostAddress": "Adres hosta",

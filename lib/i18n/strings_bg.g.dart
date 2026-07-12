@@ -1114,7 +1114,7 @@ class _TranslationsLiveTvBg extends TranslationsLiveTvEn {
 	@override String get reloadGuide => 'Презареди ТВ програмата';
 	@override String get searchGuide => '';
 	@override String get searchHint => '';
-	@override String get searchNoResults => '';
+	@override String searchNoResults({required Object query}) => 'No matches for "${query}"';
 	@override String get channelsSection => '';
 	@override String get programsSection => '';
 	@override String get now => 'Сега';
@@ -1449,7 +1449,7 @@ class _TranslationsCompanionRemoteBg extends TranslationsCompanionRemoteEn {
 	@override String get title => 'Дистанционно управление';
 	@override String connectedTo({required Object name}) => 'Свързан към ${name}';
 	@override String get unknownDevice => 'Непознато устройство';
-	@override String get playSentToDevice => '';
+	@override String playSentToDevice({required Object device}) => 'Sent to ${device}';
 	@override late final _TranslationsCompanionRemoteSessionBg session = _TranslationsCompanionRemoteSessionBg._(_root);
 	@override late final _TranslationsCompanionRemotePairingBg pairing = _TranslationsCompanionRemotePairingBg._(_root);
 	@override late final _TranslationsCompanionRemoteRemoteBg remote = _TranslationsCompanionRemoteRemoteBg._(_root);
@@ -2933,7 +2933,7 @@ extension on TranslationsBg {
 			'liveTv.reloadGuide' => 'Презареди ТВ програмата',
 			'liveTv.searchGuide' => '',
 			'liveTv.searchHint' => '',
-			'liveTv.searchNoResults' => '',
+			'liveTv.searchNoResults' => ({required Object query}) => 'No matches for "${query}"',
 			'liveTv.channelsSection' => '',
 			'liveTv.programsSection' => '',
 			'liveTv.now' => 'Сега',
@@ -3204,7 +3204,7 @@ extension on TranslationsBg {
 			'companionRemote.title' => 'Дистанционно управление',
 			'companionRemote.connectedTo' => ({required Object name}) => 'Свързан към ${name}',
 			'companionRemote.unknownDevice' => 'Непознато устройство',
-			'companionRemote.playSentToDevice' => '',
+			'companionRemote.playSentToDevice' => ({required Object device}) => 'Sent to ${device}',
 			'companionRemote.session.startingServer' => 'Стартиране на сървър за дистанционно управление...',
 			'companionRemote.session.hostAddress' => 'Адрес на хоста',
 			'companionRemote.session.connected' => 'Свързан',

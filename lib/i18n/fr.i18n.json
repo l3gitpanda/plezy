@@ -906,7 +906,7 @@
     "reloadGuide": "Recharger le guide",
     "searchGuide": "",
     "searchHint": "",
-    "searchNoResults": "",
+    "searchNoResults": "No matches for \"${query}\"",
     "channelsSection": "",
     "programsSection": "",
     "now": "Maintenant",
@@ -1192,7 +1192,7 @@
     "title": "Télécommande compagnon",
     "connectedTo": "Connecté à ${name}",
     "unknownDevice": "Appareil inconnu",
-    "playSentToDevice": "",
+    "playSentToDevice": "Sent to ${device}",
     "session": {
       "startingServer": "Démarrage du serveur distant...",
       "hostAddress": "Adresse de l'hôte",

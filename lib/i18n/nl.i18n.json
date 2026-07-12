@@ -906,7 +906,7 @@
     "reloadGuide": "Gids herladen",
     "searchGuide": "",
     "searchHint": "",
-    "searchNoResults": "",
+    "searchNoResults": "No matches for \"${query}\"",
     "channelsSection": "",
     "programsSection": "",
     "now": "Nu",
@@ -1192,7 +1192,7 @@
     "title": "Afstandsbediening",
     "connectedTo": "Verbonden met ${name}",
     "unknownDevice": "Onbekend apparaat",
-    "playSentToDevice": "",
+    "playSentToDevice": "Sent to ${device}",
     "session": {
       "startingServer": "Externe server starten...",
       "hostAddress": "Hostadres",

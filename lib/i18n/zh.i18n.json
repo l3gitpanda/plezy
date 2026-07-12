@@ -905,7 +905,7 @@
     "reloadGuide": "重新加载节目指南",
     "searchGuide": "",
     "searchHint": "",
-    "searchNoResults": "",
+    "searchNoResults": "No matches for \"${query}\"",
     "channelsSection": "",
     "programsSection": "",
     "now": "现在",
@@ -1190,7 +1190,7 @@
     "title": "伴侣遥控",
     "connectedTo": "已连接到 ${name}",
     "unknownDevice": "未知设备",
-    "playSentToDevice": "",
+    "playSentToDevice": "Sent to ${device}",
     "session": {
       "startingServer": "正在启动远程服务器...",
       "hostAddress": "主机地址",

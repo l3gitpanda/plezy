@@ -906,7 +906,7 @@
     "reloadGuide": "Last inn programguide på nytt",
     "searchGuide": "",
     "searchHint": "",
-    "searchNoResults": "",
+    "searchNoResults": "No matches for \"${query}\"",
     "channelsSection": "",
     "programsSection": "",
     "now": "Nå",
@@ -1192,7 +1192,7 @@
     "title": "Følgesvenn-fjernkontroll",
     "connectedTo": "Tilkoblet ${name}",
     "unknownDevice": "Ukjent enhet",
-    "playSentToDevice": "",
+    "playSentToDevice": "Sent to ${device}",
     "session": {
       "startingServer": "Starter fjernserver...",
       "hostAddress": "Vertsadresse",

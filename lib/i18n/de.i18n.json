@@ -906,7 +906,7 @@
     "reloadGuide": "Programmführer neu laden",
     "searchGuide": "",
     "searchHint": "",
-    "searchNoResults": "",
+    "searchNoResults": "No matches for \"${query}\"",
     "channelsSection": "",
     "programsSection": "",
     "now": "Jetzt",
@@ -1192,7 +1192,7 @@
     "title": "Companion-Fernbedienung",
     "connectedTo": "Verbunden mit ${name}",
     "unknownDevice": "Unbekanntes Gerät",
-    "playSentToDevice": "",
+    "playSentToDevice": "Sent to ${device}",
     "session": {
       "startingServer": "Remote-Server wird gestartet...",
       "hostAddress": "Host-Adresse",
