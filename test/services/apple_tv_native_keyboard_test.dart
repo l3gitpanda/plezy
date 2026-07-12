@@ -2,13 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:plezy/services/apple_tv_native_keyboard.dart';
+import 'package:plezy/services/tvos_system_navigation_service.dart';
 import 'package:plezy/utils/platform_detector.dart';
 import 'package:plezy/widgets/tv_virtual_keyboard.dart';
 
 const _channel = MethodChannel('com.plezy/native_keyboard');
+const _navChannel = BasicMessageChannel<Object?>('flutter/tvos_system_navigation', JSONMessageCodec());
 
 void main() {
   late List<MethodCall> calls;
+  late List<Object?> navMessages;
 
   void setHandler(Future<dynamic> Function(MethodCall call)? handler) {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(_channel, handler);
@@ -20,16 +23,30 @@ void main() {
       calls.add(call);
       return null;
     });
+    navMessages = <Object?>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockDecodedMessageHandler<Object?>(
+      _navChannel,
+      (message) async {
+        navMessages.add(message);
+        return null;
+      },
+    );
     // `_nativeKeyboardUnavailable` is a static flag that persists across
     // tests in this isolate — reset it so the fallback tests below don't
     // leak into unrelated tests (and vice versa).
     AppleTvNativeKeyboard.debugResetNativeKeyboardUnavailable();
+    TvosSystemNavigationService.resetForTesting();
   });
 
   tearDown(() {
     TvDetectionService.debugSetAppleTVOverride(null);
     setHandler(null);
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockDecodedMessageHandler<Object?>(
+      _navChannel,
+      null,
+    );
     AppleTvNativeKeyboard.debugResetNativeKeyboardUnavailable();
+    TvosSystemNavigationService.resetForTesting();
   });
 
   group('AppleTvNativeKeyboard', () {
@@ -52,6 +69,33 @@ void main() {
       expect(arguments['keyboardType'], 'text');
       expect(arguments['obscureText'], isFalse);
       expect(arguments['requestId'], isA<int>());
+    });
+
+    testWidgets('opening the native keyboard enables Menu passthrough so it can dismiss the keyboard', (tester) async {
+      final context = await _pumpAppleTvContext(tester);
+      final controller = TextEditingController();
+      addTearDown(controller.dispose);
+
+      final handle = showTvVirtualKeyboard(context: context, controller: controller);
+      addTearDown(() => handle?.close());
+      await tester.pump();
+
+      expect(navMessages.last, {'menuPassthroughEnabled': true});
+    });
+
+    testWidgets('native closed call disables Menu passthrough again', (tester) async {
+      final context = await _pumpAppleTvContext(tester);
+      final controller = TextEditingController();
+      addTearDown(controller.dispose);
+
+      final handle = showTvVirtualKeyboard(context: context, controller: controller);
+      addTearDown(() => handle?.close());
+      await tester.pump();
+
+      final requestId = _requestIdOf(calls);
+      await _sendNativeCall('closed', {'requestId': requestId});
+
+      expect(navMessages.last, {'menuPassthroughEnabled': false});
     });
 
     testWidgets('simulated textChanged updates the controller and fires onChanged', (tester) async {
@@ -158,9 +202,7 @@ void main() {
       expect(calls.where((call) => call.method == 'show').length, showCallCountBefore);
     });
 
-    testWidgets('show invoke throwing marks the native keyboard unavailable and falls back next open', (
-      tester,
-    ) async {
+    testWidgets('show invoke throwing marks the native keyboard unavailable and falls back next open', (tester) async {
       setHandler((call) async {
         calls.add(call);
         if (call.method == 'show') {

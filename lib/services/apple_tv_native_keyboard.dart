@@ -7,6 +7,7 @@ import '../utils/text_input_diagnostics.dart';
 import '../widgets/tv_virtual_keyboard.dart' show TvVirtualKeyboardHandle;
 import 'apple_tv_remote_touch_service.dart';
 import 'gamepad_service.dart';
+import 'tvos_system_navigation_service.dart';
 
 void _log(String message) => TextInputDiagnostics.log('AppleTvNativeKeyboard', message);
 
@@ -69,6 +70,9 @@ class AppleTvNativeKeyboard {
     _log('show requestId=$requestId type=$keyboardType obscure=$obscureText maxLength=$maxLength');
     unawaited(GamepadService.setNativeTextInputFocused(true));
     AppleTvRemoteTouchService.instance.nativeTextInputActive = true;
+    // Menu must reach the system while the keyboard is up, or it can't be
+    // dismissed — see TvosSystemNavigationService.setKeyboardSessionActive.
+    unawaited(TvosSystemNavigationService.setKeyboardSessionActive(true));
 
     unawaited(
       _channel
@@ -232,6 +236,7 @@ class _Session {
     closed = true;
     unawaited(GamepadService.setNativeTextInputFocused(false));
     AppleTvRemoteTouchService.instance.nativeTextInputActive = false;
+    unawaited(TvosSystemNavigationService.setKeyboardSessionActive(false));
     if (!_closedCompleter.isCompleted) _closedCompleter.complete();
   }
 }
