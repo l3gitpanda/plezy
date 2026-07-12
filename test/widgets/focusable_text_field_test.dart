@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:plezy/focus/focusable_text_field.dart';
+import 'package:plezy/services/apple_tv_remote_touch_service.dart';
 import 'package:plezy/services/gamepad_service.dart';
 import 'package:plezy/utils/platform_detector.dart';
 
@@ -945,6 +946,63 @@ void main() {
 
     expect(find.byType(Dialog), findsOneWidget);
     expect(calls.where((call) => call.method == 'show'), isEmpty);
+  });
+
+  testWidgets('Apple TV native keyboard session suppresses double input and reports touch-service state', (
+    tester,
+  ) async {
+    const channel = MethodChannel('com.plezy/native_keyboard');
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      return null;
+    });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(channel, null),
+    );
+    addTearDown(() => AppleTvRemoteTouchService.instance.nativeTextInputActive = false);
+
+    TvDetectionService.debugSetAppleTVOverride(true);
+    final controller = TextEditingController();
+    final fieldFocusNode = FocusNode(debugLabel: 'search_field');
+    addTearDown(controller.dispose);
+    addTearDown(fieldFocusNode.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: FocusableTextField(controller: controller, focusNode: fieldFocusNode),
+        ),
+      ),
+    );
+
+    fieldFocusNode.requestFocus();
+    await tester.pumpAndSettle();
+
+    final showCalls = calls.where((call) => call.method == 'show').toList();
+    expect(showCalls, hasLength(1));
+    final requestId = (showCalls.single.arguments as Map)['requestId'] as int;
+    expect(AppleTvRemoteTouchService.instance.nativeTextInputActive, isTrue);
+
+    // A hardware key event while the native session is open must not also
+    // edit the field through the Dart-side hardware-keyboard path — the
+    // tvKeyboardOpen guard defers to the native tvOS keyboard, which already
+    // owns the text.
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyA, character: 'a');
+    await tester.pumpAndSettle();
+
+    expect(controller.text, isEmpty);
+    expect(AppleTvRemoteTouchService.instance.nativeTextInputActive, isTrue);
+
+    final closedData = const StandardMethodCodec().encodeMethodCall(MethodCall('closed', {'requestId': requestId}));
+    await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.handlePlatformMessage(
+      channel.name,
+      closedData,
+      (_) {},
+    );
+    await tester.pumpAndSettle();
+
+    expect(AppleTvRemoteTouchService.instance.nativeTextInputActive, isFalse);
   });
 }
 

@@ -102,7 +102,13 @@ class AppleTvRemoteTouchService {
     if (_nativeTextInputActive == value) return;
     _nativeTextInputActive = value;
     _log('native text input active=$value');
-    if (value) _resetTouch();
+    if (value) {
+      // Mirrors stop(): a touchpad click that opened the keyboard leaves its
+      // matching click_e dropped by the guard in handleMessage below, which
+      // would otherwise strand a synthetic enter keyDown with no keyUp.
+      _releaseSelectFromClick(source: 'native-text-input');
+      _resetTouch();
+    }
   }
 
   void start() {

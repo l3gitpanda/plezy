@@ -299,6 +299,7 @@ void main() {
       await harness.send('move', x: 380, y: 500);
 
       expect(harness.keys, [LogicalKeyboardKey.arrowLeft]);
+      expect(harness.service.handleNativeKeyEvent(_keyDown(LogicalKeyboardKey.arrowLeft)), isFalse);
     });
   });
 }

@@ -83,7 +83,11 @@ class AppleTvNativeKeyboard {
   static void _dismiss(_Session session) {
     if (session.closed) return;
     _log('dismiss requestId=${session.requestId}');
-    unawaited(_channel.invokeMethod<void>('dismiss', {'requestId': session.requestId}));
+    unawaited(
+      _channel.invokeMethod<void>('dismiss', {'requestId': session.requestId}).catchError((Object error) {
+        _log('dismiss failed requestId=${session.requestId} error=$error');
+      }),
+    );
     session._finish();
   }
 
