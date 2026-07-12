@@ -47,6 +47,7 @@ import '../services/offline_watch_sync_service.dart';
 import '../services/settings_service.dart';
 import '../providers/offline_mode_provider.dart';
 import '../services/companion_remote/companion_remote_host_controller.dart';
+import '../services/companion_remote/companion_remote_play_resolver.dart';
 import '../services/companion_remote/companion_remote_receiver.dart';
 import '../services/fullscreen_state_manager.dart';
 import '../providers/companion_remote_provider.dart';
@@ -66,6 +67,7 @@ import 'downloads/downloads_screen.dart';
 import 'settings/settings_screen.dart';
 import 'profile/profile_switch_screen.dart';
 import 'profile/profile_teardown.dart';
+import 'video_player_screen.dart';
 import '../services/system_shelf_service.dart';
 import '../watch_together/watch_together.dart';
 
@@ -865,6 +867,43 @@ class _MainScreenState extends State<MainScreen>
         ),
       );
     };
+    receiver.onPlayMedia = (data) => unawaited(_handlePlayMediaCommand(data));
+  }
+
+  /// Handle a companion-remote playMedia request: resolve the requested item
+  /// (or its next-unwatched episode for shows/seasons) via this host's own
+  /// server connection and start playback, replacing any player already open.
+  Future<void> _handlePlayMediaCommand(Map<String, dynamic>? data) async {
+    if (!mounted || data == null) return;
+
+    final serverIdRaw = data['serverId'] as String?;
+    final ratingKey = data['ratingKey'] as String?;
+    if (serverIdRaw == null || serverIdRaw.isEmpty || ratingKey == null || ratingKey.isEmpty) {
+      appLogger.w('CompanionRemote: playMedia missing serverId/ratingKey');
+      return;
+    }
+
+    try {
+      final client = context.read<MultiServerProvider>().getClientForServer(ServerId(serverIdRaw));
+      if (client == null) {
+        appLogger.w('CompanionRemote: playMedia server $serverIdRaw not available');
+        return;
+      }
+
+      final target = await resolveCompanionRemotePlaybackTarget(client, ratingKey);
+      if (target == null || !mounted) {
+        appLogger.w('CompanionRemote: playMedia could not resolve item $ratingKey');
+        return;
+      }
+
+      await navigateToVideoPlayer(
+        context,
+        metadata: target,
+        usePushReplacement: VideoPlayerScreenState.activeId != null,
+      );
+    } catch (e) {
+      appLogger.e('CompanionRemote: playMedia failed for $ratingKey', error: e);
+    }
   }
 
   Future<void> _autoStartCompanionRemoteServer() async {
@@ -917,6 +956,7 @@ class _MainScreenState extends State<MainScreen>
         receiver.onHome = null;
         receiver.onSearchAction = null;
         receiver.onExploreSearch = null;
+        receiver.onPlayMedia = null;
         receiver.navigationOwner = null;
       }
     }

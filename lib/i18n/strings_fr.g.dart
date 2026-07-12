@@ -541,6 +541,7 @@ class _TranslationsMediaMenuFr extends TranslationsMediaMenuEn {
 	@override String get rate => 'Noter';
 	@override String get playFromBeginning => 'Lire depuis le début';
 	@override String get playVersion => 'Lire la version...';
+	@override String get playOnConnectedDevice => '';
 }
 
 // Path: rateSheet
@@ -1448,6 +1449,7 @@ class _TranslationsCompanionRemoteFr extends TranslationsCompanionRemoteEn {
 	@override String get title => 'Télécommande compagnon';
 	@override String connectedTo({required Object name}) => 'Connecté à ${name}';
 	@override String get unknownDevice => 'Appareil inconnu';
+	@override String get playSentToDevice => '';
 	@override late final _TranslationsCompanionRemoteSessionFr session = _TranslationsCompanionRemoteSessionFr._(_root);
 	@override late final _TranslationsCompanionRemotePairingFr pairing = _TranslationsCompanionRemotePairingFr._(_root);
 	@override late final _TranslationsCompanionRemoteRemoteFr remote = _TranslationsCompanionRemoteRemoteFr._(_root);
@@ -2491,6 +2493,7 @@ extension on TranslationsFr {
 			'mediaMenu.rate' => 'Noter',
 			'mediaMenu.playFromBeginning' => 'Lire depuis le début',
 			'mediaMenu.playVersion' => 'Lire la version...',
+			'mediaMenu.playOnConnectedDevice' => '',
 			'rateSheet.title' => 'Noter',
 			'rateSheet.server' => 'Serveur',
 			'rateSheet.favorite' => 'Favori',
@@ -2614,9 +2617,9 @@ extension on TranslationsFr {
 			'messages.noDescriptionAvailable' => 'Aucune description disponible',
 			'messages.noProfilesAvailable' => 'Aucun profil disponible',
 			'messages.contactAdminForProfiles' => 'Contactez votre administrateur serveur pour ajouter des profils',
-			'messages.unableToDetermineLibrarySection' => 'Impossible de déterminer la section de la bibliothèque pour cet élément',
 			_ => null,
 		} ?? switch (path) {
+			'messages.unableToDetermineLibrarySection' => 'Impossible de déterminer la section de la bibliothèque pour cet élément',
 			'messages.logsCleared' => 'Logs effacés',
 			'messages.logsCopied' => 'Logs copiés dans le presse-papier',
 			'messages.noLogsAvailable' => 'Aucun log disponible',
@@ -3128,9 +3131,9 @@ extension on TranslationsFr {
 			'downloads.retryDownload' => 'Réessayer le téléchargement',
 			'downloads.downloadQueued' => 'Téléchargement en attente',
 			'downloads.downloadResumed' => 'Téléchargement repris',
-			'downloads.serverErrorBitrate' => 'Erreur serveur : le fichier peut dépasser la limite de bitrate distant',
 			_ => null,
 		} ?? switch (path) {
+			'downloads.serverErrorBitrate' => 'Erreur serveur : le fichier peut dépasser la limite de bitrate distant',
 			'downloads.episodesQueued' => ({required Object count}) => '${count} épisodes en attente de téléchargement',
 			'downloads.downloadDeleted' => 'Télécharger supprimé',
 			'downloads.deleteConfirm' => ({required Object title}) => 'Supprimer "${title}" de cet appareil ?',
@@ -3201,6 +3204,7 @@ extension on TranslationsFr {
 			'companionRemote.title' => 'Télécommande compagnon',
 			'companionRemote.connectedTo' => ({required Object name}) => 'Connecté à ${name}',
 			'companionRemote.unknownDevice' => 'Appareil inconnu',
+			'companionRemote.playSentToDevice' => '',
 			'companionRemote.session.startingServer' => 'Démarrage du serveur distant...',
 			'companionRemote.session.hostAddress' => 'Adresse de l\'hôte',
 			'companionRemote.session.connected' => 'Connecté',

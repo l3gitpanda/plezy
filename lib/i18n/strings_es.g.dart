@@ -541,6 +541,7 @@ class _TranslationsMediaMenuEs extends TranslationsMediaMenuEn {
 	@override String get rate => 'Calificar';
 	@override String get playFromBeginning => 'Reproducir desde el inicio';
 	@override String get playVersion => 'Reproducir versión...';
+	@override String get playOnConnectedDevice => '';
 }
 
 // Path: rateSheet
@@ -1448,6 +1449,7 @@ class _TranslationsCompanionRemoteEs extends TranslationsCompanionRemoteEn {
 	@override String get title => 'Control remoto';
 	@override String connectedTo({required Object name}) => 'Conectado a ${name}';
 	@override String get unknownDevice => 'Dispositivo desconocido';
+	@override String get playSentToDevice => '';
 	@override late final _TranslationsCompanionRemoteSessionEs session = _TranslationsCompanionRemoteSessionEs._(_root);
 	@override late final _TranslationsCompanionRemotePairingEs pairing = _TranslationsCompanionRemotePairingEs._(_root);
 	@override late final _TranslationsCompanionRemoteRemoteEs remote = _TranslationsCompanionRemoteRemoteEs._(_root);
@@ -2491,6 +2493,7 @@ extension on TranslationsEs {
 			'mediaMenu.rate' => 'Calificar',
 			'mediaMenu.playFromBeginning' => 'Reproducir desde el inicio',
 			'mediaMenu.playVersion' => 'Reproducir versión...',
+			'mediaMenu.playOnConnectedDevice' => '',
 			'rateSheet.title' => 'Calificar',
 			'rateSheet.server' => 'Servidor',
 			'rateSheet.favorite' => 'Favorito',
@@ -2614,9 +2617,9 @@ extension on TranslationsEs {
 			'messages.noDescriptionAvailable' => 'No hay descripción disponible',
 			'messages.noProfilesAvailable' => 'No hay perfiles disponibles',
 			'messages.contactAdminForProfiles' => 'Contacta a tu administrador del servidor para añadir perfiles',
-			'messages.unableToDetermineLibrarySection' => 'No se puede determinar la sección de biblioteca para este elemento',
 			_ => null,
 		} ?? switch (path) {
+			'messages.unableToDetermineLibrarySection' => 'No se puede determinar la sección de biblioteca para este elemento',
 			'messages.logsCleared' => 'Logs borrados',
 			'messages.logsCopied' => 'Logs copiados al portapapeles',
 			'messages.noLogsAvailable' => 'No hay logs disponibles',
@@ -3128,9 +3131,9 @@ extension on TranslationsEs {
 			'downloads.retryDownload' => 'Reintentar descarga',
 			'downloads.downloadQueued' => 'Descarga en cola',
 			'downloads.downloadResumed' => 'Descarga reanudada',
-			'downloads.serverErrorBitrate' => 'Error del servidor: el archivo puede superar el límite de bitrate remoto',
 			_ => null,
 		} ?? switch (path) {
+			'downloads.serverErrorBitrate' => 'Error del servidor: el archivo puede superar el límite de bitrate remoto',
 			'downloads.episodesQueued' => ({required Object count}) => '${count} episodios en cola para descargar',
 			'downloads.downloadDeleted' => 'Descarga eliminada',
 			'downloads.deleteConfirm' => ({required Object title}) => '¿Eliminar "${title}" de este dispositivo?',
@@ -3201,6 +3204,7 @@ extension on TranslationsEs {
 			'companionRemote.title' => 'Control remoto',
 			'companionRemote.connectedTo' => ({required Object name}) => 'Conectado a ${name}',
 			'companionRemote.unknownDevice' => 'Dispositivo desconocido',
+			'companionRemote.playSentToDevice' => '',
 			'companionRemote.session.startingServer' => 'Iniciando servidor remoto...',
 			'companionRemote.session.hostAddress' => 'Dirección del host',
 			'companionRemote.session.connected' => 'Conectado',

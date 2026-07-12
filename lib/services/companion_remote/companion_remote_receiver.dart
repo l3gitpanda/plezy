@@ -37,6 +37,7 @@ class CompanionRemoteReceiver {
   void Function(String? query)? onSearchAction;
   void Function(String? query)? onExploreSearch;
   VoidCallback? onPlayPause;
+  void Function(Map<String, dynamic>? data)? onPlayMedia;
   VoidCallback? onNextTrack;
   VoidCallback? onPreviousTrack;
   VoidCallback? onNextChapter;
@@ -123,6 +124,8 @@ class CompanionRemoteReceiver {
       case RemoteCommandType.exploreSearch:
         final query = command.data?['query'] as String?;
         onExploreSearch?.call(query);
+      case RemoteCommandType.playMedia:
+        onPlayMedia?.call(command.data);
 
       case RemoteCommandType.stop:
         onStop?.call();

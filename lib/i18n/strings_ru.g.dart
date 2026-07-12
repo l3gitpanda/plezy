@@ -541,6 +541,7 @@ class _TranslationsMediaMenuRu extends TranslationsMediaMenuEn {
 	@override String get rate => 'Оценить';
 	@override String get playFromBeginning => 'Воспроизвести сначала';
 	@override String get playVersion => 'Воспроизвести версию...';
+	@override String get playOnConnectedDevice => '';
 }
 
 // Path: rateSheet
@@ -1452,6 +1453,7 @@ class _TranslationsCompanionRemoteRu extends TranslationsCompanionRemoteEn {
 	@override String get title => 'Пульт управления';
 	@override String connectedTo({required Object name}) => 'Подключено к ${name}';
 	@override String get unknownDevice => 'Неизвестное устройство';
+	@override String get playSentToDevice => '';
 	@override late final _TranslationsCompanionRemoteSessionRu session = _TranslationsCompanionRemoteSessionRu._(_root);
 	@override late final _TranslationsCompanionRemotePairingRu pairing = _TranslationsCompanionRemotePairingRu._(_root);
 	@override late final _TranslationsCompanionRemoteRemoteRu remote = _TranslationsCompanionRemoteRemoteRu._(_root);
@@ -2495,6 +2497,7 @@ extension on TranslationsRu {
 			'mediaMenu.rate' => 'Оценить',
 			'mediaMenu.playFromBeginning' => 'Воспроизвести сначала',
 			'mediaMenu.playVersion' => 'Воспроизвести версию...',
+			'mediaMenu.playOnConnectedDevice' => '',
 			'rateSheet.title' => 'Оценить',
 			'rateSheet.server' => 'Сервер',
 			'rateSheet.favorite' => 'Добавить в избранное',
@@ -2618,9 +2621,9 @@ extension on TranslationsRu {
 			'messages.noDescriptionAvailable' => 'Описание недоступно',
 			'messages.noProfilesAvailable' => 'Профили недоступны',
 			'messages.contactAdminForProfiles' => 'Обратитесь к администратору сервера для добавления профилей',
-			'messages.unableToDetermineLibrarySection' => 'Не удаётся определить раздел библиотеки для этого элемента',
 			_ => null,
 		} ?? switch (path) {
+			'messages.unableToDetermineLibrarySection' => 'Не удаётся определить раздел библиотеки для этого элемента',
 			'messages.logsCleared' => 'Логи очищены',
 			'messages.logsCopied' => 'Логи скопированы в буфер обмена',
 			'messages.noLogsAvailable' => 'Логи отсутствуют',
@@ -3132,9 +3135,9 @@ extension on TranslationsRu {
 			'downloads.retryDownload' => 'Повторить загрузку',
 			'downloads.downloadQueued' => 'Загрузка поставлена в очередь',
 			'downloads.downloadResumed' => 'Загрузка возобновлена',
-			'downloads.serverErrorBitrate' => 'Ошибка сервера: файл может превышать удаленный лимит bitrate',
 			_ => null,
 		} ?? switch (path) {
+			'downloads.serverErrorBitrate' => 'Ошибка сервера: файл может превышать удаленный лимит bitrate',
 			'downloads.episodesQueued' => ({required Object count}) => '${count} эпизодов поставлено в очередь загрузки',
 			'downloads.downloadDeleted' => 'Загрузка удалена',
 			'downloads.deleteConfirm' => ({required Object title}) => 'Удалить "${title}" с этого устройства?',
@@ -3205,6 +3208,7 @@ extension on TranslationsRu {
 			'companionRemote.title' => 'Пульт управления',
 			'companionRemote.connectedTo' => ({required Object name}) => 'Подключено к ${name}',
 			'companionRemote.unknownDevice' => 'Неизвестное устройство',
+			'companionRemote.playSentToDevice' => '',
 			'companionRemote.session.startingServer' => 'Запуск удалённого сервера...',
 			'companionRemote.session.hostAddress' => 'Адрес хоста',
 			'companionRemote.session.connected' => 'Подключено',

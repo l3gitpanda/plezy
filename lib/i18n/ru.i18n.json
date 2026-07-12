@@ -407,7 +407,8 @@
     "mediaFailedToDelete": "Не удалось удалить медиаэлемент",
     "rate": "Оценить",
     "playFromBeginning": "Воспроизвести сначала",
-    "playVersion": "Воспроизвести версию..."
+    "playVersion": "Воспроизвести версию...",
+    "playOnConnectedDevice": ""
   },
   "rateSheet": {
     "title": "Оценить",
@@ -1195,6 +1196,7 @@
     "title": "Пульт управления",
     "connectedTo": "Подключено к ${name}",
     "unknownDevice": "Неизвестное устройство",
+    "playSentToDevice": "",
     "session": {
       "startingServer": "Запуск удалённого сервера...",
       "hostAddress": "Адрес хоста",

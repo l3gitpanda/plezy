@@ -541,6 +541,7 @@ class _TranslationsMediaMenuJa extends TranslationsMediaMenuEn {
 	@override String get rate => '評価';
 	@override String get playFromBeginning => '最初から再生';
 	@override String get playVersion => 'バージョンを再生...';
+	@override String get playOnConnectedDevice => '';
 }
 
 // Path: rateSheet
@@ -1446,6 +1447,7 @@ class _TranslationsCompanionRemoteJa extends TranslationsCompanionRemoteEn {
 	@override String get title => 'コンパニオンリモート';
 	@override String connectedTo({required Object name}) => '${name}に接続中';
 	@override String get unknownDevice => '不明なデバイス';
+	@override String get playSentToDevice => '';
 	@override late final _TranslationsCompanionRemoteSessionJa session = _TranslationsCompanionRemoteSessionJa._(_root);
 	@override late final _TranslationsCompanionRemotePairingJa pairing = _TranslationsCompanionRemotePairingJa._(_root);
 	@override late final _TranslationsCompanionRemoteRemoteJa remote = _TranslationsCompanionRemoteRemoteJa._(_root);
@@ -2489,6 +2491,7 @@ extension on TranslationsJa {
 			'mediaMenu.rate' => '評価',
 			'mediaMenu.playFromBeginning' => '最初から再生',
 			'mediaMenu.playVersion' => 'バージョンを再生...',
+			'mediaMenu.playOnConnectedDevice' => '',
 			'rateSheet.title' => '評価',
 			'rateSheet.server' => 'サーバー',
 			'rateSheet.favorite' => 'お気に入り',
@@ -2612,9 +2615,9 @@ extension on TranslationsJa {
 			'messages.noDescriptionAvailable' => '説明はありません',
 			'messages.noProfilesAvailable' => '利用可能なプロフィールがありません',
 			'messages.contactAdminForProfiles' => 'プロファイルを追加するにはサーバー管理者に連絡してください',
-			'messages.unableToDetermineLibrarySection' => 'このアイテムのライブラリセクションを判別できません',
 			_ => null,
 		} ?? switch (path) {
+			'messages.unableToDetermineLibrarySection' => 'このアイテムのライブラリセクションを判別できません',
 			'messages.logsCleared' => 'ログをクリアしました',
 			'messages.logsCopied' => 'ログをクリップボードにコピーしました',
 			'messages.noLogsAvailable' => 'ログがありません',
@@ -3126,9 +3129,9 @@ extension on TranslationsJa {
 			'downloads.retryDownload' => 'ダウンロードを再試行',
 			'downloads.downloadQueued' => 'ダウンロードをキューに追加しました',
 			'downloads.downloadResumed' => 'ダウンロードを再開しました',
-			'downloads.serverErrorBitrate' => 'サーバーエラー: ファイルがリモートビットレート制限を超えている可能性があります',
 			_ => null,
 		} ?? switch (path) {
+			'downloads.serverErrorBitrate' => 'サーバーエラー: ファイルがリモートビットレート制限を超えている可能性があります',
 			'downloads.episodesQueued' => ({required Object count}) => '${count}エピソードをダウンロードキューに追加しました',
 			'downloads.downloadDeleted' => 'ダウンロードを削除しました',
 			'downloads.deleteConfirm' => ({required Object title}) => 'このデバイスから「${title}」を削除しますか？',
@@ -3199,6 +3202,7 @@ extension on TranslationsJa {
 			'companionRemote.title' => 'コンパニオンリモート',
 			'companionRemote.connectedTo' => ({required Object name}) => '${name}に接続中',
 			'companionRemote.unknownDevice' => '不明なデバイス',
+			'companionRemote.playSentToDevice' => '',
 			'companionRemote.session.startingServer' => 'リモートサーバーを起動中...',
 			'companionRemote.session.hostAddress' => 'ホストアドレス',
 			'companionRemote.session.connected' => '接続済み',

@@ -541,6 +541,7 @@ class _TranslationsMediaMenuZh extends TranslationsMediaMenuEn {
 	@override String get rate => '评分';
 	@override String get playFromBeginning => '从头播放';
 	@override String get playVersion => '播放版本...';
+	@override String get playOnConnectedDevice => '';
 }
 
 // Path: rateSheet
@@ -1446,6 +1447,7 @@ class _TranslationsCompanionRemoteZh extends TranslationsCompanionRemoteEn {
 	@override String get title => '伴侣遥控';
 	@override String connectedTo({required Object name}) => '已连接到 ${name}';
 	@override String get unknownDevice => '未知设备';
+	@override String get playSentToDevice => '';
 	@override late final _TranslationsCompanionRemoteSessionZh session = _TranslationsCompanionRemoteSessionZh._(_root);
 	@override late final _TranslationsCompanionRemotePairingZh pairing = _TranslationsCompanionRemotePairingZh._(_root);
 	@override late final _TranslationsCompanionRemoteRemoteZh remote = _TranslationsCompanionRemoteRemoteZh._(_root);
@@ -2489,6 +2491,7 @@ extension on TranslationsZh {
 			'mediaMenu.rate' => '评分',
 			'mediaMenu.playFromBeginning' => '从头播放',
 			'mediaMenu.playVersion' => '播放版本...',
+			'mediaMenu.playOnConnectedDevice' => '',
 			'rateSheet.title' => '评分',
 			'rateSheet.server' => '服务器',
 			'rateSheet.favorite' => '收藏',
@@ -2612,9 +2615,9 @@ extension on TranslationsZh {
 			'messages.noDescriptionAvailable' => '暂无描述',
 			'messages.noProfilesAvailable' => '没有可用的用户',
 			'messages.contactAdminForProfiles' => '请联系服务器管理员添加用户配置',
-			'messages.unableToDetermineLibrarySection' => '无法确定此项目的库分区',
 			_ => null,
 		} ?? switch (path) {
+			'messages.unableToDetermineLibrarySection' => '无法确定此项目的库分区',
 			'messages.logsCleared' => '日志已清除',
 			'messages.logsCopied' => '日志已复制到剪贴板',
 			'messages.noLogsAvailable' => '没有可用日志',
@@ -3126,9 +3129,9 @@ extension on TranslationsZh {
 			'downloads.retryDownload' => '重试下载',
 			'downloads.downloadQueued' => '下载已排队',
 			'downloads.downloadResumed' => '下载已继续',
-			'downloads.serverErrorBitrate' => '服务器错误：文件可能超过远程比特率限制',
 			_ => null,
 		} ?? switch (path) {
+			'downloads.serverErrorBitrate' => '服务器错误：文件可能超过远程比特率限制',
 			'downloads.episodesQueued' => ({required Object count}) => '${count} 集已加入下载队列',
 			'downloads.downloadDeleted' => '下载已删除',
 			'downloads.deleteConfirm' => ({required Object title}) => '要从此设备删除“${title}”吗？',
@@ -3199,6 +3202,7 @@ extension on TranslationsZh {
 			'companionRemote.title' => '伴侣遥控',
 			'companionRemote.connectedTo' => ({required Object name}) => '已连接到 ${name}',
 			'companionRemote.unknownDevice' => '未知设备',
+			'companionRemote.playSentToDevice' => '',
 			'companionRemote.session.startingServer' => '正在启动远程服务器...',
 			'companionRemote.session.hostAddress' => '主机地址',
 			'companionRemote.session.connected' => '已连接',

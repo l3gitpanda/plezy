@@ -407,7 +407,8 @@
     "mediaFailedToDelete": "Falha ao excluir item de mídia",
     "rate": "Avaliar",
     "playFromBeginning": "Reproduzir do início",
-    "playVersion": "Reproduzir versão..."
+    "playVersion": "Reproduzir versão...",
+    "playOnConnectedDevice": ""
   },
   "rateSheet": {
     "title": "Avaliar",
@@ -1191,6 +1192,7 @@
     "title": "Controle Remoto",
     "connectedTo": "Conectado a ${name}",
     "unknownDevice": "Dispositivo desconhecido",
+    "playSentToDevice": "",
     "session": {
       "startingServer": "A iniciar servidor remoto...",
       "hostAddress": "Endereço do host",
