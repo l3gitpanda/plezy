@@ -1111,6 +1111,11 @@ class _TranslationsLiveTvEs extends TranslationsLiveTvEn {
 	@override String get unknownChannel => 'Canal desconocido';
 	@override String get live => 'EN VIVO';
 	@override String get reloadGuide => 'Recargar guía';
+	@override String get searchGuide => '';
+	@override String get searchHint => '';
+	@override String get searchNoResults => '';
+	@override String get channelsSection => '';
+	@override String get programsSection => '';
 	@override String get now => 'Ahora';
 	@override String get today => 'Hoy';
 	@override String get tomorrow => 'Mañana';
@@ -2923,6 +2928,11 @@ extension on TranslationsEs {
 			'liveTv.unknownChannel' => 'Canal desconocido',
 			'liveTv.live' => 'EN VIVO',
 			'liveTv.reloadGuide' => 'Recargar guía',
+			'liveTv.searchGuide' => '',
+			'liveTv.searchHint' => '',
+			'liveTv.searchNoResults' => '',
+			'liveTv.channelsSection' => '',
+			'liveTv.programsSection' => '',
 			'liveTv.now' => 'Ahora',
 			'liveTv.today' => 'Hoy',
 			'liveTv.tomorrow' => 'Mañana',
@@ -3119,13 +3129,13 @@ extension on TranslationsEs {
 			'downloads.downloadQueued' => 'Descarga en cola',
 			'downloads.downloadResumed' => 'Descarga reanudada',
 			'downloads.serverErrorBitrate' => 'Error del servidor: el archivo puede superar el límite de bitrate remoto',
+			_ => null,
+		} ?? switch (path) {
 			'downloads.episodesQueued' => ({required Object count}) => '${count} episodios en cola para descargar',
 			'downloads.downloadDeleted' => 'Descarga eliminada',
 			'downloads.deleteConfirm' => ({required Object title}) => '¿Eliminar "${title}" de este dispositivo?',
 			'downloads.cancelledDownloadTitle' => 'Descarga cancelada',
 			'downloads.cancelledDownloadMessage' => 'Esta descarga se canceló. ¿Qué quieres hacer?',
-			_ => null,
-		} ?? switch (path) {
 			'downloads.allEpisodesAlreadyDownloaded' => 'Todos los episodios ya están descargados',
 			'downloads.resumeDownload' => 'Reanudar descarga',
 			'downloads.cancelledDownload' => 'Descarga cancelada',

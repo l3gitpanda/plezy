@@ -2585,6 +2585,21 @@ class TranslationsLiveTvEn {
 	/// en: 'Reload Guide'
 	String get reloadGuide => 'Reload Guide';
 
+	/// en: 'Search Guide'
+	String get searchGuide => 'Search Guide';
+
+	/// en: 'Search channels & programs'
+	String get searchHint => 'Search channels & programs';
+
+	/// en: 'No matches for "${query}"'
+	String searchNoResults({required Object query}) => 'No matches for "${query}"';
+
+	/// en: 'Channels'
+	String get channelsSection => 'Channels';
+
+	/// en: 'Programs'
+	String get programsSection => 'Programs';
+
 	/// en: 'Now'
 	String get now => 'Now';
 
@@ -5736,6 +5751,11 @@ extension on Translations {
 			'liveTv.unknownChannel' => 'Unknown channel',
 			'liveTv.live' => 'LIVE',
 			'liveTv.reloadGuide' => 'Reload Guide',
+			'liveTv.searchGuide' => 'Search Guide',
+			'liveTv.searchHint' => 'Search channels & programs',
+			'liveTv.searchNoResults' => ({required Object query}) => 'No matches for "${query}"',
+			'liveTv.channelsSection' => 'Channels',
+			'liveTv.programsSection' => 'Programs',
 			'liveTv.now' => 'Now',
 			'liveTv.today' => 'Today',
 			'liveTv.tomorrow' => 'Tomorrow',
@@ -5932,13 +5952,13 @@ extension on Translations {
 			'downloads.downloadQueued' => 'Download queued',
 			'downloads.downloadResumed' => 'Download resumed',
 			'downloads.serverErrorBitrate' => 'Server error: file may exceed the remote bitrate limit',
+			_ => null,
+		} ?? switch (path) {
 			'downloads.episodesQueued' => ({required Object count}) => '${count} episodes queued for download',
 			'downloads.downloadDeleted' => 'Download deleted',
 			'downloads.deleteConfirm' => ({required Object title}) => 'Delete "${title}" from this device?',
 			'downloads.cancelledDownloadTitle' => 'Cancelled Download',
 			'downloads.cancelledDownloadMessage' => 'This download was cancelled. What would you like to do?',
-			_ => null,
-		} ?? switch (path) {
 			'downloads.allEpisodesAlreadyDownloaded' => 'All episodes already downloaded',
 			'downloads.resumeDownload' => 'Resume download',
 			'downloads.cancelledDownload' => 'Cancelled download',

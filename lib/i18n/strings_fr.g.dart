@@ -1111,6 +1111,11 @@ class _TranslationsLiveTvFr extends TranslationsLiveTvEn {
 	@override String get unknownChannel => 'Chaîne inconnue';
 	@override String get live => 'EN DIRECT';
 	@override String get reloadGuide => 'Recharger le guide';
+	@override String get searchGuide => '';
+	@override String get searchHint => '';
+	@override String get searchNoResults => '';
+	@override String get channelsSection => '';
+	@override String get programsSection => '';
 	@override String get now => 'Maintenant';
 	@override String get today => 'Aujourd\'hui';
 	@override String get tomorrow => 'Demain';
@@ -2923,6 +2928,11 @@ extension on TranslationsFr {
 			'liveTv.unknownChannel' => 'Chaîne inconnue',
 			'liveTv.live' => 'EN DIRECT',
 			'liveTv.reloadGuide' => 'Recharger le guide',
+			'liveTv.searchGuide' => '',
+			'liveTv.searchHint' => '',
+			'liveTv.searchNoResults' => '',
+			'liveTv.channelsSection' => '',
+			'liveTv.programsSection' => '',
 			'liveTv.now' => 'Maintenant',
 			'liveTv.today' => 'Aujourd\'hui',
 			'liveTv.tomorrow' => 'Demain',
@@ -3119,13 +3129,13 @@ extension on TranslationsFr {
 			'downloads.downloadQueued' => 'Téléchargement en attente',
 			'downloads.downloadResumed' => 'Téléchargement repris',
 			'downloads.serverErrorBitrate' => 'Erreur serveur : le fichier peut dépasser la limite de bitrate distant',
+			_ => null,
+		} ?? switch (path) {
 			'downloads.episodesQueued' => ({required Object count}) => '${count} épisodes en attente de téléchargement',
 			'downloads.downloadDeleted' => 'Télécharger supprimé',
 			'downloads.deleteConfirm' => ({required Object title}) => 'Supprimer "${title}" de cet appareil ?',
 			'downloads.cancelledDownloadTitle' => 'Téléchargement annulé',
 			'downloads.cancelledDownloadMessage' => 'Ce téléchargement a été annulé. Que voulez-vous faire ?',
-			_ => null,
-		} ?? switch (path) {
 			'downloads.allEpisodesAlreadyDownloaded' => 'Tous les épisodes sont déjà téléchargés',
 			'downloads.resumeDownload' => 'Reprendre le téléchargement',
 			'downloads.cancelledDownload' => 'Téléchargement annulé',

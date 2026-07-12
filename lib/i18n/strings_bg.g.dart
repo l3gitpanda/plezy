@@ -1111,6 +1111,11 @@ class _TranslationsLiveTvBg extends TranslationsLiveTvEn {
 	@override String get unknownChannel => 'Неизвестен канал';
 	@override String get live => 'НА ЖИВО';
 	@override String get reloadGuide => 'Презареди ТВ програмата';
+	@override String get searchGuide => '';
+	@override String get searchHint => '';
+	@override String get searchNoResults => '';
+	@override String get channelsSection => '';
+	@override String get programsSection => '';
 	@override String get now => 'Сега';
 	@override String get today => 'Днес';
 	@override String get tomorrow => 'Утре';
@@ -2923,6 +2928,11 @@ extension on TranslationsBg {
 			'liveTv.unknownChannel' => 'Неизвестен канал',
 			'liveTv.live' => 'НА ЖИВО',
 			'liveTv.reloadGuide' => 'Презареди ТВ програмата',
+			'liveTv.searchGuide' => '',
+			'liveTv.searchHint' => '',
+			'liveTv.searchNoResults' => '',
+			'liveTv.channelsSection' => '',
+			'liveTv.programsSection' => '',
 			'liveTv.now' => 'Сега',
 			'liveTv.today' => 'Днес',
 			'liveTv.tomorrow' => 'Утре',
@@ -3119,13 +3129,13 @@ extension on TranslationsBg {
 			'downloads.downloadQueued' => 'Изтеглянето е добавено в опашката',
 			'downloads.downloadResumed' => 'Изтеглянето е възобновено',
 			'downloads.serverErrorBitrate' => 'Грешка на сървъра: файлът може да надвишава лимита за отдалечен битрейт',
+			_ => null,
+		} ?? switch (path) {
 			'downloads.episodesQueued' => ({required Object count}) => '${count} епизода са добавени в опашката за изтегляне',
 			'downloads.downloadDeleted' => 'Изтеглянето е изтрито',
 			'downloads.deleteConfirm' => ({required Object title}) => 'Да се изтрие ли "${title}" от това устройство?',
 			'downloads.cancelledDownloadTitle' => 'Отменено изтегляне',
 			'downloads.cancelledDownloadMessage' => 'Това изтегляне беше отменено. Какво искате да направите?',
-			_ => null,
-		} ?? switch (path) {
 			'downloads.allEpisodesAlreadyDownloaded' => 'Всички епизоди вече са изтеглени',
 			'downloads.resumeDownload' => 'Възобнови изтеглянето',
 			'downloads.cancelledDownload' => 'Отменено изтегляне',
