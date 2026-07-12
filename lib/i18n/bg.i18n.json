@@ -136,6 +136,8 @@
     "tvFullCardLayoutDescription": "Използвай TV карти само с изображения, с насложени имена на актьорите",
     "focusGlow": "Сияние при фокус",
     "focusGlowDescription": "Показвай меко сияние около фокусираната карта",
+    "appleTvSystemKeyboard": "",
+    "appleTvSystemKeyboardDescription": "",
     "visualEffects": "Визуални ефекти",
     "visualEffectsAuto": "Автоматично",
     "visualEffectsAutoDescription": "Автоматично намалявай ефектите на по-слаби устройства",

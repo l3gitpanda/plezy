@@ -267,6 +267,8 @@ class _TranslationsSettingsSv extends TranslationsSettingsEn {
 	@override String get tvFullCardLayoutDescription => 'Använd TV-kort med enbart bild och skådespelarnamn ovanpå';
 	@override String get focusGlow => 'Fokusglöd';
 	@override String get focusGlowDescription => 'Visa en mjuk glöd runt kortet i fokus';
+	@override String get appleTvSystemKeyboard => '';
+	@override String get appleTvSystemKeyboardDescription => '';
 	@override String get visualEffects => 'Visuella effekter';
 	@override String get visualEffectsAuto => 'Automatiskt';
 	@override String get visualEffectsAutoDescription => 'Minska effekter automatiskt på enheter med låg effekt';
@@ -2223,6 +2225,8 @@ extension on TranslationsSv {
 			'settings.tvFullCardLayoutDescription' => 'Använd TV-kort med enbart bild och skådespelarnamn ovanpå',
 			'settings.focusGlow' => 'Fokusglöd',
 			'settings.focusGlowDescription' => 'Visa en mjuk glöd runt kortet i fokus',
+			'settings.appleTvSystemKeyboard' => '',
+			'settings.appleTvSystemKeyboardDescription' => '',
 			'settings.visualEffects' => 'Visuella effekter',
 			'settings.visualEffectsAuto' => 'Automatiskt',
 			'settings.visualEffectsAutoDescription' => 'Minska effekter automatiskt på enheter med låg effekt',
@@ -2607,10 +2611,10 @@ extension on TranslationsSv {
 			'messages.musicNotSupported' => 'Musikuppspelning stöds inte ännu',
 			'messages.noDescriptionAvailable' => 'Ingen beskrivning tillgänglig',
 			'messages.noProfilesAvailable' => 'Inga profiler tillgängliga',
-			'messages.contactAdminForProfiles' => 'Kontakta din serveradministratör för att lägga till profiler',
-			'messages.unableToDetermineLibrarySection' => 'Kan inte avgöra biblioteksavdelningen för detta objekt',
 			_ => null,
 		} ?? switch (path) {
+			'messages.contactAdminForProfiles' => 'Kontakta din serveradministratör för att lägga till profiler',
+			'messages.unableToDetermineLibrarySection' => 'Kan inte avgöra biblioteksavdelningen för detta objekt',
 			'messages.logsCleared' => 'Loggar rensade',
 			'messages.logsCopied' => 'Loggar kopierade till urklipp',
 			'messages.noLogsAvailable' => 'Inga loggar tillgängliga',
@@ -3121,10 +3125,10 @@ extension on TranslationsSv {
 			'downloads.episodesQueued' => ({required Object count}) => '${count} avsnitt köade för nedladdning',
 			'downloads.downloadDeleted' => 'Nedladdning borttagen',
 			'downloads.deleteConfirm' => ({required Object title}) => 'Ta bort "${title}" från den här enheten?',
-			'downloads.cancelledDownloadTitle' => 'Avbruten nedladdning',
-			'downloads.cancelledDownloadMessage' => 'Den här nedladdningen avbröts. Vad vill du göra?',
 			_ => null,
 		} ?? switch (path) {
+			'downloads.cancelledDownloadTitle' => 'Avbruten nedladdning',
+			'downloads.cancelledDownloadMessage' => 'Den här nedladdningen avbröts. Vad vill du göra?',
 			'downloads.allEpisodesAlreadyDownloaded' => 'Alla avsnitt är redan nedladdade',
 			'downloads.resumeDownload' => 'Återuppta nedladdning',
 			'downloads.cancelledDownload' => 'Avbruten nedladdning',

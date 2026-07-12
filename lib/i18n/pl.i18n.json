@@ -136,6 +136,8 @@
     "tvFullCardLayoutDescription": "Używaj kart TV tylko z obrazem i nałożonymi nazwiskami aktorów",
     "focusGlow": "Poświata zaznaczenia",
     "focusGlowDescription": "Wyświetlaj delikatną poświatę wokół zaznaczonej karty",
+    "appleTvSystemKeyboard": "",
+    "appleTvSystemKeyboardDescription": "",
     "visualEffects": "Efekty wizualne",
     "visualEffectsAuto": "Automatycznie",
     "visualEffectsAutoDescription": "Automatycznie ograniczaj efekty na urządzeniach o niższej wydajności",

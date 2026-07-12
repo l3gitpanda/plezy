@@ -267,6 +267,8 @@ class _TranslationsSettingsDa extends TranslationsSettingsEn {
 	@override String get tvFullCardLayoutDescription => 'Brug TV-kort kun med billeder og skuespillernavne ovenpå';
 	@override String get focusGlow => 'Fokusglød';
 	@override String get focusGlowDescription => 'Vis en blød glød omkring det fokuserede kort';
+	@override String get appleTvSystemKeyboard => '';
+	@override String get appleTvSystemKeyboardDescription => '';
 	@override String get visualEffects => 'Visuelle effekter';
 	@override String get visualEffectsAuto => 'Automatisk';
 	@override String get visualEffectsAutoDescription => 'Reducer automatisk effekter på enheder med lav ydeevne';
@@ -2223,6 +2225,8 @@ extension on TranslationsDa {
 			'settings.tvFullCardLayoutDescription' => 'Brug TV-kort kun med billeder og skuespillernavne ovenpå',
 			'settings.focusGlow' => 'Fokusglød',
 			'settings.focusGlowDescription' => 'Vis en blød glød omkring det fokuserede kort',
+			'settings.appleTvSystemKeyboard' => '',
+			'settings.appleTvSystemKeyboardDescription' => '',
 			'settings.visualEffects' => 'Visuelle effekter',
 			'settings.visualEffectsAuto' => 'Automatisk',
 			'settings.visualEffectsAutoDescription' => 'Reducer automatisk effekter på enheder med lav ydeevne',
@@ -2607,10 +2611,10 @@ extension on TranslationsDa {
 			'messages.musicNotSupported' => 'Musikafspilning understøttes endnu ikke',
 			'messages.noDescriptionAvailable' => 'Ingen beskrivelse tilgængelig',
 			'messages.noProfilesAvailable' => 'Ingen profiler tilgængelige',
-			'messages.contactAdminForProfiles' => 'Kontakt din serveradministrator for at tilføje profiler',
-			'messages.unableToDetermineLibrarySection' => 'Kan ikke bestemme biblioteksafdeling for dette element',
 			_ => null,
 		} ?? switch (path) {
+			'messages.contactAdminForProfiles' => 'Kontakt din serveradministrator for at tilføje profiler',
+			'messages.unableToDetermineLibrarySection' => 'Kan ikke bestemme biblioteksafdeling for dette element',
 			'messages.logsCleared' => 'Logs ryddet',
 			'messages.logsCopied' => 'Logs kopieret til udklipsholder',
 			'messages.noLogsAvailable' => 'Ingen logs tilgængelige',
@@ -3121,10 +3125,10 @@ extension on TranslationsDa {
 			'downloads.episodesQueued' => ({required Object count}) => '${count} episoder i downloadkø',
 			'downloads.downloadDeleted' => 'Download slettet',
 			'downloads.deleteConfirm' => ({required Object title}) => 'Slet "${title}" fra denne enhed?',
-			'downloads.cancelledDownloadTitle' => 'Annulleret download',
-			'downloads.cancelledDownloadMessage' => 'Denne download blev annulleret. Hvad vil du gøre?',
 			_ => null,
 		} ?? switch (path) {
+			'downloads.cancelledDownloadTitle' => 'Annulleret download',
+			'downloads.cancelledDownloadMessage' => 'Denne download blev annulleret. Hvad vil du gøre?',
 			'downloads.allEpisodesAlreadyDownloaded' => 'Alle episoder er allerede downloadet',
 			'downloads.resumeDownload' => 'Genoptag download',
 			'downloads.cancelledDownload' => 'Annulleret download',

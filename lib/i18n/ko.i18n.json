@@ -136,6 +136,8 @@
     "tvFullCardLayoutDescription": "TV 카드에 이미지만 표시하고 배우 이름을 오버레이로 표시",
     "focusGlow": "포커스 글로우",
     "focusGlowDescription": "포커스된 카드 주위에 은은한 빛 효과를 표시",
+    "appleTvSystemKeyboard": "",
+    "appleTvSystemKeyboardDescription": "",
     "visualEffects": "시각 효과",
     "visualEffectsAuto": "자동",
     "visualEffectsAutoDescription": "저전력 기기에서 효과를 자동으로 줄입니다",

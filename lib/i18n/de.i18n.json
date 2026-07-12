@@ -136,6 +136,8 @@
     "tvFullCardLayoutDescription": "TV-Karten nur mit Bild verwenden und Darstellernamen einblenden",
     "focusGlow": "Fokus-Leuchten",
     "focusGlowDescription": "Sanftes Leuchten um die fokussierte Karte anzeigen",
+    "appleTvSystemKeyboard": "",
+    "appleTvSystemKeyboardDescription": "",
     "visualEffects": "Visuelle Effekte",
     "visualEffectsAuto": "Automatisch",
     "visualEffectsAutoDescription": "Effekte auf leistungsschwachen Geräten automatisch reduzieren",

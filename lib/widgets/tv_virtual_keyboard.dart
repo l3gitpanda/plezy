@@ -7,6 +7,7 @@ import 'package:material_symbols_icons/symbols.dart';
 import '../focus/dpad_navigator.dart';
 import '../i18n/strings.g.dart';
 import '../services/apple_tv_native_keyboard.dart';
+import '../services/settings_service.dart';
 import '../utils/platform_detector.dart';
 import 'clickable_cursor.dart';
 import 'listenable_selector.dart';
@@ -98,13 +99,16 @@ TvVirtualKeyboardHandle? showTvVirtualKeyboard({
 
   // Apple TV has a native system keyboard (full-screen, with "Type with
   // iPhone" and Siri Remote dictation) that we prefer for single-line
-  // fields. Multiline stays on the custom keyboard below because the tvOS
-  // system keyboard is single-line only. If the native keyboard has already
-  // failed once this session (channel missing, or the platform couldn't
-  // present it), self-heal by falling back to the custom keyboard for every
-  // subsequent open instead of leaving the user with no keyboard at all.
+  // fields, unless the user opted back into the compact keyboard via the
+  // "Use Apple TV system keyboard" setting. Multiline stays on the custom
+  // keyboard below because the tvOS system keyboard is single-line only. If
+  // the native keyboard has already failed once this session (channel
+  // missing, or the platform couldn't present it), self-heal by falling back
+  // to the custom keyboard for every subsequent open instead of leaving the
+  // user with no keyboard at all.
   if (PlatformDetector.isAppleTV() &&
       !AppleTvNativeKeyboard.isKnownUnavailable &&
+      (SettingsService.instanceOrNull?.read(SettingsService.appleTvSystemKeyboard) ?? true) &&
       !_isMultilineRequest(keyboardType: keyboardType, maxLines: maxLines)) {
     return AppleTvNativeKeyboard.show(
       controller: controller,

@@ -521,6 +521,12 @@ class TranslationsSettingsEn {
 	/// en: 'Draw a soft glow around the focused card'
 	String get focusGlowDescription => 'Draw a soft glow around the focused card';
 
+	/// en: 'Use Apple TV System Keyboard'
+	String get appleTvSystemKeyboard => 'Use Apple TV System Keyboard';
+
+	/// en: 'Full-screen keyboard with dictation and iPhone typing. Turn off for the compact on-screen keyboard.'
+	String get appleTvSystemKeyboardDescription => 'Full-screen keyboard with dictation and iPhone typing. Turn off for the compact on-screen keyboard.';
+
 	/// en: 'Visual Effects'
 	String get visualEffects => 'Visual Effects';
 
@@ -5034,6 +5040,8 @@ extension on Translations {
 			'settings.tvFullCardLayoutDescription' => 'Use image-only TV cards with actor names overlaid',
 			'settings.focusGlow' => 'Focus Glow',
 			'settings.focusGlowDescription' => 'Draw a soft glow around the focused card',
+			'settings.appleTvSystemKeyboard' => 'Use Apple TV System Keyboard',
+			'settings.appleTvSystemKeyboardDescription' => 'Full-screen keyboard with dictation and iPhone typing. Turn off for the compact on-screen keyboard.',
 			'settings.visualEffects' => 'Visual Effects',
 			'settings.visualEffectsAuto' => 'Auto',
 			'settings.visualEffectsAutoDescription' => 'Reduce effects automatically on low-power devices',
@@ -5418,10 +5426,10 @@ extension on Translations {
 			'messages.musicNotSupported' => 'Music playback is not yet supported',
 			'messages.noDescriptionAvailable' => 'No description available',
 			'messages.noProfilesAvailable' => 'No profiles available',
-			'messages.contactAdminForProfiles' => 'Contact your server administrator to add profiles',
-			'messages.unableToDetermineLibrarySection' => 'Unable to determine library section for this item',
 			_ => null,
 		} ?? switch (path) {
+			'messages.contactAdminForProfiles' => 'Contact your server administrator to add profiles',
+			'messages.unableToDetermineLibrarySection' => 'Unable to determine library section for this item',
 			'messages.logsCleared' => 'Logs cleared',
 			'messages.logsCopied' => 'Logs copied to clipboard',
 			'messages.noLogsAvailable' => 'No logs available',
@@ -5932,10 +5940,10 @@ extension on Translations {
 			'downloads.episodesQueued' => ({required Object count}) => '${count} episodes queued for download',
 			'downloads.downloadDeleted' => 'Download deleted',
 			'downloads.deleteConfirm' => ({required Object title}) => 'Delete "${title}" from this device?',
-			'downloads.cancelledDownloadTitle' => 'Cancelled Download',
-			'downloads.cancelledDownloadMessage' => 'This download was cancelled. What would you like to do?',
 			_ => null,
 		} ?? switch (path) {
+			'downloads.cancelledDownloadTitle' => 'Cancelled Download',
+			'downloads.cancelledDownloadMessage' => 'This download was cancelled. What would you like to do?',
 			'downloads.allEpisodesAlreadyDownloaded' => 'All episodes already downloaded',
 			'downloads.resumeDownload' => 'Resume download',
 			'downloads.cancelledDownload' => 'Cancelled download',

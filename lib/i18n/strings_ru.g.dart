@@ -267,6 +267,8 @@ class _TranslationsSettingsRu extends TranslationsSettingsEn {
 	@override String get tvFullCardLayoutDescription => 'Использовать TV-карточки только с изображением и именами актёров поверх него';
 	@override String get focusGlow => 'Свечение при фокусе';
 	@override String get focusGlowDescription => 'Показывать мягкое свечение вокруг карточки в фокусе';
+	@override String get appleTvSystemKeyboard => '';
+	@override String get appleTvSystemKeyboardDescription => '';
 	@override String get visualEffects => 'Визуальные эффекты';
 	@override String get visualEffectsAuto => 'Автоматически';
 	@override String get visualEffectsAutoDescription => 'Автоматически уменьшать эффекты на маломощных устройствах';
@@ -2227,6 +2229,8 @@ extension on TranslationsRu {
 			'settings.tvFullCardLayoutDescription' => 'Использовать TV-карточки только с изображением и именами актёров поверх него',
 			'settings.focusGlow' => 'Свечение при фокусе',
 			'settings.focusGlowDescription' => 'Показывать мягкое свечение вокруг карточки в фокусе',
+			'settings.appleTvSystemKeyboard' => '',
+			'settings.appleTvSystemKeyboardDescription' => '',
 			'settings.visualEffects' => 'Визуальные эффекты',
 			'settings.visualEffectsAuto' => 'Автоматически',
 			'settings.visualEffectsAutoDescription' => 'Автоматически уменьшать эффекты на маломощных устройствах',
@@ -2611,10 +2615,10 @@ extension on TranslationsRu {
 			'messages.musicNotSupported' => 'Воспроизведение музыки пока не поддерживается',
 			'messages.noDescriptionAvailable' => 'Описание недоступно',
 			'messages.noProfilesAvailable' => 'Профили недоступны',
-			'messages.contactAdminForProfiles' => 'Обратитесь к администратору сервера для добавления профилей',
-			'messages.unableToDetermineLibrarySection' => 'Не удаётся определить раздел библиотеки для этого элемента',
 			_ => null,
 		} ?? switch (path) {
+			'messages.contactAdminForProfiles' => 'Обратитесь к администратору сервера для добавления профилей',
+			'messages.unableToDetermineLibrarySection' => 'Не удаётся определить раздел библиотеки для этого элемента',
 			'messages.logsCleared' => 'Логи очищены',
 			'messages.logsCopied' => 'Логи скопированы в буфер обмена',
 			'messages.noLogsAvailable' => 'Логи отсутствуют',
@@ -3125,10 +3129,10 @@ extension on TranslationsRu {
 			'downloads.episodesQueued' => ({required Object count}) => '${count} эпизодов поставлено в очередь загрузки',
 			'downloads.downloadDeleted' => 'Загрузка удалена',
 			'downloads.deleteConfirm' => ({required Object title}) => 'Удалить "${title}" с этого устройства?',
-			'downloads.cancelledDownloadTitle' => 'Загрузка отменена',
-			'downloads.cancelledDownloadMessage' => 'Эта загрузка была отменена. Что вы хотите сделать?',
 			_ => null,
 		} ?? switch (path) {
+			'downloads.cancelledDownloadTitle' => 'Загрузка отменена',
+			'downloads.cancelledDownloadMessage' => 'Эта загрузка была отменена. Что вы хотите сделать?',
 			'downloads.allEpisodesAlreadyDownloaded' => 'Все эпизоды уже загружены',
 			'downloads.resumeDownload' => 'Возобновить загрузку',
 			'downloads.cancelledDownload' => 'Загрузка отменена',

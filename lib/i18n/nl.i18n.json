@@ -136,6 +136,8 @@
     "tvFullCardLayoutDescription": "Gebruik tv-kaarten met alleen afbeeldingen en namen van acteurs als overlay",
     "focusGlow": "Focusgloed",
     "focusGlowDescription": "Toon een zachte gloed rond de kaart met focus",
+    "appleTvSystemKeyboard": "",
+    "appleTvSystemKeyboardDescription": "",
     "visualEffects": "Visuele effecten",
     "visualEffectsAuto": "Automatisch",
     "visualEffectsAutoDescription": "Effecten automatisch verminderen op apparaten met laag vermogen",

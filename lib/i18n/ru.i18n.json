@@ -136,6 +136,8 @@
     "tvFullCardLayoutDescription": "Использовать TV-карточки только с изображением и именами актёров поверх него",
     "focusGlow": "Свечение при фокусе",
     "focusGlowDescription": "Показывать мягкое свечение вокруг карточки в фокусе",
+    "appleTvSystemKeyboard": "",
+    "appleTvSystemKeyboardDescription": "",
     "visualEffects": "Визуальные эффекты",
     "visualEffectsAuto": "Автоматически",
     "visualEffectsAutoDescription": "Автоматически уменьшать эффекты на маломощных устройствах",

@@ -55,6 +55,13 @@ class AppearanceSettingsScreen extends StatelessWidget {
                 title: t.settings.focusGlow,
                 subtitle: t.settings.focusGlowDescription,
               ),
+            if (PlatformDetector.isAppleTV())
+              SettingSwitchTile(
+                pref: SettingsService.appleTvSystemKeyboard,
+                icon: Symbols.keyboard_rounded,
+                title: t.settings.appleTvSystemKeyboard,
+                subtitle: t.settings.appleTvSystemKeyboardDescription,
+              ),
             if (Platform.isAndroid) _visualEffectsSelector(context),
             SettingSwitchTile(
               pref: SettingsService.showEpisodeNumberOnCards,

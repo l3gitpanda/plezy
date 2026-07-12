@@ -322,6 +322,11 @@ class SettingsService extends BaseSharedPreferencesService {
   static const showHeroSection = BoolPref('show_hero_section', defaultValue: true);
   static const tvFullCardLayout = BoolPref('tv_full_card_layout', defaultValue: false);
   static const focusGlow = BoolPref('focus_glow', defaultValue: true);
+
+  /// Whether to present the full-screen tvOS system keyboard for single-line
+  /// fields instead of the compact in-app one. Read at keyboard-open time by
+  /// `showTvVirtualKeyboard`, so toggling it takes effect on the next open.
+  static const appleTvSystemKeyboard = BoolPref('apple_tv_system_keyboard', defaultValue: true);
   static const useGlobalHubs = BoolPref('use_global_hubs', defaultValue: true);
   static const showServerNameOnHubs = BoolPref('show_server_name_on_hubs');
   static const groupLibrariesByServer = BoolPref('group_libraries_by_server', defaultValue: true);

@@ -267,6 +267,8 @@ class _TranslationsSettingsJa extends TranslationsSettingsEn {
 	@override String get tvFullCardLayoutDescription => 'TVカードを画像のみで表示し、俳優名を重ねて表示します';
 	@override String get focusGlow => 'フォーカス時の光彩';
 	@override String get focusGlowDescription => 'フォーカス中のカードの周りに柔らかい光彩を表示します';
+	@override String get appleTvSystemKeyboard => '';
+	@override String get appleTvSystemKeyboardDescription => '';
 	@override String get visualEffects => '視覚効果';
 	@override String get visualEffectsAuto => '自動';
 	@override String get visualEffectsAutoDescription => '低性能なデバイスでは効果を自動的に減らします';
@@ -2221,6 +2223,8 @@ extension on TranslationsJa {
 			'settings.tvFullCardLayoutDescription' => 'TVカードを画像のみで表示し、俳優名を重ねて表示します',
 			'settings.focusGlow' => 'フォーカス時の光彩',
 			'settings.focusGlowDescription' => 'フォーカス中のカードの周りに柔らかい光彩を表示します',
+			'settings.appleTvSystemKeyboard' => '',
+			'settings.appleTvSystemKeyboardDescription' => '',
 			'settings.visualEffects' => '視覚効果',
 			'settings.visualEffectsAuto' => '自動',
 			'settings.visualEffectsAutoDescription' => '低性能なデバイスでは効果を自動的に減らします',
@@ -2605,10 +2609,10 @@ extension on TranslationsJa {
 			'messages.musicNotSupported' => '音楽の再生はまだサポートされていません',
 			'messages.noDescriptionAvailable' => '説明はありません',
 			'messages.noProfilesAvailable' => '利用可能なプロフィールがありません',
-			'messages.contactAdminForProfiles' => 'プロファイルを追加するにはサーバー管理者に連絡してください',
-			'messages.unableToDetermineLibrarySection' => 'このアイテムのライブラリセクションを判別できません',
 			_ => null,
 		} ?? switch (path) {
+			'messages.contactAdminForProfiles' => 'プロファイルを追加するにはサーバー管理者に連絡してください',
+			'messages.unableToDetermineLibrarySection' => 'このアイテムのライブラリセクションを判別できません',
 			'messages.logsCleared' => 'ログをクリアしました',
 			'messages.logsCopied' => 'ログをクリップボードにコピーしました',
 			'messages.noLogsAvailable' => 'ログがありません',
@@ -3119,10 +3123,10 @@ extension on TranslationsJa {
 			'downloads.episodesQueued' => ({required Object count}) => '${count}エピソードをダウンロードキューに追加しました',
 			'downloads.downloadDeleted' => 'ダウンロードを削除しました',
 			'downloads.deleteConfirm' => ({required Object title}) => 'このデバイスから「${title}」を削除しますか？',
-			'downloads.cancelledDownloadTitle' => 'キャンセルされたダウンロード',
-			'downloads.cancelledDownloadMessage' => 'このダウンロードはキャンセルされました。どうしますか？',
 			_ => null,
 		} ?? switch (path) {
+			'downloads.cancelledDownloadTitle' => 'キャンセルされたダウンロード',
+			'downloads.cancelledDownloadMessage' => 'このダウンロードはキャンセルされました。どうしますか？',
 			'downloads.allEpisodesAlreadyDownloaded' => 'すべてのエピソードはすでにダウンロード済みです',
 			'downloads.resumeDownload' => 'ダウンロードを再開',
 			'downloads.cancelledDownload' => 'キャンセルされたダウンロード',

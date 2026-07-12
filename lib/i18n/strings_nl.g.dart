@@ -267,6 +267,8 @@ class _TranslationsSettingsNl extends TranslationsSettingsEn {
 	@override String get tvFullCardLayoutDescription => 'Gebruik tv-kaarten met alleen afbeeldingen en namen van acteurs als overlay';
 	@override String get focusGlow => 'Focusgloed';
 	@override String get focusGlowDescription => 'Toon een zachte gloed rond de kaart met focus';
+	@override String get appleTvSystemKeyboard => '';
+	@override String get appleTvSystemKeyboardDescription => '';
 	@override String get visualEffects => 'Visuele effecten';
 	@override String get visualEffectsAuto => 'Automatisch';
 	@override String get visualEffectsAutoDescription => 'Effecten automatisch verminderen op apparaten met laag vermogen';
@@ -2223,6 +2225,8 @@ extension on TranslationsNl {
 			'settings.tvFullCardLayoutDescription' => 'Gebruik tv-kaarten met alleen afbeeldingen en namen van acteurs als overlay',
 			'settings.focusGlow' => 'Focusgloed',
 			'settings.focusGlowDescription' => 'Toon een zachte gloed rond de kaart met focus',
+			'settings.appleTvSystemKeyboard' => '',
+			'settings.appleTvSystemKeyboardDescription' => '',
 			'settings.visualEffects' => 'Visuele effecten',
 			'settings.visualEffectsAuto' => 'Automatisch',
 			'settings.visualEffectsAutoDescription' => 'Effecten automatisch verminderen op apparaten met laag vermogen',
@@ -2607,10 +2611,10 @@ extension on TranslationsNl {
 			'messages.musicNotSupported' => 'Muziek afspelen wordt nog niet ondersteund',
 			'messages.noDescriptionAvailable' => 'Geen beschrijving beschikbaar',
 			'messages.noProfilesAvailable' => 'Geen profielen beschikbaar',
-			'messages.contactAdminForProfiles' => 'Neem contact op met je serverbeheerder om profielen toe te voegen',
-			'messages.unableToDetermineLibrarySection' => 'Kan bibliotheeksectie voor dit item niet bepalen',
 			_ => null,
 		} ?? switch (path) {
+			'messages.contactAdminForProfiles' => 'Neem contact op met je serverbeheerder om profielen toe te voegen',
+			'messages.unableToDetermineLibrarySection' => 'Kan bibliotheeksectie voor dit item niet bepalen',
 			'messages.logsCleared' => 'Logs gewist',
 			'messages.logsCopied' => 'Logs gekopieerd naar klembord',
 			'messages.noLogsAvailable' => 'Geen logs beschikbaar',
@@ -3121,10 +3125,10 @@ extension on TranslationsNl {
 			'downloads.episodesQueued' => ({required Object count}) => '${count} afleveringen in wachtrij voor download',
 			'downloads.downloadDeleted' => 'Download verwijderd',
 			'downloads.deleteConfirm' => ({required Object title}) => '"${title}" van dit apparaat verwijderen?',
-			'downloads.cancelledDownloadTitle' => 'Geannuleerde download',
-			'downloads.cancelledDownloadMessage' => 'Deze download is geannuleerd. Wat wil je doen?',
 			_ => null,
 		} ?? switch (path) {
+			'downloads.cancelledDownloadTitle' => 'Geannuleerde download',
+			'downloads.cancelledDownloadMessage' => 'Deze download is geannuleerd. Wat wil je doen?',
 			'downloads.allEpisodesAlreadyDownloaded' => 'Alle afleveringen zijn al gedownload',
 			'downloads.resumeDownload' => 'Download hervatten',
 			'downloads.cancelledDownload' => 'Geannuleerde download',

@@ -267,6 +267,8 @@ class _TranslationsSettingsKo extends TranslationsSettingsEn {
 	@override String get tvFullCardLayoutDescription => 'TV 카드에 이미지만 표시하고 배우 이름을 오버레이로 표시';
 	@override String get focusGlow => '포커스 글로우';
 	@override String get focusGlowDescription => '포커스된 카드 주위에 은은한 빛 효과를 표시';
+	@override String get appleTvSystemKeyboard => '';
+	@override String get appleTvSystemKeyboardDescription => '';
 	@override String get visualEffects => '시각 효과';
 	@override String get visualEffectsAuto => '자동';
 	@override String get visualEffectsAutoDescription => '저전력 기기에서 효과를 자동으로 줄입니다';
@@ -2221,6 +2223,8 @@ extension on TranslationsKo {
 			'settings.tvFullCardLayoutDescription' => 'TV 카드에 이미지만 표시하고 배우 이름을 오버레이로 표시',
 			'settings.focusGlow' => '포커스 글로우',
 			'settings.focusGlowDescription' => '포커스된 카드 주위에 은은한 빛 효과를 표시',
+			'settings.appleTvSystemKeyboard' => '',
+			'settings.appleTvSystemKeyboardDescription' => '',
 			'settings.visualEffects' => '시각 효과',
 			'settings.visualEffectsAuto' => '자동',
 			'settings.visualEffectsAutoDescription' => '저전력 기기에서 효과를 자동으로 줄입니다',
@@ -2605,10 +2609,10 @@ extension on TranslationsKo {
 			'messages.musicNotSupported' => '음악 재생 미지원',
 			'messages.noDescriptionAvailable' => '설명이 없습니다',
 			'messages.noProfilesAvailable' => '사용 가능한 프로필이 없습니다',
-			'messages.contactAdminForProfiles' => '프로필을 추가하려면 서버 관리자에게 문의하세요',
-			'messages.unableToDetermineLibrarySection' => '이 항목의 라이브러리 섹션을 확인할 수 없습니다',
 			_ => null,
 		} ?? switch (path) {
+			'messages.contactAdminForProfiles' => '프로필을 추가하려면 서버 관리자에게 문의하세요',
+			'messages.unableToDetermineLibrarySection' => '이 항목의 라이브러리 섹션을 확인할 수 없습니다',
 			'messages.logsCleared' => '로그가 삭제 되었습니다',
 			'messages.logsCopied' => '로그가 클립보드에 복사 되었습니다',
 			'messages.noLogsAvailable' => '사용 가능한 로그가 없습니다',
@@ -3119,10 +3123,10 @@ extension on TranslationsKo {
 			'downloads.episodesQueued' => ({required Object count}) => '${count} 에피소드가 다운로드 대기열에 추가 되었습니다',
 			'downloads.downloadDeleted' => '다운로드 삭제됨',
 			'downloads.deleteConfirm' => ({required Object title}) => '이 기기에서 "${title}"을(를) 삭제할까요?',
-			'downloads.cancelledDownloadTitle' => '취소된 다운로드',
-			'downloads.cancelledDownloadMessage' => '이 다운로드가 취소되었습니다. 어떻게 하시겠습니까?',
 			_ => null,
 		} ?? switch (path) {
+			'downloads.cancelledDownloadTitle' => '취소된 다운로드',
+			'downloads.cancelledDownloadMessage' => '이 다운로드가 취소되었습니다. 어떻게 하시겠습니까?',
 			'downloads.allEpisodesAlreadyDownloaded' => '모든 에피소드가 이미 다운로드되었습니다',
 			'downloads.resumeDownload' => '다운로드 재개',
 			'downloads.cancelledDownload' => '취소된 다운로드',

@@ -136,6 +136,8 @@
     "tvFullCardLayoutDescription": "Usar tarjetas TV solo con imagen y nombres de actores superpuestos",
     "focusGlow": "Brillo de foco",
     "focusGlowDescription": "Mostrar un brillo suave alrededor de la tarjeta con foco",
+    "appleTvSystemKeyboard": "",
+    "appleTvSystemKeyboardDescription": "",
     "visualEffects": "Efectos visuales",
     "visualEffectsAuto": "Automático",
     "visualEffectsAutoDescription": "Reduce automáticamente los efectos en dispositivos de bajo consumo",

@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:plezy/services/apple_tv_native_keyboard.dart';
+import 'package:plezy/services/settings_service.dart';
 import 'package:plezy/services/tvos_system_navigation_service.dart';
 import 'package:plezy/utils/platform_detector.dart';
 import 'package:plezy/widgets/tv_virtual_keyboard.dart';
+
+import '../test_helpers/prefs.dart';
 
 const _channel = MethodChannel('com.plezy/native_keyboard');
 const _navChannel = BasicMessageChannel<Object?>('flutter/tvos_system_navigation', JSONMessageCodec());
@@ -18,6 +21,11 @@ void main() {
   }
 
   setUp(() {
+    // Some tests below seed the "Use Apple TV system keyboard" setting;
+    // reset SharedPreferences and the SettingsService singleton so no test
+    // sees another's writes (or a stale `SettingsService.instanceOrNull`).
+    resetSharedPreferencesForTest();
+    SettingsService.resetForTesting();
     calls = <MethodCall>[];
     setHandler((call) async {
       calls.add(call);
@@ -69,6 +77,22 @@ void main() {
       expect(arguments['keyboardType'], 'text');
       expect(arguments['obscureText'], isFalse);
       expect(arguments['requestId'], isA<int>());
+    });
+
+    testWidgets('"Use Apple TV system keyboard" disabled falls back to the custom keyboard', (tester) async {
+      final settings = await SettingsService.getInstance();
+      await settings.write(SettingsService.appleTvSystemKeyboard, false);
+
+      final context = await _pumpAppleTvContext(tester);
+      final controller = TextEditingController();
+      addTearDown(controller.dispose);
+
+      final handle = showTvVirtualKeyboard(context: context, controller: controller);
+      addTearDown(() => handle?.close());
+      await tester.pumpAndSettle();
+
+      expect(find.byType(Dialog), findsOneWidget);
+      expect(calls.where((call) => call.method == 'show'), isEmpty);
     });
 
     testWidgets('opening the native keyboard enables Menu passthrough so it can dismiss the keyboard', (tester) async {

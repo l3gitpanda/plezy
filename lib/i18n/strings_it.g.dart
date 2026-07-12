@@ -267,6 +267,8 @@ class _TranslationsSettingsIt extends TranslationsSettingsEn {
 	@override String get tvFullCardLayoutDescription => 'Usa schede TV solo immagine con i nomi degli attori sovrapposti';
 	@override String get focusGlow => 'Bagliore di selezione';
 	@override String get focusGlowDescription => 'Mostra un leggero bagliore attorno alla scheda selezionata';
+	@override String get appleTvSystemKeyboard => '';
+	@override String get appleTvSystemKeyboardDescription => '';
 	@override String get visualEffects => 'Effetti visivi';
 	@override String get visualEffectsAuto => 'Automatico';
 	@override String get visualEffectsAutoDescription => 'Riduci automaticamente gli effetti sui dispositivi a basso consumo';
@@ -2223,6 +2225,8 @@ extension on TranslationsIt {
 			'settings.tvFullCardLayoutDescription' => 'Usa schede TV solo immagine con i nomi degli attori sovrapposti',
 			'settings.focusGlow' => 'Bagliore di selezione',
 			'settings.focusGlowDescription' => 'Mostra un leggero bagliore attorno alla scheda selezionata',
+			'settings.appleTvSystemKeyboard' => '',
+			'settings.appleTvSystemKeyboardDescription' => '',
 			'settings.visualEffects' => 'Effetti visivi',
 			'settings.visualEffectsAuto' => 'Automatico',
 			'settings.visualEffectsAutoDescription' => 'Riduci automaticamente gli effetti sui dispositivi a basso consumo',
@@ -2607,10 +2611,10 @@ extension on TranslationsIt {
 			'messages.musicNotSupported' => 'La riproduzione musicale non è ancora supportata',
 			'messages.noDescriptionAvailable' => 'Nessuna descrizione disponibile',
 			'messages.noProfilesAvailable' => 'Nessun profilo disponibile',
-			'messages.contactAdminForProfiles' => 'Contatta l\'amministratore del server per aggiungere profili',
-			'messages.unableToDetermineLibrarySection' => 'Impossibile determinare la sezione della libreria per questo elemento',
 			_ => null,
 		} ?? switch (path) {
+			'messages.contactAdminForProfiles' => 'Contatta l\'amministratore del server per aggiungere profili',
+			'messages.unableToDetermineLibrarySection' => 'Impossibile determinare la sezione della libreria per questo elemento',
 			'messages.logsCleared' => 'Log eliminati',
 			'messages.logsCopied' => 'Log copiati negli appunti',
 			'messages.noLogsAvailable' => 'Nessun log disponibile',
@@ -3121,10 +3125,10 @@ extension on TranslationsIt {
 			'downloads.episodesQueued' => ({required Object count}) => '${count} episodi in coda per il download',
 			'downloads.downloadDeleted' => 'Download eliminato',
 			'downloads.deleteConfirm' => ({required Object title}) => 'Eliminare "${title}" da questo dispositivo?',
-			'downloads.cancelledDownloadTitle' => 'Download annullato',
-			'downloads.cancelledDownloadMessage' => 'Questo download è stato annullato. Cosa vuoi fare?',
 			_ => null,
 		} ?? switch (path) {
+			'downloads.cancelledDownloadTitle' => 'Download annullato',
+			'downloads.cancelledDownloadMessage' => 'Questo download è stato annullato. Cosa vuoi fare?',
 			'downloads.allEpisodesAlreadyDownloaded' => 'Tutti gli episodi sono già stati scaricati',
 			'downloads.resumeDownload' => 'Riprendi download',
 			'downloads.cancelledDownload' => 'Download annullato',

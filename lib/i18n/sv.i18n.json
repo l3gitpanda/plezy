@@ -136,6 +136,8 @@
     "tvFullCardLayoutDescription": "Använd TV-kort med enbart bild och skådespelarnamn ovanpå",
     "focusGlow": "Fokusglöd",
     "focusGlowDescription": "Visa en mjuk glöd runt kortet i fokus",
+    "appleTvSystemKeyboard": "",
+    "appleTvSystemKeyboardDescription": "",
     "visualEffects": "Visuella effekter",
     "visualEffectsAuto": "Automatiskt",
     "visualEffectsAutoDescription": "Minska effekter automatiskt på enheter med låg effekt",
