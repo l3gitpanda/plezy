@@ -1,7 +1,8 @@
-import Flutter
 import UIKit
 
 #if os(tvOS)
+  import Flutter
+
   final class NativeTextInputPlugin: NSObject, FlutterPlugin {
     private static let channelName = "com.plezy/native_keyboard"
 
@@ -67,7 +68,8 @@ import UIKit
       result(nil)
 
       DispatchQueue.main.async { [weak self] in
-        self?.textField.becomeFirstResponder()
+        guard let self, self.session?.requestId == requestId else { return }
+        self.textField.becomeFirstResponder()
       }
     }
 
@@ -85,7 +87,18 @@ import UIKit
         result(nil)
         return
       }
-      textField.resignFirstResponder()
+      if textField.isFirstResponder {
+        textField.resignFirstResponder()
+      } else {
+        // The deferred `becomeFirstResponder` queued by `handleShow` may not have
+        // run yet (GCD FIFO can order a same-requestId dismiss ahead of it).
+        // Resigning a field that never became first responder is a no-op and
+        // `textFieldDidEndEditing` would not fire, so clear the session here
+        // directly instead — otherwise that deferred block would later present
+        // a keyboard for a session Dart has already torn down.
+        channel.invokeMethod("closed", arguments: ["requestId": requestId])
+        session = nil
+      }
       result(nil)
     }
 
