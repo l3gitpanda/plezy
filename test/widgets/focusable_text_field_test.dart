@@ -718,7 +718,9 @@ void main() {
   });
 
   testWidgets('TV hardware input replaces a reversed text selection', (tester) async {
-    TvDetectionService.debugSetAppleTVOverride(true);
+    // Generic TV (not Apple TV): Apple TV routes single-line fields to the
+    // native tvOS keyboard, which does not use this hardware editing path.
+    TvDetectionService.debugSetTvOverride(true);
     final controller = TextEditingController(text: 'ab')
       ..selection = const TextSelection(baseOffset: 2, extentOffset: 0);
     final fieldFocusNode = FocusNode(debugLabel: 'selection_field');

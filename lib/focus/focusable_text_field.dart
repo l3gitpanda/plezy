@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../services/apple_tv_native_keyboard.dart';
 import '../services/gamepad_service.dart';
 import '../utils/platform_detector.dart';
 import '../utils/text_input_diagnostics.dart';
@@ -940,7 +941,12 @@ class _FocusableTextInputHostState extends State<_FocusableTextInputHost> {
       );
       if (result != KeyEventResult.ignored) return result;
     }
-    return widget.input._handleKey(context, node, event, _openTvKeyboard, _tvKeyboardOpen);
+    // Only a NATIVE keyboard session needs the key guard: the field keeps
+    // primary focus under it, so Dart-side editing would double-process
+    // input. A custom OSK session moves focus to its dialog, and until that
+    // focus transfer lands hardware keys should keep editing the field.
+    final nativeSessionUp = _tvKeyboardOpen && AppleTvNativeKeyboard.isSessionActive;
+    return widget.input._handleKey(context, node, event, _openTvKeyboard, nativeSessionUp);
   }
 
   void _installKeyHandler(FocusNode node) {

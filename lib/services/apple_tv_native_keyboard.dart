@@ -30,6 +30,11 @@ class AppleTvNativeKeyboard {
   /// (channel missing/threw, or the platform side failed to present it).
   static bool get isKnownUnavailable => _nativeKeyboardUnavailable;
 
+  /// Whether a native keyboard session is currently up. While one is, the
+  /// Flutter field keeps primary focus, so callers must suppress Dart-side
+  /// key editing that would double-process the native keyboard's input.
+  static bool get isSessionActive => _activeSession != null;
+
   @visibleForTesting
   static void debugResetNativeKeyboardUnavailable() {
     _nativeKeyboardUnavailable = false;
