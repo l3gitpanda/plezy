@@ -1993,6 +1993,7 @@ class _TranslationsCompanionRemoteRemoteDa extends TranslationsCompanionRemoteRe
 	@override String get tabNavigation => 'Fanenavigation';
 	@override String get tabDiscover => 'Opdag';
 	@override String get tabLibraries => 'Biblioteker';
+	@override String get tabExplore => '';
 	@override String get tabSearch => 'Søg';
 	@override String get tabDownloads => 'Downloads';
 	@override String get tabSettings => 'Indstillinger';
@@ -3227,6 +3228,7 @@ extension on TranslationsDa {
 			'companionRemote.remote.tabNavigation' => 'Fanenavigation',
 			'companionRemote.remote.tabDiscover' => 'Opdag',
 			'companionRemote.remote.tabLibraries' => 'Biblioteker',
+			'companionRemote.remote.tabExplore' => '',
 			'companionRemote.remote.tabSearch' => 'Søg',
 			'companionRemote.remote.tabDownloads' => 'Downloads',
 			'companionRemote.remote.tabSettings' => 'Indstillinger',

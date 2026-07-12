@@ -48,6 +48,7 @@ import '../../models/transcode_quality_preset.dart';
 import '../../media/media_version.dart';
 import '../../screens/video_player_screen.dart';
 import '../../focus/key_event_utils.dart';
+import '../../services/companion_remote/companion_remote_receiver.dart';
 import '../../services/keyboard_shortcuts_service.dart';
 import '../../services/device_adjustment_service.dart';
 import '../../services/scrub_preview_source.dart';
@@ -696,6 +697,15 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
     _configureChromeController();
     widget.chromeController.setPlaying(widget.player.state.playing);
     _initKeyboardService();
+    // Companion-remote chapter skipping is wired here rather than on the
+    // player screen: the chapter list loads with these controls, and
+    // _seekToChapter already falls back to a small time seek without one.
+    CompanionRemoteReceiver.instance.onPreviousChapter = () {
+      if (mounted) _seekToPreviousChapter();
+    };
+    CompanionRemoteReceiver.instance.onNextChapter = () {
+      if (mounted) _seekToNextChapter();
+    };
     _listenToPosition();
     _listenToPlayingState();
     _listenToCompleted();
@@ -770,6 +780,8 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
 
   @override
   void dispose() {
+    CompanionRemoteReceiver.instance.onPreviousChapter = null;
+    CompanionRemoteReceiver.instance.onNextChapter = null;
     HardwareKeyboard.instance.removeHandler(_handleGlobalKeyEvent);
     widget.chromeController.removeListener(_onChromeChanged);
     widget.hasFirstFrame?.removeListener(_onFirstFrameReady);
