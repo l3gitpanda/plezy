@@ -1111,11 +1111,11 @@ class _TranslationsLiveTvKo extends TranslationsLiveTvEn {
 	@override String get unknownChannel => '알 수 없는 채널';
 	@override String get live => '실시간';
 	@override String get reloadGuide => '편성표 새로고침';
-	@override String get searchGuide => '';
-	@override String get searchHint => '';
-	@override String searchNoResults({required Object query}) => 'No matches for "${query}"';
-	@override String get channelsSection => '';
-	@override String get programsSection => '';
+	@override String get searchGuide => '가이드 검색';
+	@override String get searchHint => '채널 및 프로그램 검색';
+	@override String searchNoResults({required Object query}) => '\'${query}\'에 대한 검색 결과가 없습니다';
+	@override String get channelsSection => '채널';
+	@override String get programsSection => '프로그램';
 	@override String get now => '지금';
 	@override String get today => '오늘';
 	@override String get tomorrow => '내일';
@@ -2929,11 +2929,11 @@ extension on TranslationsKo {
 			'liveTv.unknownChannel' => '알 수 없는 채널',
 			'liveTv.live' => '실시간',
 			'liveTv.reloadGuide' => '편성표 새로고침',
-			'liveTv.searchGuide' => '',
-			'liveTv.searchHint' => '',
-			'liveTv.searchNoResults' => ({required Object query}) => 'No matches for "${query}"',
-			'liveTv.channelsSection' => '',
-			'liveTv.programsSection' => '',
+			'liveTv.searchGuide' => '가이드 검색',
+			'liveTv.searchHint' => '채널 및 프로그램 검색',
+			'liveTv.searchNoResults' => ({required Object query}) => '\'${query}\'에 대한 검색 결과가 없습니다',
+			'liveTv.channelsSection' => '채널',
+			'liveTv.programsSection' => '프로그램',
 			'liveTv.now' => '지금',
 			'liveTv.today' => '오늘',
 			'liveTv.tomorrow' => '내일',

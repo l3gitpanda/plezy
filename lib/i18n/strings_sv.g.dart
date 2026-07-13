@@ -1112,11 +1112,11 @@ class _TranslationsLiveTvSv extends TranslationsLiveTvEn {
 	@override String get unknownChannel => 'Okänd kanal';
 	@override String get live => 'LIVE';
 	@override String get reloadGuide => 'Ladda om programguide';
-	@override String get searchGuide => '';
-	@override String get searchHint => '';
-	@override String searchNoResults({required Object query}) => 'No matches for "${query}"';
-	@override String get channelsSection => '';
-	@override String get programsSection => '';
+	@override String get searchGuide => 'Sök i guiden';
+	@override String get searchHint => 'Sök kanaler och program';
+	@override String searchNoResults({required Object query}) => 'Inga träffar för "${query}"';
+	@override String get channelsSection => 'Kanaler';
+	@override String get programsSection => 'Program';
 	@override String get now => 'Nu';
 	@override String get today => 'Idag';
 	@override String get tomorrow => 'I morgon';
@@ -2931,11 +2931,11 @@ extension on TranslationsSv {
 			'liveTv.unknownChannel' => 'Okänd kanal',
 			'liveTv.live' => 'LIVE',
 			'liveTv.reloadGuide' => 'Ladda om programguide',
-			'liveTv.searchGuide' => '',
-			'liveTv.searchHint' => '',
-			'liveTv.searchNoResults' => ({required Object query}) => 'No matches for "${query}"',
-			'liveTv.channelsSection' => '',
-			'liveTv.programsSection' => '',
+			'liveTv.searchGuide' => 'Sök i guiden',
+			'liveTv.searchHint' => 'Sök kanaler och program',
+			'liveTv.searchNoResults' => ({required Object query}) => 'Inga träffar för "${query}"',
+			'liveTv.channelsSection' => 'Kanaler',
+			'liveTv.programsSection' => 'Program',
 			'liveTv.now' => 'Nu',
 			'liveTv.today' => 'Idag',
 			'liveTv.tomorrow' => 'I morgon',

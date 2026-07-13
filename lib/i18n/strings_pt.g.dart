@@ -1112,11 +1112,11 @@ class _TranslationsLiveTvPt extends TranslationsLiveTvEn {
 	@override String get unknownChannel => 'Canal desconhecido';
 	@override String get live => 'AO VIVO';
 	@override String get reloadGuide => 'Recarregar Guia';
-	@override String get searchGuide => '';
-	@override String get searchHint => '';
-	@override String searchNoResults({required Object query}) => 'No matches for "${query}"';
-	@override String get channelsSection => '';
-	@override String get programsSection => '';
+	@override String get searchGuide => 'Pesquisar no guia';
+	@override String get searchHint => 'Pesquisar canais e programas';
+	@override String searchNoResults({required Object query}) => 'Sem resultados para "${query}"';
+	@override String get channelsSection => 'Canais';
+	@override String get programsSection => 'Programas';
 	@override String get now => 'Agora';
 	@override String get today => 'Hoje';
 	@override String get tomorrow => 'Amanhã';
@@ -2931,11 +2931,11 @@ extension on TranslationsPt {
 			'liveTv.unknownChannel' => 'Canal desconhecido',
 			'liveTv.live' => 'AO VIVO',
 			'liveTv.reloadGuide' => 'Recarregar Guia',
-			'liveTv.searchGuide' => '',
-			'liveTv.searchHint' => '',
-			'liveTv.searchNoResults' => ({required Object query}) => 'No matches for "${query}"',
-			'liveTv.channelsSection' => '',
-			'liveTv.programsSection' => '',
+			'liveTv.searchGuide' => 'Pesquisar no guia',
+			'liveTv.searchHint' => 'Pesquisar canais e programas',
+			'liveTv.searchNoResults' => ({required Object query}) => 'Sem resultados para "${query}"',
+			'liveTv.channelsSection' => 'Canais',
+			'liveTv.programsSection' => 'Programas',
 			'liveTv.now' => 'Agora',
 			'liveTv.today' => 'Hoje',
 			'liveTv.tomorrow' => 'Amanhã',

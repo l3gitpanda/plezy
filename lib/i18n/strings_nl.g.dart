@@ -1112,11 +1112,11 @@ class _TranslationsLiveTvNl extends TranslationsLiveTvEn {
 	@override String get unknownChannel => 'Onbekend kanaal';
 	@override String get live => 'LIVE';
 	@override String get reloadGuide => 'Gids herladen';
-	@override String get searchGuide => '';
-	@override String get searchHint => '';
-	@override String searchNoResults({required Object query}) => 'No matches for "${query}"';
-	@override String get channelsSection => '';
-	@override String get programsSection => '';
+	@override String get searchGuide => 'Gids doorzoeken';
+	@override String get searchHint => 'Zoek zenders en programma’s';
+	@override String searchNoResults({required Object query}) => 'Geen resultaten voor "${query}"';
+	@override String get channelsSection => 'Zenders';
+	@override String get programsSection => 'Programma’s';
 	@override String get now => 'Nu';
 	@override String get today => 'Vandaag';
 	@override String get tomorrow => 'Morgen';
@@ -2931,11 +2931,11 @@ extension on TranslationsNl {
 			'liveTv.unknownChannel' => 'Onbekend kanaal',
 			'liveTv.live' => 'LIVE',
 			'liveTv.reloadGuide' => 'Gids herladen',
-			'liveTv.searchGuide' => '',
-			'liveTv.searchHint' => '',
-			'liveTv.searchNoResults' => ({required Object query}) => 'No matches for "${query}"',
-			'liveTv.channelsSection' => '',
-			'liveTv.programsSection' => '',
+			'liveTv.searchGuide' => 'Gids doorzoeken',
+			'liveTv.searchHint' => 'Zoek zenders en programma’s',
+			'liveTv.searchNoResults' => ({required Object query}) => 'Geen resultaten voor "${query}"',
+			'liveTv.channelsSection' => 'Zenders',
+			'liveTv.programsSection' => 'Programma’s',
 			'liveTv.now' => 'Nu',
 			'liveTv.today' => 'Vandaag',
 			'liveTv.tomorrow' => 'Morgen',

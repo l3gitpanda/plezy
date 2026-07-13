@@ -1114,11 +1114,11 @@ class _TranslationsLiveTvRu extends TranslationsLiveTvEn {
 	@override String get unknownChannel => 'Неизвестный канал';
 	@override String get live => 'ЭФИР';
 	@override String get reloadGuide => 'Перезагрузить программу';
-	@override String get searchGuide => '';
-	@override String get searchHint => '';
-	@override String searchNoResults({required Object query}) => 'No matches for "${query}"';
-	@override String get channelsSection => '';
-	@override String get programsSection => '';
+	@override String get searchGuide => 'Поиск по программе';
+	@override String get searchHint => 'Поиск каналов и передач';
+	@override String searchNoResults({required Object query}) => 'Ничего не найдено по запросу «${query}»';
+	@override String get channelsSection => 'Каналы';
+	@override String get programsSection => 'Передачи';
 	@override String get now => 'Сейчас';
 	@override String get today => 'Сегодня';
 	@override String get tomorrow => 'Завтра';
@@ -2935,11 +2935,11 @@ extension on TranslationsRu {
 			'liveTv.unknownChannel' => 'Неизвестный канал',
 			'liveTv.live' => 'ЭФИР',
 			'liveTv.reloadGuide' => 'Перезагрузить программу',
-			'liveTv.searchGuide' => '',
-			'liveTv.searchHint' => '',
-			'liveTv.searchNoResults' => ({required Object query}) => 'No matches for "${query}"',
-			'liveTv.channelsSection' => '',
-			'liveTv.programsSection' => '',
+			'liveTv.searchGuide' => 'Поиск по программе',
+			'liveTv.searchHint' => 'Поиск каналов и передач',
+			'liveTv.searchNoResults' => ({required Object query}) => 'Ничего не найдено по запросу «${query}»',
+			'liveTv.channelsSection' => 'Каналы',
+			'liveTv.programsSection' => 'Передачи',
 			'liveTv.now' => 'Сейчас',
 			'liveTv.today' => 'Сегодня',
 			'liveTv.tomorrow' => 'Завтра',

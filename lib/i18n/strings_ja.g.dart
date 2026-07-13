@@ -1111,11 +1111,11 @@ class _TranslationsLiveTvJa extends TranslationsLiveTvEn {
 	@override String get unknownChannel => '不明なチャンネル';
 	@override String get live => 'ライブ';
 	@override String get reloadGuide => '番組表を再読込';
-	@override String get searchGuide => '';
-	@override String get searchHint => '';
-	@override String searchNoResults({required Object query}) => 'No matches for "${query}"';
-	@override String get channelsSection => '';
-	@override String get programsSection => '';
+	@override String get searchGuide => '番組表を検索';
+	@override String get searchHint => 'チャンネル・番組を検索';
+	@override String searchNoResults({required Object query}) => '「${query}」に一致する結果はありません';
+	@override String get channelsSection => 'チャンネル';
+	@override String get programsSection => '番組';
 	@override String get now => '現在';
 	@override String get today => '今日';
 	@override String get tomorrow => '明日';
@@ -2929,11 +2929,11 @@ extension on TranslationsJa {
 			'liveTv.unknownChannel' => '不明なチャンネル',
 			'liveTv.live' => 'ライブ',
 			'liveTv.reloadGuide' => '番組表を再読込',
-			'liveTv.searchGuide' => '',
-			'liveTv.searchHint' => '',
-			'liveTv.searchNoResults' => ({required Object query}) => 'No matches for "${query}"',
-			'liveTv.channelsSection' => '',
-			'liveTv.programsSection' => '',
+			'liveTv.searchGuide' => '番組表を検索',
+			'liveTv.searchHint' => 'チャンネル・番組を検索',
+			'liveTv.searchNoResults' => ({required Object query}) => '「${query}」に一致する結果はありません',
+			'liveTv.channelsSection' => 'チャンネル',
+			'liveTv.programsSection' => '番組',
 			'liveTv.now' => '現在',
 			'liveTv.today' => '今日',
 			'liveTv.tomorrow' => '明日',
