@@ -654,6 +654,8 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
   bool _isPipSupported = false;
   final PipService _pipService = PipService();
   AppLifecycleListener? _edgeAdjustmentLifecycleListener;
+  VoidCallback? _remotePreviousChapterHandler;
+  VoidCallback? _remoteNextChapterHandler;
 
   @override
   void initState() {
@@ -702,12 +704,14 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
     // Companion-remote chapter skipping is wired here rather than on the
     // player screen: the chapter list loads with these controls, and
     // _seekToChapter already falls back to a small time seek without one.
-    CompanionRemoteReceiver.instance.onPreviousChapter = () {
+    _remotePreviousChapterHandler = () {
       if (mounted) _seekToPreviousChapter();
     };
-    CompanionRemoteReceiver.instance.onNextChapter = () {
+    _remoteNextChapterHandler = () {
       if (mounted) _seekToNextChapter();
     };
+    CompanionRemoteReceiver.instance.onPreviousChapter = _remotePreviousChapterHandler;
+    CompanionRemoteReceiver.instance.onNextChapter = _remoteNextChapterHandler;
     _listenToPosition();
     _listenToPlayingState();
     _listenToCompleted();
@@ -784,8 +788,15 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
 
   @override
   void dispose() {
-    CompanionRemoteReceiver.instance.onPreviousChapter = null;
-    CompanionRemoteReceiver.instance.onNextChapter = null;
+    // During pushReplacement the new controls can install their handlers
+    // before these dispose; only clear handlers this instance still owns.
+    final remoteReceiver = CompanionRemoteReceiver.instance;
+    if (identical(remoteReceiver.onPreviousChapter, _remotePreviousChapterHandler)) {
+      remoteReceiver.onPreviousChapter = null;
+    }
+    if (identical(remoteReceiver.onNextChapter, _remoteNextChapterHandler)) {
+      remoteReceiver.onNextChapter = null;
+    }
     HardwareKeyboard.instance.removeHandler(_handleGlobalKeyEvent);
     widget.chromeController.removeListener(_onChromeChanged);
     widget.hasFirstFrame?.removeListener(_onFirstFrameReady);

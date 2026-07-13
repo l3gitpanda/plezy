@@ -2000,7 +2000,7 @@ class _TranslationsCompanionRemoteRemoteRu extends TranslationsCompanionRemoteRe
 	@override String get tabNavigation => 'Навигация';
 	@override String get tabDiscover => 'Обзор';
 	@override String get tabLibraries => 'Библиотеки';
-	@override String get tabExplore => '';
+	@override String get tabExplore => 'Исследовать';
 	@override String get tabSearch => 'Поиск';
 	@override String get tabDownloads => 'Загрузки';
 	@override String get tabSettings => 'Настройки';
@@ -3238,7 +3238,7 @@ extension on TranslationsRu {
 			'companionRemote.remote.tabNavigation' => 'Навигация',
 			'companionRemote.remote.tabDiscover' => 'Обзор',
 			'companionRemote.remote.tabLibraries' => 'Библиотеки',
-			'companionRemote.remote.tabExplore' => '',
+			'companionRemote.remote.tabExplore' => 'Исследовать',
 			'companionRemote.remote.tabSearch' => 'Поиск',
 			'companionRemote.remote.tabDownloads' => 'Загрузки',
 			'companionRemote.remote.tabSettings' => 'Настройки',

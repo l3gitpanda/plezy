@@ -807,22 +807,30 @@ class _MainScreenState extends State<MainScreen>
 
     final receiver = CompanionRemoteReceiver.instance;
     receiver.navigationOwner = this;
+    // The remote's tab chips stay visible during playback, so an explicit
+    // tab command must pop pushed routes (player, detail screens) first —
+    // otherwise the tab changes invisibly underneath them.
+    void showTab(NavigationTabId id) {
+      Navigator.of(context).popUntil((route) => route.isFirst);
+      _selectTab(id);
+    }
+
     receiver.onTabNext = () {
       final tabs = _getVisibleTabs(_isOffline);
       final idx = tabs.indexWhere((t) => t.id == _currentTab);
-      if (idx >= 0) _selectTab(tabs[(idx + 1) % tabs.length].id);
+      if (idx >= 0) showTab(tabs[(idx + 1) % tabs.length].id);
     };
     receiver.onTabPrevious = () {
       final tabs = _getVisibleTabs(_isOffline);
       final idx = tabs.indexWhere((t) => t.id == _currentTab);
-      if (idx >= 0) _selectTab(tabs[(idx - 1 + tabs.length) % tabs.length].id);
+      if (idx >= 0) showTab(tabs[(idx - 1 + tabs.length) % tabs.length].id);
     };
-    receiver.onTabDiscover = () => _selectTab(NavigationTabId.discover);
-    receiver.onTabLibraries = () => _selectTab(NavigationTabId.libraries);
-    receiver.onTabExplore = () => _selectTab(NavigationTabId.explore);
-    receiver.onTabSearch = () => _selectTab(NavigationTabId.search);
-    receiver.onTabDownloads = () => _selectTab(NavigationTabId.downloads);
-    receiver.onTabSettings = () => _selectTab(NavigationTabId.settings);
+    receiver.onTabDiscover = () => showTab(NavigationTabId.discover);
+    receiver.onTabLibraries = () => showTab(NavigationTabId.libraries);
+    receiver.onTabExplore = () => showTab(NavigationTabId.explore);
+    receiver.onTabSearch = () => showTab(NavigationTabId.search);
+    receiver.onTabDownloads = () => showTab(NavigationTabId.downloads);
+    receiver.onTabSettings = () => showTab(NavigationTabId.settings);
     receiver.onHome = () {
       final tabs = _getVisibleTabs(_isOffline);
       if (tabs.isEmpty) return;

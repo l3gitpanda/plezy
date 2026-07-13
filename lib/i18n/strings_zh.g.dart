@@ -1994,7 +1994,7 @@ class _TranslationsCompanionRemoteRemoteZh extends TranslationsCompanionRemoteRe
 	@override String get tabNavigation => '标签导航';
 	@override String get tabDiscover => '发现';
 	@override String get tabLibraries => '媒体库';
-	@override String get tabExplore => '';
+	@override String get tabExplore => '探索';
 	@override String get tabSearch => '搜索';
 	@override String get tabDownloads => '下载';
 	@override String get tabSettings => '设置';
@@ -3232,7 +3232,7 @@ extension on TranslationsZh {
 			'companionRemote.remote.tabNavigation' => '标签导航',
 			'companionRemote.remote.tabDiscover' => '发现',
 			'companionRemote.remote.tabLibraries' => '媒体库',
-			'companionRemote.remote.tabExplore' => '',
+			'companionRemote.remote.tabExplore' => '探索',
 			'companionRemote.remote.tabSearch' => '搜索',
 			'companionRemote.remote.tabDownloads' => '下载',
 			'companionRemote.remote.tabSettings' => '设置',
