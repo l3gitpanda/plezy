@@ -48,6 +48,7 @@ import '../../models/transcode_quality_preset.dart';
 import '../../media/media_version.dart';
 import '../../screens/video_player_screen.dart';
 import '../../focus/key_event_utils.dart';
+import '../../services/companion_remote/companion_remote_receiver.dart';
 import '../../services/keyboard_shortcuts_service.dart';
 import '../../services/device_adjustment_service.dart';
 import '../../services/scrub_preview_source.dart';
@@ -653,6 +654,8 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
   bool _isPipSupported = false;
   final PipService _pipService = PipService();
   AppLifecycleListener? _edgeAdjustmentLifecycleListener;
+  VoidCallback? _remotePreviousChapterHandler;
+  VoidCallback? _remoteNextChapterHandler;
 
   @override
   void initState() {
@@ -698,6 +701,17 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
     _configureChromeController();
     widget.chromeController.setPlaying(widget.player.state.playing);
     _initKeyboardService();
+    // Companion-remote chapter skipping is wired here rather than on the
+    // player screen: the chapter list loads with these controls, and
+    // _seekToChapter already falls back to a small time seek without one.
+    _remotePreviousChapterHandler = () {
+      if (mounted) _seekToPreviousChapter();
+    };
+    _remoteNextChapterHandler = () {
+      if (mounted) _seekToNextChapter();
+    };
+    CompanionRemoteReceiver.instance.onPreviousChapter = _remotePreviousChapterHandler;
+    CompanionRemoteReceiver.instance.onNextChapter = _remoteNextChapterHandler;
     _listenToPosition();
     _listenToPlayingState();
     _listenToCompleted();
@@ -774,6 +788,15 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
 
   @override
   void dispose() {
+    // During pushReplacement the new controls can install their handlers
+    // before these dispose; only clear handlers this instance still owns.
+    final remoteReceiver = CompanionRemoteReceiver.instance;
+    if (identical(remoteReceiver.onPreviousChapter, _remotePreviousChapterHandler)) {
+      remoteReceiver.onPreviousChapter = null;
+    }
+    if (identical(remoteReceiver.onNextChapter, _remoteNextChapterHandler)) {
+      remoteReceiver.onNextChapter = null;
+    }
     HardwareKeyboard.instance.removeHandler(_handleGlobalKeyEvent);
     widget.chromeController.removeListener(_onChromeChanged);
     widget.hasFirstFrame?.removeListener(_onFirstFrameReady);

@@ -1996,6 +1996,7 @@ class _TranslationsCompanionRemoteRemoteSv extends TranslationsCompanionRemoteRe
 	@override String get tabNavigation => 'Fliknavigering';
 	@override String get tabDiscover => 'Upptäck';
 	@override String get tabLibraries => 'Bibliotek';
+	@override String get tabExplore => 'Utforska';
 	@override String get tabSearch => 'Sök';
 	@override String get tabDownloads => 'Nedladdningar';
 	@override String get tabSettings => 'Inställningar';
@@ -3233,6 +3234,7 @@ extension on TranslationsSv {
 			'companionRemote.remote.tabNavigation' => 'Fliknavigering',
 			'companionRemote.remote.tabDiscover' => 'Upptäck',
 			'companionRemote.remote.tabLibraries' => 'Bibliotek',
+			'companionRemote.remote.tabExplore' => 'Utforska',
 			'companionRemote.remote.tabSearch' => 'Sök',
 			'companionRemote.remote.tabDownloads' => 'Nedladdningar',
 			'companionRemote.remote.tabSettings' => 'Inställningar',

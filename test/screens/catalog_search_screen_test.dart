@@ -37,12 +37,12 @@ class _FakeSearchSource implements CatalogSource {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-Future<void> _pump(WidgetTester tester, _FakeSearchSource source) async {
+Future<void> _pump(WidgetTester tester, _FakeSearchSource source, {String? initialQuery}) async {
   await tester.pumpWidget(
     TranslationProvider(
       child: MaterialApp(
         theme: monoTheme(dark: true),
-        home: CatalogSearchScreen(source: source),
+        home: CatalogSearchScreen(source: source, initialQuery: initialQuery),
       ),
     ),
   );
@@ -80,6 +80,19 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(source.queries, ['abc']);
+    expect(_state(tester).searchResults.single.title, 'result: abc');
+  });
+
+  testWidgets('initialQuery pre-fills the field and searches without waiting for the debounce', (tester) async {
+    final source = _FakeSearchSource();
+    await _pump(tester, source, initialQuery: 'abc');
+
+    // Only the post-frame submit may run the search — no debounce wait.
+    await tester.pump();
+    await tester.pumpAndSettle();
+
+    expect(source.queries, ['abc']);
+    expect(_state(tester).searchController.text, 'abc');
     expect(_state(tester).searchResults.single.title, 'result: abc');
   });
 

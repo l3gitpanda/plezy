@@ -55,6 +55,7 @@ import '../widgets/music/mini_player.dart';
 import '../widgets/side_navigation_rail.dart';
 import '../focus/dpad_navigator.dart';
 import '../focus/key_event_utils.dart';
+import 'catalog_search_screen.dart';
 import 'discover_screen.dart';
 import 'explore_screen.dart';
 import 'libraries/library_quick_picker_sheet.dart';
@@ -806,21 +807,30 @@ class _MainScreenState extends State<MainScreen>
 
     final receiver = CompanionRemoteReceiver.instance;
     receiver.navigationOwner = this;
+    // The remote's tab chips stay visible during playback, so an explicit
+    // tab command must pop pushed routes (player, detail screens) first —
+    // otherwise the tab changes invisibly underneath them.
+    void showTab(NavigationTabId id) {
+      Navigator.of(context).popUntil((route) => route.isFirst);
+      _selectTab(id);
+    }
+
     receiver.onTabNext = () {
       final tabs = _getVisibleTabs(_isOffline);
       final idx = tabs.indexWhere((t) => t.id == _currentTab);
-      if (idx >= 0) _selectTab(tabs[(idx + 1) % tabs.length].id);
+      if (idx >= 0) showTab(tabs[(idx + 1) % tabs.length].id);
     };
     receiver.onTabPrevious = () {
       final tabs = _getVisibleTabs(_isOffline);
       final idx = tabs.indexWhere((t) => t.id == _currentTab);
-      if (idx >= 0) _selectTab(tabs[(idx - 1 + tabs.length) % tabs.length].id);
+      if (idx >= 0) showTab(tabs[(idx - 1 + tabs.length) % tabs.length].id);
     };
-    receiver.onTabDiscover = () => _selectTab(NavigationTabId.discover);
-    receiver.onTabLibraries = () => _selectTab(NavigationTabId.libraries);
-    receiver.onTabSearch = () => _selectTab(NavigationTabId.search);
-    receiver.onTabDownloads = () => _selectTab(NavigationTabId.downloads);
-    receiver.onTabSettings = () => _selectTab(NavigationTabId.settings);
+    receiver.onTabDiscover = () => showTab(NavigationTabId.discover);
+    receiver.onTabLibraries = () => showTab(NavigationTabId.libraries);
+    receiver.onTabExplore = () => showTab(NavigationTabId.explore);
+    receiver.onTabSearch = () => showTab(NavigationTabId.search);
+    receiver.onTabDownloads = () => showTab(NavigationTabId.downloads);
+    receiver.onTabSettings = () => showTab(NavigationTabId.settings);
     receiver.onHome = () {
       final tabs = _getVisibleTabs(_isOffline);
       if (tabs.isEmpty) return;
@@ -830,6 +840,10 @@ class _MainScreenState extends State<MainScreen>
       });
     };
     receiver.onSearchAction = (query) {
+      // A remote-driven search must end up visible: anything pushed over the
+      // main screen (catalog search, detail screens, the player) would
+      // otherwise cover the search tab while it runs underneath.
+      Navigator.of(context).popUntil((route) => route.isFirst);
       final trimmed = query?.trim() ?? '';
       final hasQuery = trimmed.isNotEmpty;
       // With a query, don't focus the input (which would auto-open the TV
@@ -842,6 +856,22 @@ class _MainScreenState extends State<MainScreen>
           }
         });
       }
+    };
+    receiver.onExploreSearch = (query) {
+      // activeSource is null exactly when no catalog source is connected, in
+      // which case the Explore tab isn't visible either — silent no-op.
+      final source = context.read<CatalogSourcesProvider>().activeSource;
+      if (source == null) return;
+      // Pop pushed screens first so repeated remote searches replace the
+      // catalog search screen instead of stacking on top of it.
+      Navigator.of(context).popUntil((route) => route.isFirst);
+      _selectTab(NavigationTabId.explore);
+      Navigator.push(
+        context,
+        MaterialPageRoute<void>(
+          builder: (_) => CatalogSearchScreen(source: source, initialQuery: query),
+        ),
+      );
     };
   }
 
@@ -888,11 +918,13 @@ class _MainScreenState extends State<MainScreen>
         receiver.onTabPrevious = null;
         receiver.onTabDiscover = null;
         receiver.onTabLibraries = null;
+        receiver.onTabExplore = null;
         receiver.onTabSearch = null;
         receiver.onTabDownloads = null;
         receiver.onTabSettings = null;
         receiver.onHome = null;
         receiver.onSearchAction = null;
+        receiver.onExploreSearch = null;
         receiver.navigationOwner = null;
       }
     }

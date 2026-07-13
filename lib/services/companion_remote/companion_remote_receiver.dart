@@ -32,10 +32,15 @@ class CompanionRemoteReceiver {
   VoidCallback? onTabSearch;
   VoidCallback? onTabDownloads;
   VoidCallback? onTabSettings;
+  VoidCallback? onTabExplore;
   VoidCallback? onHome;
   void Function(String? query)? onSearchAction;
+  void Function(String? query)? onExploreSearch;
+  VoidCallback? onPlayPause;
   VoidCallback? onNextTrack;
   VoidCallback? onPreviousTrack;
+  VoidCallback? onNextChapter;
+  VoidCallback? onPreviousChapter;
   VoidCallback? onStop;
   VoidCallback? onSeekForward;
   VoidCallback? onSeekBackward;
@@ -71,11 +76,16 @@ class CompanionRemoteReceiver {
         simulateKeyPress(LogicalKeyboardKey.contextMenu);
 
       case RemoteCommandType.play:
-        simulateKeyPress(LogicalKeyboardKey.space);
       case RemoteCommandType.pause:
-        simulateKeyPress(LogicalKeyboardKey.space);
       case RemoteCommandType.playPause:
-        simulateKeyPress(LogicalKeyboardKey.space);
+        // The simulated space bar only reaches focus-tree handlers, not the
+        // player's HardwareKeyboard shortcut, so the player registers a real
+        // callback; the key press remains as an app-level fallback.
+        if (onPlayPause != null) {
+          onPlayPause!.call();
+        } else {
+          simulateKeyPress(LogicalKeyboardKey.space);
+        }
       case RemoteCommandType.seekForward:
         onSeekForward?.call();
       case RemoteCommandType.seekBackward:
@@ -102,12 +112,17 @@ class CompanionRemoteReceiver {
         onTabDownloads?.call();
       case RemoteCommandType.tabSettings:
         onTabSettings?.call();
+      case RemoteCommandType.tabExplore:
+        onTabExplore?.call();
 
       case RemoteCommandType.home:
         onHome?.call();
       case RemoteCommandType.search:
         final query = command.data?['query'] as String?;
         onSearchAction?.call(query);
+      case RemoteCommandType.exploreSearch:
+        final query = command.data?['query'] as String?;
+        onExploreSearch?.call(query);
 
       case RemoteCommandType.stop:
         onStop?.call();
@@ -115,6 +130,10 @@ class CompanionRemoteReceiver {
         onNextTrack?.call();
       case RemoteCommandType.previousTrack:
         onPreviousTrack?.call();
+      case RemoteCommandType.nextChapter:
+        onNextChapter?.call();
+      case RemoteCommandType.previousChapter:
+        onPreviousChapter?.call();
 
       case RemoteCommandType.subtitles:
         onSubtitles?.call();

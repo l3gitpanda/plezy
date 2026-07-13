@@ -2000,6 +2000,7 @@ class _TranslationsCompanionRemoteRemotePl extends TranslationsCompanionRemoteRe
 	@override String get tabNavigation => 'Nawigacja';
 	@override String get tabDiscover => 'Odkryj';
 	@override String get tabLibraries => 'Biblioteki';
+	@override String get tabExplore => 'Przeglądaj';
 	@override String get tabSearch => 'Szukaj';
 	@override String get tabDownloads => 'Pobrania';
 	@override String get tabSettings => 'Ustawienia';
@@ -3237,6 +3238,7 @@ extension on TranslationsPl {
 			'companionRemote.remote.tabNavigation' => 'Nawigacja',
 			'companionRemote.remote.tabDiscover' => 'Odkryj',
 			'companionRemote.remote.tabLibraries' => 'Biblioteki',
+			'companionRemote.remote.tabExplore' => 'Przeglądaj',
 			'companionRemote.remote.tabSearch' => 'Szukaj',
 			'companionRemote.remote.tabDownloads' => 'Pobrania',
 			'companionRemote.remote.tabSettings' => 'Ustawienia',

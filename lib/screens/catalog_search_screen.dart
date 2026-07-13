@@ -23,13 +23,18 @@ import 'libraries/state_messages.dart';
 class CatalogSearchScreen extends StatefulWidget {
   final CatalogSource source;
 
-  const CatalogSearchScreen({super.key, required this.source});
+  /// Pre-filled query searched immediately on open (companion-remote Explore
+  /// search); the field gets focus without opening the on-screen keyboard.
+  final String? initialQuery;
+
+  const CatalogSearchScreen({super.key, required this.source, this.initialQuery});
 
   @override
   State<CatalogSearchScreen> createState() => _CatalogSearchScreenState();
 }
 
 class _CatalogSearchScreenState extends State<CatalogSearchScreen> with DebouncedMediaSearch {
+  final _tvKeyboardController = TvKeyboardController();
   final _clearFocusNode = FocusNode(debugLabel: 'CatalogSearch.clear');
   @override
   String get searchDebugLabel => 'CatalogSearch';
@@ -43,7 +48,21 @@ class _CatalogSearchScreenState extends State<CatalogSearchScreen> with Debounce
   @override
   void initState() {
     super.initState();
-    FocusUtils.requestFocusAfterBuild(this, searchFocusNode);
+    final initial = widget.initialQuery?.trim();
+    if (initial == null || initial.isEmpty) {
+      FocusUtils.requestFocusAfterBuild(this, searchFocusNode);
+      return;
+    }
+    searchController.text = initial; // listener arms the debounce / resets state
+    // The query was already typed on the phone, so the TV keyboard must not
+    // come up (mirrors SearchScreen.submitSearchQuery). Post-frame because the
+    // controller only attaches once the FocusableTextField mounts.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _tvKeyboardController.closeKeyboard();
+      _tvKeyboardController.focusInputWithoutKeyboard();
+      handleSearchSubmit();
+    });
   }
 
   @override
@@ -72,6 +91,7 @@ class _CatalogSearchScreenState extends State<CatalogSearchScreen> with Debounce
                 FocusableTextField(
                   controller: searchController,
                   focusNode: searchFocusNode,
+                  tvKeyboardController: _tvKeyboardController,
                   textInputAction: TextInputAction.search,
                   onNavigateDown: searchResults.isNotEmpty && !isSearching ? firstResultFocusNode.requestFocus : null,
                   onNavigateRight: searchController.text.isNotEmpty ? _clearFocusNode.requestFocus : null,
