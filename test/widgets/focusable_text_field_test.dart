@@ -990,7 +990,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(AppleTvNativeKeyboard.isKnownUnavailable, isTrue);
-    expect(fieldFocusNode.hasFocus, isTrue);
+    // The custom keyboard dialog takes focus when it opens, so only the
+    // dialog's presence is asserted — not the field's focus.
     expect(find.byType(Dialog), findsOneWidget);
   });
 }
