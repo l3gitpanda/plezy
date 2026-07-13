@@ -32,6 +32,7 @@ AndroidTvFeatureDetection detectAndroidTvFromSystemFeatures(Iterable<String> fea
 class TvDetectionService {
   static TvDetectionService? _instance;
   static bool? _debugAppleTVOverride;
+  static bool? _debugTvOverride;
   bool _detected = false;
   bool _forceTv = false;
   bool _isTV = false;
@@ -137,7 +138,7 @@ class TvDetectionService {
   }
 
   /// Synchronous access after initialization (returns false if not initialized)
-  static bool isTVSync() => _debugAppleTVOverride ?? _instance?._isTV ?? false;
+  static bool isTVSync() => _debugAppleTVOverride ?? _debugTvOverride ?? _instance?._isTV ?? false;
 
   /// Synchronous Apple TV check (returns false if not initialized or not tvOS).
   static bool isAppleTVSync() => _debugAppleTVOverride ?? (_tvosBuild || _instance?._isAppleTV == true);
@@ -145,6 +146,13 @@ class TvDetectionService {
   @visibleForTesting
   static void debugSetAppleTVOverride(bool? value) {
     _debugAppleTVOverride = value;
+  }
+
+  /// Test-only: simulates a generic TV (`isTV()` true) without affecting
+  /// `isAppleTV()`. Unlike [debugSetAppleTVOverride], this does not imply Apple TV.
+  @visibleForTesting
+  static void debugSetTvOverride(bool? value) {
+    _debugTvOverride = value;
   }
 
   static List<String> tvDetectionReasonsSync() => _instance?._effectiveDetectionReasons ?? const [];

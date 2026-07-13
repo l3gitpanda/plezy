@@ -283,6 +283,24 @@ void main() {
       await harness.send('cancelled');
       expect(harness.service.isTouchActive, isFalse);
     });
+
+    test('native text input active drops touch and key events until cleared', () async {
+      final harness = _Harness();
+
+      harness.service.nativeTextInputActive = true;
+      await harness.send('started', x: 500, y: 500);
+      await harness.send('move', x: 380, y: 500);
+
+      expect(harness.keys, isEmpty);
+      expect(harness.service.handleNativeKeyEvent(_keyDown(LogicalKeyboardKey.arrowLeft)), isTrue);
+
+      harness.service.nativeTextInputActive = false;
+      await harness.send('started', x: 500, y: 500);
+      await harness.send('move', x: 380, y: 500);
+
+      expect(harness.keys, [LogicalKeyboardKey.arrowLeft]);
+      expect(harness.service.handleNativeKeyEvent(_keyDown(LogicalKeyboardKey.arrowLeft)), isFalse);
+    });
   });
 }
 

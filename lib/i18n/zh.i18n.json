@@ -136,6 +136,8 @@
     "tvFullCardLayoutDescription": "使用仅显示图片的 TV 卡片，并叠加演员姓名",
     "focusGlow": "焦点光晕",
     "focusGlowDescription": "在获得焦点的卡片周围显示柔和的光晕",
+    "appleTvSystemKeyboard": "",
+    "appleTvSystemKeyboardDescription": "",
     "visualEffects": "视觉效果",
     "visualEffectsAuto": "自动",
     "visualEffectsAutoDescription": "在性能较低的设备上自动减少效果",

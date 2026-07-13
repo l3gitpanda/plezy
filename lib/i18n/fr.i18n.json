@@ -136,6 +136,8 @@
     "tvFullCardLayoutDescription": "Utiliser des cartes TV avec image seule et noms des acteurs superposés",
     "focusGlow": "Halo de sélection",
     "focusGlowDescription": "Afficher un léger halo autour de la carte sélectionnée",
+    "appleTvSystemKeyboard": "",
+    "appleTvSystemKeyboardDescription": "",
     "visualEffects": "Effets visuels",
     "visualEffectsAuto": "Automatique",
     "visualEffectsAutoDescription": "Réduire automatiquement les effets sur les appareils peu puissants",

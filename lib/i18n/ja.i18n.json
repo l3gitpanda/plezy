@@ -136,6 +136,8 @@
     "tvFullCardLayoutDescription": "TVカードを画像のみで表示し、俳優名を重ねて表示します",
     "focusGlow": "フォーカス時の光彩",
     "focusGlowDescription": "フォーカス中のカードの周りに柔らかい光彩を表示します",
+    "appleTvSystemKeyboard": "",
+    "appleTvSystemKeyboardDescription": "",
     "visualEffects": "視覚効果",
     "visualEffectsAuto": "自動",
     "visualEffectsAutoDescription": "低性能なデバイスでは効果を自動的に減らします",

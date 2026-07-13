@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../services/apple_tv_native_keyboard.dart';
 import '../services/gamepad_service.dart';
 import '../utils/platform_detector.dart';
 import '../utils/text_input_diagnostics.dart';
@@ -115,6 +116,7 @@ KeyEventResult _handleInputKey({
   required FocusNode node,
   required bool usesTvKeyboard,
   required bool enabled,
+  required bool tvKeyboardOpen,
   required VoidCallback openKeyboard,
   required KeyEvent event,
   TextInputType? keyboardType,
@@ -157,12 +159,12 @@ KeyEventResult _handleInputKey({
     return finish(KeyEventResult.skipRemainingHandlers, 'pass-native-tv-key-to-platform');
   }
 
-  if (usesTvKeyboard && enabled && event.isTvSelectEvent) {
+  if (usesTvKeyboard && enabled && !tvKeyboardOpen && event.isTvSelectEvent) {
     if (event is KeyDownEvent) openKeyboard();
     return finish(KeyEventResult.handled, 'open-custom-tv-keyboard');
   }
 
-  if (usesTvKeyboard && enabled && event.isPhysicalKeyboardEvent) {
+  if (usesTvKeyboard && enabled && !tvKeyboardOpen && event.isPhysicalKeyboardEvent) {
     final result = _handleTvHardwareKeyboardKey(
       controller: controller,
       keyboardType: keyboardType,
@@ -646,12 +648,19 @@ abstract class _FocusableTextInputBase extends StatelessWidget {
     );
   }
 
-  KeyEventResult _handleKey(BuildContext context, FocusNode node, KeyEvent event, VoidCallback openKeyboard) {
+  KeyEventResult _handleKey(
+    BuildContext context,
+    FocusNode node,
+    KeyEvent event,
+    VoidCallback openKeyboard,
+    bool tvKeyboardOpen,
+  ) {
     return _handleInputKey(
       controller: controller,
       node: node,
       usesTvKeyboard: _hasTvKeyboard,
       enabled: enabled,
+      tvKeyboardOpen: tvKeyboardOpen,
       openKeyboard: openKeyboard,
       event: event,
       keyboardType: keyboardType,
@@ -847,6 +856,8 @@ class _FocusableTextInputHostState extends State<_FocusableTextInputHost> {
       obscureText: input.obscureText,
       maxLength: input.maxLength,
       maxLines: input.maxLines,
+      textCapitalization: input.textCapitalization,
+      autocorrect: input.autocorrect,
       onChanged: (text) {
         if (!mounted) return;
         widget.input.onChanged?.call(text);
@@ -866,6 +877,7 @@ class _FocusableTextInputHostState extends State<_FocusableTextInputHost> {
       return;
     }
     _tvKeyboardHandle = keyboard;
+    final nativeUnavailableAtOpen = AppleTvNativeKeyboard.isKnownUnavailable;
     unawaited(
       keyboard.closed.whenComplete(() {
         _tvKeyboardHandle = null;
@@ -875,9 +887,22 @@ class _FocusableTextInputHostState extends State<_FocusableTextInputHost> {
           if (!mounted) return;
           if (_installedFocusNode?.hasFocus != true) {
             _suppressTvKeyboardAutoOpen = false;
+          } else if (!nativeUnavailableAtOpen && AppleTvNativeKeyboard.isKnownUnavailable) {
+            // Unavailability flipped during this session: the native keyboard
+            // failed to present rather than the user dismissing it. Reopen
+            // directly with the custom fallback instead of leaving the
+            // focused field with no keyboard — going through the auto-open
+            // sync would park the open behind another frame that nothing is
+            // scheduled to produce.
+            _suppressTvKeyboardAutoOpen = false;
+            _openTvKeyboard();
+            return;
           }
           _syncTvKeyboardAutoOpen();
         });
+        // A native session has no Flutter route, so nothing else guarantees
+        // the frame that runs the callback above.
+        WidgetsBinding.instance.ensureVisualUpdate();
       }),
     );
   }
@@ -930,7 +955,12 @@ class _FocusableTextInputHostState extends State<_FocusableTextInputHost> {
       );
       if (result != KeyEventResult.ignored) return result;
     }
-    return widget.input._handleKey(context, node, event, _openTvKeyboard);
+    // Only a NATIVE keyboard session needs the key guard: the field keeps
+    // primary focus under it, so Dart-side editing would double-process
+    // input. A custom OSK session moves focus to its dialog, and until that
+    // focus transfer lands hardware keys should keep editing the field.
+    final nativeSessionUp = _tvKeyboardOpen && AppleTvNativeKeyboard.isSessionActive;
+    return widget.input._handleKey(context, node, event, _openTvKeyboard, nativeSessionUp);
   }
 
   void _installKeyHandler(FocusNode node) {

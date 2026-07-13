@@ -267,6 +267,8 @@ class _TranslationsSettingsZh extends TranslationsSettingsEn {
 	@override String get tvFullCardLayoutDescription => '使用仅显示图片的 TV 卡片，并叠加演员姓名';
 	@override String get focusGlow => '焦点光晕';
 	@override String get focusGlowDescription => '在获得焦点的卡片周围显示柔和的光晕';
+	@override String get appleTvSystemKeyboard => '';
+	@override String get appleTvSystemKeyboardDescription => '';
 	@override String get visualEffects => '视觉效果';
 	@override String get visualEffectsAuto => '自动';
 	@override String get visualEffectsAutoDescription => '在性能较低的设备上自动减少效果';
@@ -2224,6 +2226,8 @@ extension on TranslationsZh {
 			'settings.tvFullCardLayoutDescription' => '使用仅显示图片的 TV 卡片，并叠加演员姓名',
 			'settings.focusGlow' => '焦点光晕',
 			'settings.focusGlowDescription' => '在获得焦点的卡片周围显示柔和的光晕',
+			'settings.appleTvSystemKeyboard' => '',
+			'settings.appleTvSystemKeyboardDescription' => '',
 			'settings.visualEffects' => '视觉效果',
 			'settings.visualEffectsAuto' => '自动',
 			'settings.visualEffectsAutoDescription' => '在性能较低的设备上自动减少效果',
@@ -2608,10 +2612,10 @@ extension on TranslationsZh {
 			'messages.errorLoadingSeries' => '加载系列时出错',
 			'messages.musicNotSupported' => '尚不支持播放音乐',
 			'messages.noDescriptionAvailable' => '暂无描述',
-			'messages.noProfilesAvailable' => '没有可用的用户',
-			'messages.contactAdminForProfiles' => '请联系服务器管理员添加用户配置',
 			_ => null,
 		} ?? switch (path) {
+			'messages.noProfilesAvailable' => '没有可用的用户',
+			'messages.contactAdminForProfiles' => '请联系服务器管理员添加用户配置',
 			'messages.unableToDetermineLibrarySection' => '无法确定此项目的库分区',
 			'messages.logsCleared' => '日志已清除',
 			'messages.logsCopied' => '日志已复制到剪贴板',
@@ -3122,10 +3126,10 @@ extension on TranslationsZh {
 			'downloads.downloadResumed' => '下载已继续',
 			'downloads.serverErrorBitrate' => '服务器错误：文件可能超过远程比特率限制',
 			'downloads.episodesQueued' => ({required Object count}) => '${count} 集已加入下载队列',
-			'downloads.downloadDeleted' => '下载已删除',
-			'downloads.deleteConfirm' => ({required Object title}) => '要从此设备删除“${title}”吗？',
 			_ => null,
 		} ?? switch (path) {
+			'downloads.downloadDeleted' => '下载已删除',
+			'downloads.deleteConfirm' => ({required Object title}) => '要从此设备删除“${title}”吗？',
 			'downloads.cancelledDownloadTitle' => '已取消的下载',
 			'downloads.cancelledDownloadMessage' => '此下载已取消。你想怎么做？',
 			'downloads.allEpisodesAlreadyDownloaded' => '所有剧集均已下载',

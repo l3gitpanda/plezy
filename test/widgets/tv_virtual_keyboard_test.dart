@@ -9,7 +9,7 @@ import 'package:plezy/widgets/tv_virtual_keyboard.dart';
 
 void main() {
   tearDown(() {
-    TvDetectionService.debugSetAppleTVOverride(null);
+    TvDetectionService.debugSetTvOverride(null);
   });
 
   testWidgets('keyboard enter submits without inserting highlighted key', (tester) async {
@@ -164,7 +164,7 @@ void main() {
   });
 
   testWidgets('back key dismisses on key up without leaking to underlying route', (tester) async {
-    TvDetectionService.debugSetAppleTVOverride(true);
+    TvDetectionService.debugSetTvOverride(true);
     await tester.binding.setSurfaceSize(const Size(1280, 720));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final controller = TextEditingController();
@@ -223,7 +223,7 @@ Future<void> _pumpKeyboard(
   int? maxLines,
   ValueChanged<String>? onSubmitted,
 }) async {
-  TvDetectionService.debugSetAppleTVOverride(true);
+  TvDetectionService.debugSetTvOverride(true);
   await tester.binding.setSurfaceSize(const Size(1280, 720));
   addTearDown(() => tester.binding.setSurfaceSize(null));
   late BuildContext context;

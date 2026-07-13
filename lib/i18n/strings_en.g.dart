@@ -521,6 +521,12 @@ class TranslationsSettingsEn {
 	/// en: 'Draw a soft glow around the focused card'
 	String get focusGlowDescription => 'Draw a soft glow around the focused card';
 
+	/// en: 'Use Apple TV System Keyboard'
+	String get appleTvSystemKeyboard => 'Use Apple TV System Keyboard';
+
+	/// en: 'Full-screen keyboard with dictation and iPhone typing. Turn off for the compact on-screen keyboard.'
+	String get appleTvSystemKeyboardDescription => 'Full-screen keyboard with dictation and iPhone typing. Turn off for the compact on-screen keyboard.';
+
 	/// en: 'Visual Effects'
 	String get visualEffects => 'Visual Effects';
 
@@ -5073,6 +5079,8 @@ extension on Translations {
 			'settings.tvFullCardLayoutDescription' => 'Use image-only TV cards with actor names overlaid',
 			'settings.focusGlow' => 'Focus Glow',
 			'settings.focusGlowDescription' => 'Draw a soft glow around the focused card',
+			'settings.appleTvSystemKeyboard' => 'Use Apple TV System Keyboard',
+			'settings.appleTvSystemKeyboardDescription' => 'Full-screen keyboard with dictation and iPhone typing. Turn off for the compact on-screen keyboard.',
 			'settings.visualEffects' => 'Visual Effects',
 			'settings.visualEffectsAuto' => 'Auto',
 			'settings.visualEffectsAutoDescription' => 'Reduce effects automatically on low-power devices',
@@ -5457,10 +5465,10 @@ extension on Translations {
 			'messages.streamInterrupted' => 'The stream was interrupted. Press play or seek to retry.',
 			'messages.liveStreamInterrupted' => 'The live stream was interrupted. Press play to retry.',
 			'messages.fileInfoNotAvailable' => 'File information not available',
-			'messages.errorLoadingFileInfo' => ({required Object error}) => 'Error loading file info: ${error}',
-			'messages.errorLoadingSeries' => 'Error loading series',
 			_ => null,
 		} ?? switch (path) {
+			'messages.errorLoadingFileInfo' => ({required Object error}) => 'Error loading file info: ${error}',
+			'messages.errorLoadingSeries' => 'Error loading series',
 			'messages.musicNotSupported' => 'Music playback is not yet supported',
 			'messages.noDescriptionAvailable' => 'No description available',
 			'messages.noProfilesAvailable' => 'No profiles available',
@@ -5971,10 +5979,10 @@ extension on Translations {
 			'downloads.noDownloads' => 'No downloads yet',
 			'downloads.noDownloadsDescription' => 'Downloaded content will appear here for offline viewing',
 			'downloads.downloadNow' => 'Download',
-			'downloads.deleteDownload' => 'Delete download',
-			'downloads.retryDownload' => 'Retry download',
 			_ => null,
 		} ?? switch (path) {
+			'downloads.deleteDownload' => 'Delete download',
+			'downloads.retryDownload' => 'Retry download',
 			'downloads.downloadQueued' => 'Download queued',
 			'downloads.downloadResumed' => 'Download resumed',
 			'downloads.serverErrorBitrate' => 'Server error: file may exceed the remote bitrate limit',

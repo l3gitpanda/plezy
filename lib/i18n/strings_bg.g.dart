@@ -267,6 +267,8 @@ class _TranslationsSettingsBg extends TranslationsSettingsEn {
 	@override String get tvFullCardLayoutDescription => 'Използвай TV карти само с изображения, с насложени имена на актьорите';
 	@override String get focusGlow => 'Сияние при фокус';
 	@override String get focusGlowDescription => 'Показвай меко сияние около фокусираната карта';
+	@override String get appleTvSystemKeyboard => '';
+	@override String get appleTvSystemKeyboardDescription => '';
 	@override String get visualEffects => 'Визуални ефекти';
 	@override String get visualEffectsAuto => 'Автоматично';
 	@override String get visualEffectsAutoDescription => 'Автоматично намалявай ефектите на по-слаби устройства';
@@ -2226,6 +2228,8 @@ extension on TranslationsBg {
 			'settings.tvFullCardLayoutDescription' => 'Използвай TV карти само с изображения, с насложени имена на актьорите',
 			'settings.focusGlow' => 'Сияние при фокус',
 			'settings.focusGlowDescription' => 'Показвай меко сияние около фокусираната карта',
+			'settings.appleTvSystemKeyboard' => '',
+			'settings.appleTvSystemKeyboardDescription' => '',
 			'settings.visualEffects' => 'Визуални ефекти',
 			'settings.visualEffectsAuto' => 'Автоматично',
 			'settings.visualEffectsAutoDescription' => 'Автоматично намалявай ефектите на по-слаби устройства',
@@ -2610,10 +2614,10 @@ extension on TranslationsBg {
 			'messages.errorLoadingSeries' => 'Грешка при зареждане на сериала',
 			'messages.musicNotSupported' => 'Възпроизвеждането на музика все още не се поддържа',
 			'messages.noDescriptionAvailable' => 'Няма налично описание',
-			'messages.noProfilesAvailable' => 'Няма налични профили',
-			'messages.contactAdminForProfiles' => 'Свържете се с администратора на сървъра, за да добави профили',
 			_ => null,
 		} ?? switch (path) {
+			'messages.noProfilesAvailable' => 'Няма налични профили',
+			'messages.contactAdminForProfiles' => 'Свържете се с администратора на сървъра, за да добави профили',
 			'messages.unableToDetermineLibrarySection' => 'Не може да се определи секцията на библиотеката за този елемент',
 			'messages.logsCleared' => 'Логовете са изчистени',
 			'messages.logsCopied' => 'Логовете са копирани в клипборда',
@@ -3124,10 +3128,10 @@ extension on TranslationsBg {
 			'downloads.downloadResumed' => 'Изтеглянето е възобновено',
 			'downloads.serverErrorBitrate' => 'Грешка на сървъра: файлът може да надвишава лимита за отдалечен битрейт',
 			'downloads.episodesQueued' => ({required Object count}) => '${count} епизода са добавени в опашката за изтегляне',
-			'downloads.downloadDeleted' => 'Изтеглянето е изтрито',
-			'downloads.deleteConfirm' => ({required Object title}) => 'Да се изтрие ли "${title}" от това устройство?',
 			_ => null,
 		} ?? switch (path) {
+			'downloads.downloadDeleted' => 'Изтеглянето е изтрито',
+			'downloads.deleteConfirm' => ({required Object title}) => 'Да се изтрие ли "${title}" от това устройство?',
 			'downloads.cancelledDownloadTitle' => 'Отменено изтегляне',
 			'downloads.cancelledDownloadMessage' => 'Това изтегляне беше отменено. Какво искате да направите?',
 			'downloads.allEpisodesAlreadyDownloaded' => 'Всички епизоди вече са изтеглени',

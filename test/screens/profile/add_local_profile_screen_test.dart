@@ -13,7 +13,7 @@ void main() {
 
   setUp(() {
     resetSharedPreferencesForTest();
-    TvDetectionService.debugSetAppleTVOverride(true);
+    TvDetectionService.debugSetTvOverride(true);
     // Simulated TV device: the test host's desktop OS must not leak into
     // InputModeTracker's desktop force-TV exemption.
     PlatformDetector.debugSetIsDesktopOSOverride(false);
@@ -21,7 +21,7 @@ void main() {
   });
 
   tearDown(() {
-    TvDetectionService.debugSetAppleTVOverride(null);
+    TvDetectionService.debugSetTvOverride(null);
     TvDetectionService.setForceTVSync(false);
     PlatformDetector.debugSetIsDesktopOSOverride(null);
   });
@@ -56,7 +56,7 @@ void main() {
   });
 
   testWidgets('Android TV virtual keyboard done leaves profile name input', (tester) async {
-    TvDetectionService.debugSetAppleTVOverride(null);
+    TvDetectionService.debugSetTvOverride(null);
     await TvDetectionService.getInstance(forceTv: true);
     TvDetectionService.setForceTVSync(true);
 

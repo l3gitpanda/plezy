@@ -267,6 +267,8 @@ class _TranslationsSettingsEs extends TranslationsSettingsEn {
 	@override String get tvFullCardLayoutDescription => 'Usar tarjetas TV solo con imagen y nombres de actores superpuestos';
 	@override String get focusGlow => 'Brillo de foco';
 	@override String get focusGlowDescription => 'Mostrar un brillo suave alrededor de la tarjeta con foco';
+	@override String get appleTvSystemKeyboard => '';
+	@override String get appleTvSystemKeyboardDescription => '';
 	@override String get visualEffects => 'Efectos visuales';
 	@override String get visualEffectsAuto => 'Automático';
 	@override String get visualEffectsAutoDescription => 'Reduce automáticamente los efectos en dispositivos de bajo consumo';
@@ -2226,6 +2228,8 @@ extension on TranslationsEs {
 			'settings.tvFullCardLayoutDescription' => 'Usar tarjetas TV solo con imagen y nombres de actores superpuestos',
 			'settings.focusGlow' => 'Brillo de foco',
 			'settings.focusGlowDescription' => 'Mostrar un brillo suave alrededor de la tarjeta con foco',
+			'settings.appleTvSystemKeyboard' => '',
+			'settings.appleTvSystemKeyboardDescription' => '',
 			'settings.visualEffects' => 'Efectos visuales',
 			'settings.visualEffectsAuto' => 'Automático',
 			'settings.visualEffectsAutoDescription' => 'Reduce automáticamente los efectos en dispositivos de bajo consumo',
@@ -2610,10 +2614,10 @@ extension on TranslationsEs {
 			'messages.errorLoadingSeries' => 'Error al cargar la serie',
 			'messages.musicNotSupported' => 'La reproducción de música aún no está soportada',
 			'messages.noDescriptionAvailable' => 'No hay descripción disponible',
-			'messages.noProfilesAvailable' => 'No hay perfiles disponibles',
-			'messages.contactAdminForProfiles' => 'Contacta a tu administrador del servidor para añadir perfiles',
 			_ => null,
 		} ?? switch (path) {
+			'messages.noProfilesAvailable' => 'No hay perfiles disponibles',
+			'messages.contactAdminForProfiles' => 'Contacta a tu administrador del servidor para añadir perfiles',
 			'messages.unableToDetermineLibrarySection' => 'No se puede determinar la sección de biblioteca para este elemento',
 			'messages.logsCleared' => 'Logs borrados',
 			'messages.logsCopied' => 'Logs copiados al portapapeles',
@@ -3124,10 +3128,10 @@ extension on TranslationsEs {
 			'downloads.downloadResumed' => 'Descarga reanudada',
 			'downloads.serverErrorBitrate' => 'Error del servidor: el archivo puede superar el límite de bitrate remoto',
 			'downloads.episodesQueued' => ({required Object count}) => '${count} episodios en cola para descargar',
-			'downloads.downloadDeleted' => 'Descarga eliminada',
-			'downloads.deleteConfirm' => ({required Object title}) => '¿Eliminar "${title}" de este dispositivo?',
 			_ => null,
 		} ?? switch (path) {
+			'downloads.downloadDeleted' => 'Descarga eliminada',
+			'downloads.deleteConfirm' => ({required Object title}) => '¿Eliminar "${title}" de este dispositivo?',
 			'downloads.cancelledDownloadTitle' => 'Descarga cancelada',
 			'downloads.cancelledDownloadMessage' => 'Esta descarga se canceló. ¿Qué quieres hacer?',
 			'downloads.allEpisodesAlreadyDownloaded' => 'Todos los episodios ya están descargados',

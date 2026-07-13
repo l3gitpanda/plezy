@@ -267,6 +267,8 @@ class _TranslationsSettingsNb extends TranslationsSettingsEn {
 	@override String get tvFullCardLayoutDescription => 'Bruk bildebaserte TV-kort med skuespillernavn lagt over';
 	@override String get focusGlow => 'Fokusglød';
 	@override String get focusGlowDescription => 'Vis en myk glød rundt kortet i fokus';
+	@override String get appleTvSystemKeyboard => '';
+	@override String get appleTvSystemKeyboardDescription => '';
 	@override String get visualEffects => 'Visuelle effekter';
 	@override String get visualEffectsAuto => 'Automatisk';
 	@override String get visualEffectsAutoDescription => 'Reduser effekter automatisk på enheter med lavt strømforbruk';
@@ -2226,6 +2228,8 @@ extension on TranslationsNb {
 			'settings.tvFullCardLayoutDescription' => 'Bruk bildebaserte TV-kort med skuespillernavn lagt over',
 			'settings.focusGlow' => 'Fokusglød',
 			'settings.focusGlowDescription' => 'Vis en myk glød rundt kortet i fokus',
+			'settings.appleTvSystemKeyboard' => '',
+			'settings.appleTvSystemKeyboardDescription' => '',
 			'settings.visualEffects' => 'Visuelle effekter',
 			'settings.visualEffectsAuto' => 'Automatisk',
 			'settings.visualEffectsAutoDescription' => 'Reduser effekter automatisk på enheter med lavt strømforbruk',
@@ -2610,10 +2614,10 @@ extension on TranslationsNb {
 			'messages.errorLoadingSeries' => 'Feil ved lasting av serie',
 			'messages.musicNotSupported' => 'Musikkavspilling støttes ikke ennå',
 			'messages.noDescriptionAvailable' => 'Ingen beskrivelse tilgjengelig',
-			'messages.noProfilesAvailable' => 'Ingen profiler tilgjengelige',
-			'messages.contactAdminForProfiles' => 'Kontakt serveradministratoren din for å legge til profiler',
 			_ => null,
 		} ?? switch (path) {
+			'messages.noProfilesAvailable' => 'Ingen profiler tilgjengelige',
+			'messages.contactAdminForProfiles' => 'Kontakt serveradministratoren din for å legge til profiler',
 			'messages.unableToDetermineLibrarySection' => 'Kan ikke fastslå bibliotekseksjonen for dette elementet',
 			'messages.logsCleared' => 'Logger tømt',
 			'messages.logsCopied' => 'Logger kopiert til utklippstavle',
@@ -3124,10 +3128,10 @@ extension on TranslationsNb {
 			'downloads.downloadResumed' => 'Nedlasting gjenopptatt',
 			'downloads.serverErrorBitrate' => 'Serverfeil: filen kan overskride grensen for ekstern bitrate',
 			'downloads.episodesQueued' => ({required Object count}) => '${count} episoder i nedlastingskø',
-			'downloads.downloadDeleted' => 'Nedlasting slettet',
-			'downloads.deleteConfirm' => ({required Object title}) => 'Slette "${title}" fra denne enheten?',
 			_ => null,
 		} ?? switch (path) {
+			'downloads.downloadDeleted' => 'Nedlasting slettet',
+			'downloads.deleteConfirm' => ({required Object title}) => 'Slette "${title}" fra denne enheten?',
 			'downloads.cancelledDownloadTitle' => 'Avbrutt nedlasting',
 			'downloads.cancelledDownloadMessage' => 'Denne nedlastingen ble avbrutt. Hva vil du gjøre?',
 			'downloads.allEpisodesAlreadyDownloaded' => 'Alle episoder er allerede lastet ned',

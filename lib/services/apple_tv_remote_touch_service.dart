@@ -59,6 +59,7 @@ class AppleTvRemoteTouchService {
   int _suppressedNativeSelectDowns = 0;
   bool _nativeSelectPressed = false;
   bool _selectPressedFromClick = false;
+  bool _nativeTextInputActive = false;
 
   AppleTvRemoteTouchService({
     BasicMessageChannel<dynamic>? channel,
@@ -93,6 +94,23 @@ class AppleTvRemoteTouchService {
   /// touch gesture ends (used to extend Home-rail select suppression).
   ValueListenable<bool> get touchActiveListenable => _touchActiveNotifier;
 
+  /// While a native system keyboard session is active (Apple TV), Siri Remote
+  /// touch/press events belong to the system keyboard, not this app's focus tree.
+  bool get nativeTextInputActive => _nativeTextInputActive;
+
+  set nativeTextInputActive(bool value) {
+    if (_nativeTextInputActive == value) return;
+    _nativeTextInputActive = value;
+    _log('native text input active=$value');
+    if (value) {
+      // Mirrors stop(): a touchpad click that opened the keyboard leaves its
+      // matching click_e dropped by the guard in handleMessage below, which
+      // would otherwise strand a synthetic enter keyDown with no keyUp.
+      _releaseSelectFromClick(source: 'native-text-input');
+      _resetTouch();
+    }
+  }
+
   void start() {
     if (_listening) return;
     _channel.setMessageHandler(handleMessage);
@@ -114,6 +132,10 @@ class AppleTvRemoteTouchService {
 
   bool handleNativeKeyEvent(KeyEvent event) {
     _log('native ${_eventTypeName(event)} logical=${_keyName(event.logicalKey)}');
+    if (_nativeTextInputActive) {
+      _log('consume native key reason=native-text-input');
+      return true;
+    }
     if (_isMediaPlaybackKey(event.logicalKey)) {
       _log('consume native media key reason=direct-playback-action');
       return true;
@@ -128,6 +150,11 @@ class AppleTvRemoteTouchService {
   }
 
   Future<void> handleMessage(dynamic arguments) async {
+    if (_nativeTextInputActive) {
+      _log('ignore message reason=native-text-input');
+      return;
+    }
+
     if (arguments is! Map) {
       _log('ignore message reason=not-map valueType=${arguments.runtimeType}');
       return;

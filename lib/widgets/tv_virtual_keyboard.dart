@@ -6,6 +6,8 @@ import 'package:material_symbols_icons/symbols.dart';
 
 import '../focus/dpad_navigator.dart';
 import '../i18n/strings.g.dart';
+import '../services/apple_tv_native_keyboard.dart';
+import '../services/settings_service.dart';
 import '../utils/platform_detector.dart';
 import 'clickable_cursor.dart';
 import 'listenable_selector.dart';
@@ -45,26 +47,36 @@ void warmUpTvVirtualKeyboardText(BuildContext context) {
 
 /// Handle to a TV virtual keyboard pushed by [showTvVirtualKeyboard].
 class TvVirtualKeyboardHandle {
-  TvVirtualKeyboardHandle._(this._navigator, this._route);
+  TvVirtualKeyboardHandle._(this._closeImpl, this._closed);
 
-  final NavigatorState _navigator;
-  final DialogRoute<void> _route;
+  /// Backs keyboard sessions implemented outside this library (the native
+  /// Apple TV keyboard) — Dart privacy is per-library, so they can't reach
+  /// the private constructor.
+  factory TvVirtualKeyboardHandle.fromCallbacks({required VoidCallback close, required Future<void> closed}) =>
+      TvVirtualKeyboardHandle._(close, closed);
 
-  /// Completes when the keyboard leaves the navigator — submit, cancel,
-  /// barrier/back dismiss, or [close].
-  Future<void> get closed => _route.popped;
-
-  /// Dismiss the keyboard if it is still up. No-ops once the route is gone
-  /// or the navigator is being torn down.
-  void close() {
-    if (!_navigator.mounted) return;
-    if (_route.isCurrent) {
-      _navigator.pop();
-    } else if (_route.isActive) {
-      // removeRoute also completes route.popped, which backs [closed].
-      _navigator.removeRoute(_route);
-    }
+  factory TvVirtualKeyboardHandle._dialog(NavigatorState navigator, DialogRoute<void> route) {
+    return TvVirtualKeyboardHandle._(() {
+      if (!navigator.mounted) return;
+      if (route.isCurrent) {
+        navigator.pop();
+      } else if (route.isActive) {
+        // removeRoute also completes route.popped, which backs [closed].
+        navigator.removeRoute(route);
+      }
+    }, route.popped);
   }
+
+  final VoidCallback _closeImpl;
+  final Future<void> _closed;
+
+  /// Completes when the keyboard session ends — submit, cancel,
+  /// barrier/back dismiss, or [close].
+  Future<void> get closed => _closed;
+
+  /// Dismiss the keyboard if it is still up. No-ops once the session is
+  /// already gone or being torn down.
+  void close() => _closeImpl();
 }
 
 TvVirtualKeyboardHandle? showTvVirtualKeyboard({
@@ -77,11 +89,42 @@ TvVirtualKeyboardHandle? showTvVirtualKeyboard({
   bool obscureText = false,
   int? maxLength,
   int? maxLines,
+  TextCapitalization textCapitalization = TextCapitalization.none,
+  bool autocorrect = true,
   ValueChanged<String>? onChanged,
   ValueChanged<String>? onSubmitted,
   VoidCallback? onAction,
 }) {
   if (!PlatformDetector.isTV()) return null;
+
+  // Apple TV has a native system keyboard (full-screen, with "Type with
+  // iPhone" and Siri Remote dictation) that we prefer for single-line
+  // fields, unless the user opted back into the compact keyboard via the
+  // "Use Apple TV system keyboard" setting. Multiline stays on the custom
+  // keyboard below because the tvOS system keyboard is single-line only. If
+  // the native keyboard has already failed once this session (channel
+  // missing, or the platform couldn't present it), self-heal by falling back
+  // to the custom keyboard for every subsequent open instead of leaving the
+  // user with no keyboard at all.
+  if (PlatformDetector.isAppleTV() &&
+      !AppleTvNativeKeyboard.isKnownUnavailable &&
+      (SettingsService.instanceOrNull?.read(SettingsService.appleTvSystemKeyboard) ?? true) &&
+      !_isMultilineRequest(keyboardType: keyboardType, maxLines: maxLines)) {
+    return AppleTvNativeKeyboard.show(
+      controller: controller,
+      hintText: hintText,
+      keyboardType: keyboardType,
+      textInputAction: textInputAction,
+      inputFormatters: inputFormatters,
+      obscureText: obscureText,
+      maxLength: maxLength,
+      textCapitalization: textCapitalization,
+      autocorrect: autocorrect,
+      onChanged: onChanged,
+      onSubmitted: onSubmitted,
+      onAction: onAction,
+    );
+  }
 
   // A hand-built DialogRoute instead of showDialog so the caller gets a
   // handle it can close when the owning field unmounts. Use the nearest
@@ -110,8 +153,11 @@ TvVirtualKeyboardHandle? showTvVirtualKeyboard({
     ),
   );
   unawaited(navigator.push(route));
-  return TvVirtualKeyboardHandle._(navigator, route);
+  return TvVirtualKeyboardHandle._dialog(navigator, route);
 }
+
+bool _isMultilineRequest({TextInputType? keyboardType, int? maxLines}) =>
+    keyboardType?.index == TextInputType.multiline.index || (maxLines != null && maxLines != 1);
 
 enum _TvKeyType { spacer, character, shift, symbols, space, newline, backspace, clear, cancel, done }
 
