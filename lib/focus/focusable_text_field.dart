@@ -877,6 +877,7 @@ class _FocusableTextInputHostState extends State<_FocusableTextInputHost> {
       return;
     }
     _tvKeyboardHandle = keyboard;
+    final nativeUnavailableAtOpen = AppleTvNativeKeyboard.isKnownUnavailable;
     unawaited(
       keyboard.closed.whenComplete(() {
         _tvKeyboardHandle = null;
@@ -885,6 +886,12 @@ class _FocusableTextInputHostState extends State<_FocusableTextInputHost> {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
           if (_installedFocusNode?.hasFocus != true) {
+            _suppressTvKeyboardAutoOpen = false;
+          } else if (!nativeUnavailableAtOpen && AppleTvNativeKeyboard.isKnownUnavailable) {
+            // Unavailability flipped during this session: the native keyboard
+            // failed to present rather than the user dismissing it. Clear the
+            // suppression so the sync below reopens with the custom fallback
+            // instead of leaving the focused field with no keyboard.
             _suppressTvKeyboardAutoOpen = false;
           }
           _syncTvKeyboardAutoOpen();

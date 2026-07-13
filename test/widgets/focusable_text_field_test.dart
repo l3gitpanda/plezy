@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:plezy/focus/focusable_text_field.dart';
+import 'package:plezy/services/apple_tv_native_keyboard.dart';
 import 'package:plezy/services/apple_tv_remote_touch_service.dart';
 import 'package:plezy/services/gamepad_service.dart';
 import 'package:plezy/utils/platform_detector.dart';
@@ -938,6 +939,59 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(AppleTvRemoteTouchService.instance.nativeTextInputActive, isFalse);
+  });
+
+  testWidgets('Apple TV native presentation failure opens the custom fallback for the focused field', (tester) async {
+    const channel = MethodChannel('com.plezy/native_keyboard');
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      return null;
+    });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(channel, null),
+    );
+    addTearDown(AppleTvNativeKeyboard.debugResetNativeKeyboardUnavailable);
+    addTearDown(() => AppleTvRemoteTouchService.instance.nativeTextInputActive = false);
+
+    TvDetectionService.debugSetAppleTVOverride(true);
+    await _setTvSurfaceSize(tester);
+    final controller = TextEditingController();
+    final fieldFocusNode = FocusNode(debugLabel: 'search_field');
+    addTearDown(controller.dispose);
+    addTearDown(fieldFocusNode.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: FocusableTextField(controller: controller, focusNode: fieldFocusNode),
+        ),
+      ),
+    );
+
+    fieldFocusNode.requestFocus();
+    await tester.pumpAndSettle();
+
+    final showCalls = calls.where((call) => call.method == 'show').toList();
+    expect(showCalls, hasLength(1));
+    final requestId = (showCalls.single.arguments as Map)['requestId'] as int;
+
+    // The platform could not present the native keyboard. The field is still
+    // focused, so the custom on-screen keyboard must take over immediately —
+    // not on the next focus change.
+    final failedData = const StandardMethodCodec().encodeMethodCall(
+      MethodCall('presentFailed', {'requestId': requestId}),
+    );
+    await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.handlePlatformMessage(
+      channel.name,
+      failedData,
+      (_) {},
+    );
+    await tester.pumpAndSettle();
+
+    expect(AppleTvNativeKeyboard.isKnownUnavailable, isTrue);
+    expect(fieldFocusNode.hasFocus, isTrue);
+    expect(find.byType(Dialog), findsOneWidget);
   });
 }
 
