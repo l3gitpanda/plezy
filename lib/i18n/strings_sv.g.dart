@@ -697,6 +697,7 @@ class _TranslationsMessagesSv extends TranslationsMessagesEn {
 	@override String get removedFromContinueWatching => 'Borttagen från Fortsätt titta';
 	@override String errorLoading({required Object error}) => 'Fel: ${error}';
 	@override String get streamInterrupted => 'Uppspelningen avbröts. Tryck på play eller spola för att försöka igen.';
+	@override String get liveStreamInterrupted => 'Livestreamen avbröts. Tryck på play för att försöka igen.';
 	@override String get fileInfoNotAvailable => 'Filinformation inte tillgänglig';
 	@override String errorLoadingFileInfo({required Object error}) => 'Fel vid laddning av filinformation: ${error}';
 	@override String get errorLoadingSeries => 'Fel vid laddning av serie';
@@ -1130,6 +1131,7 @@ class _TranslationsLiveTvSv extends TranslationsLiveTvEn {
 	@override String get watchChannel => 'Titta på kanal';
 	@override String get favorites => 'Favoriter';
 	@override String get reorderFavorites => 'Ordna om favoriter';
+	@override String get favoritesLoadFailed => 'Det gick inte att läsa in favoriter. Kontrollera anslutningen och försök igen.';
 	@override String get joinSession => 'Gå med i pågående session';
 	@override String watchFromStart({required Object minutes}) => 'Titta från början (${minutes} min sedan)';
 	@override String get watchLive => 'Titta live';
@@ -1389,6 +1391,7 @@ class _TranslationsDownloadsSv extends TranslationsDownloadsEn {
 	@override String get customAmount => 'Ange antal...';
 	@override String get includeSpecials => 'Inkludera specialavsnitt';
 	@override String get howManyEpisodes => 'Hur många avsnitt?';
+	@override String get invalidEpisodeCount => 'Ange ett giltigt antal avsnitt.';
 	@override String get keepSynced => 'Håll synkroniserad';
 	@override String get downloadOnce => 'Ladda ner en gång';
 	@override String keepNUnwatched({required Object count}) => 'Behåll ${count} osedda';
@@ -2610,15 +2613,16 @@ extension on TranslationsSv {
 			'messages.removedFromContinueWatching' => 'Borttagen från Fortsätt titta',
 			'messages.errorLoading' => ({required Object error}) => 'Fel: ${error}',
 			'messages.streamInterrupted' => 'Uppspelningen avbröts. Tryck på play eller spola för att försöka igen.',
+			'messages.liveStreamInterrupted' => 'Livestreamen avbröts. Tryck på play för att försöka igen.',
 			'messages.fileInfoNotAvailable' => 'Filinformation inte tillgänglig',
 			'messages.errorLoadingFileInfo' => ({required Object error}) => 'Fel vid laddning av filinformation: ${error}',
 			'messages.errorLoadingSeries' => 'Fel vid laddning av serie',
 			'messages.musicNotSupported' => 'Musikuppspelning stöds inte ännu',
 			'messages.noDescriptionAvailable' => 'Ingen beskrivning tillgänglig',
 			'messages.noProfilesAvailable' => 'Inga profiler tillgängliga',
-			'messages.contactAdminForProfiles' => 'Kontakta din serveradministratör för att lägga till profiler',
 			_ => null,
 		} ?? switch (path) {
+			'messages.contactAdminForProfiles' => 'Kontakta din serveradministratör för att lägga till profiler',
 			'messages.unableToDetermineLibrarySection' => 'Kan inte avgöra biblioteksavdelningen för detta objekt',
 			'messages.logsCleared' => 'Loggar rensade',
 			'messages.logsCopied' => 'Loggar kopierade till urklipp',
@@ -2949,6 +2953,7 @@ extension on TranslationsSv {
 			'liveTv.watchChannel' => 'Titta på kanal',
 			'liveTv.favorites' => 'Favoriter',
 			'liveTv.reorderFavorites' => 'Ordna om favoriter',
+			'liveTv.favoritesLoadFailed' => 'Det gick inte att läsa in favoriter. Kontrollera anslutningen och försök igen.',
 			'liveTv.joinSession' => 'Gå med i pågående session',
 			'liveTv.watchFromStart' => ({required Object minutes}) => 'Titta från början (${minutes} min sedan)',
 			'liveTv.watchLive' => 'Titta live',
@@ -3129,10 +3134,10 @@ extension on TranslationsSv {
 			'downloads.downloadNow' => 'Ladda ner',
 			'downloads.deleteDownload' => 'Ta bort nedladdning',
 			'downloads.retryDownload' => 'Försök igen',
-			'downloads.downloadQueued' => 'Nedladdning köad',
-			'downloads.downloadResumed' => 'Nedladdning återupptagen',
 			_ => null,
 		} ?? switch (path) {
+			'downloads.downloadQueued' => 'Nedladdning köad',
+			'downloads.downloadResumed' => 'Nedladdning återupptagen',
 			'downloads.serverErrorBitrate' => 'Serverfel: filen kan överskrida gränsen för fjärrbitrate',
 			'downloads.episodesQueued' => ({required Object count}) => '${count} avsnitt köade för nedladdning',
 			'downloads.downloadDeleted' => 'Nedladdning borttagen',
@@ -3162,6 +3167,7 @@ extension on TranslationsSv {
 			'downloads.customAmount' => 'Ange antal...',
 			'downloads.includeSpecials' => 'Inkludera specialavsnitt',
 			'downloads.howManyEpisodes' => 'Hur många avsnitt?',
+			'downloads.invalidEpisodeCount' => 'Ange ett giltigt antal avsnitt.',
 			'downloads.keepSynced' => 'Håll synkroniserad',
 			'downloads.downloadOnce' => 'Ladda ner en gång',
 			'downloads.keepNUnwatched' => ({required Object count}) => 'Behåll ${count} osedda',

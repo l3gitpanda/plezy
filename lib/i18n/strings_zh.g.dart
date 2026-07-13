@@ -697,6 +697,7 @@ class _TranslationsMessagesZh extends TranslationsMessagesEn {
 	@override String get removedFromContinueWatching => '已从继续观看中移除';
 	@override String errorLoading({required Object error}) => '错误: ${error}';
 	@override String get streamInterrupted => '视频流已中断。按播放键或拖动进度条重试。';
+	@override String get liveStreamInterrupted => '直播流已中断。按播放键重试。';
 	@override String get fileInfoNotAvailable => '文件信息不可用';
 	@override String errorLoadingFileInfo({required Object error}) => '加载文件信息时出错: ${error}';
 	@override String get errorLoadingSeries => '加载系列时出错';
@@ -1129,6 +1130,7 @@ class _TranslationsLiveTvZh extends TranslationsLiveTvEn {
 	@override String get watchChannel => '观看频道';
 	@override String get favorites => '收藏';
 	@override String get reorderFavorites => '重新排序收藏';
+	@override String get favoritesLoadFailed => '无法加载收藏。请检查网络连接后重试。';
 	@override String get joinSession => '加入正在进行的会话';
 	@override String watchFromStart({required Object minutes}) => '从头观看（${minutes}分钟前开始）';
 	@override String get watchLive => '观看直播';
@@ -1387,6 +1389,7 @@ class _TranslationsDownloadsZh extends TranslationsDownloadsEn {
 	@override String get customAmount => '自定义数量...';
 	@override String get includeSpecials => '包含特别篇';
 	@override String get howManyEpisodes => '下载几集？';
+	@override String get invalidEpisodeCount => '请输入有效的集数。';
 	@override String get keepSynced => '保持同步';
 	@override String get downloadOnce => '下载一次';
 	@override String keepNUnwatched({required Object count}) => '保留${count}个未观看';
@@ -2608,15 +2611,16 @@ extension on TranslationsZh {
 			'messages.removedFromContinueWatching' => '已从继续观看中移除',
 			'messages.errorLoading' => ({required Object error}) => '错误: ${error}',
 			'messages.streamInterrupted' => '视频流已中断。按播放键或拖动进度条重试。',
+			'messages.liveStreamInterrupted' => '直播流已中断。按播放键重试。',
 			'messages.fileInfoNotAvailable' => '文件信息不可用',
 			'messages.errorLoadingFileInfo' => ({required Object error}) => '加载文件信息时出错: ${error}',
 			'messages.errorLoadingSeries' => '加载系列时出错',
 			'messages.musicNotSupported' => '尚不支持播放音乐',
 			'messages.noDescriptionAvailable' => '暂无描述',
 			'messages.noProfilesAvailable' => '没有可用的用户',
-			'messages.contactAdminForProfiles' => '请联系服务器管理员添加用户配置',
 			_ => null,
 		} ?? switch (path) {
+			'messages.contactAdminForProfiles' => '请联系服务器管理员添加用户配置',
 			'messages.unableToDetermineLibrarySection' => '无法确定此项目的库分区',
 			'messages.logsCleared' => '日志已清除',
 			'messages.logsCopied' => '日志已复制到剪贴板',
@@ -2947,6 +2951,7 @@ extension on TranslationsZh {
 			'liveTv.watchChannel' => '观看频道',
 			'liveTv.favorites' => '收藏',
 			'liveTv.reorderFavorites' => '重新排序收藏',
+			'liveTv.favoritesLoadFailed' => '无法加载收藏。请检查网络连接后重试。',
 			'liveTv.joinSession' => '加入正在进行的会话',
 			'liveTv.watchFromStart' => ({required Object minutes}) => '从头观看（${minutes}分钟前开始）',
 			'liveTv.watchLive' => '观看直播',
@@ -3127,10 +3132,10 @@ extension on TranslationsZh {
 			'downloads.downloadNow' => '下载',
 			'downloads.deleteDownload' => '删除下载',
 			'downloads.retryDownload' => '重试下载',
-			'downloads.downloadQueued' => '下载已排队',
-			'downloads.downloadResumed' => '下载已继续',
 			_ => null,
 		} ?? switch (path) {
+			'downloads.downloadQueued' => '下载已排队',
+			'downloads.downloadResumed' => '下载已继续',
 			'downloads.serverErrorBitrate' => '服务器错误：文件可能超过远程比特率限制',
 			'downloads.episodesQueued' => ({required Object count}) => '${count} 集已加入下载队列',
 			'downloads.downloadDeleted' => '下载已删除',
@@ -3160,6 +3165,7 @@ extension on TranslationsZh {
 			'downloads.customAmount' => '自定义数量...',
 			'downloads.includeSpecials' => '包含特别篇',
 			'downloads.howManyEpisodes' => '下载几集？',
+			'downloads.invalidEpisodeCount' => '请输入有效的集数。',
 			'downloads.keepSynced' => '保持同步',
 			'downloads.downloadOnce' => '下载一次',
 			'downloads.keepNUnwatched' => ({required Object count}) => '保留${count}个未观看',

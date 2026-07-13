@@ -697,6 +697,7 @@ class _TranslationsMessagesKo extends TranslationsMessagesEn {
 	@override String get removedFromContinueWatching => '계속 시청 목록에서 제거됨';
 	@override String errorLoading({required Object error}) => '오류: ${error}';
 	@override String get streamInterrupted => '스트림이 중단되었습니다. 재생을 누르거나 탐색하여 다시 시도하세요.';
+	@override String get liveStreamInterrupted => '라이브 스트림이 중단되었습니다. 재생을 눌러 다시 시도하세요.';
 	@override String get fileInfoNotAvailable => '파일 정보가 없습니다';
 	@override String errorLoadingFileInfo({required Object error}) => '파일 정보 로딩 중 오류: ${error}';
 	@override String get errorLoadingSeries => '시리즈 로딩 중 오류';
@@ -1129,6 +1130,7 @@ class _TranslationsLiveTvKo extends TranslationsLiveTvEn {
 	@override String get watchChannel => '채널 시청';
 	@override String get favorites => '즐겨찾기';
 	@override String get reorderFavorites => '즐겨찾기 순서 변경';
+	@override String get favoritesLoadFailed => '즐겨찾기를 불러올 수 없습니다. 연결을 확인하고 다시 시도하세요.';
 	@override String get joinSession => '진행 중인 세션 참여';
 	@override String watchFromStart({required Object minutes}) => '처음부터 시청 (${minutes}분 전 시작)';
 	@override String get watchLive => '실시간 시청';
@@ -1387,6 +1389,7 @@ class _TranslationsDownloadsKo extends TranslationsDownloadsEn {
 	@override String get customAmount => '직접 입력...';
 	@override String get includeSpecials => '스페셜 포함';
 	@override String get howManyEpisodes => '몇 개의 에피소드?';
+	@override String get invalidEpisodeCount => '올바른 에피소드 수를 입력하세요.';
 	@override String get keepSynced => '동기화 유지';
 	@override String get downloadOnce => '한 번만 다운로드';
 	@override String keepNUnwatched({required Object count}) => '미시청 ${count}개 유지';
@@ -2608,15 +2611,16 @@ extension on TranslationsKo {
 			'messages.removedFromContinueWatching' => '계속 시청 목록에서 제거됨',
 			'messages.errorLoading' => ({required Object error}) => '오류: ${error}',
 			'messages.streamInterrupted' => '스트림이 중단되었습니다. 재생을 누르거나 탐색하여 다시 시도하세요.',
+			'messages.liveStreamInterrupted' => '라이브 스트림이 중단되었습니다. 재생을 눌러 다시 시도하세요.',
 			'messages.fileInfoNotAvailable' => '파일 정보가 없습니다',
 			'messages.errorLoadingFileInfo' => ({required Object error}) => '파일 정보 로딩 중 오류: ${error}',
 			'messages.errorLoadingSeries' => '시리즈 로딩 중 오류',
 			'messages.musicNotSupported' => '음악 재생 미지원',
 			'messages.noDescriptionAvailable' => '설명이 없습니다',
 			'messages.noProfilesAvailable' => '사용 가능한 프로필이 없습니다',
-			'messages.contactAdminForProfiles' => '프로필을 추가하려면 서버 관리자에게 문의하세요',
 			_ => null,
 		} ?? switch (path) {
+			'messages.contactAdminForProfiles' => '프로필을 추가하려면 서버 관리자에게 문의하세요',
 			'messages.unableToDetermineLibrarySection' => '이 항목의 라이브러리 섹션을 확인할 수 없습니다',
 			'messages.logsCleared' => '로그가 삭제 되었습니다',
 			'messages.logsCopied' => '로그가 클립보드에 복사 되었습니다',
@@ -2947,6 +2951,7 @@ extension on TranslationsKo {
 			'liveTv.watchChannel' => '채널 시청',
 			'liveTv.favorites' => '즐겨찾기',
 			'liveTv.reorderFavorites' => '즐겨찾기 순서 변경',
+			'liveTv.favoritesLoadFailed' => '즐겨찾기를 불러올 수 없습니다. 연결을 확인하고 다시 시도하세요.',
 			'liveTv.joinSession' => '진행 중인 세션 참여',
 			'liveTv.watchFromStart' => ({required Object minutes}) => '처음부터 시청 (${minutes}분 전 시작)',
 			'liveTv.watchLive' => '실시간 시청',
@@ -3127,10 +3132,10 @@ extension on TranslationsKo {
 			'downloads.downloadNow' => '다운로드',
 			'downloads.deleteDownload' => '다운로드 삭제',
 			'downloads.retryDownload' => '다운로드 재시도',
-			'downloads.downloadQueued' => '다운로드 대기 중',
-			'downloads.downloadResumed' => '다운로드를 재개했습니다',
 			_ => null,
 		} ?? switch (path) {
+			'downloads.downloadQueued' => '다운로드 대기 중',
+			'downloads.downloadResumed' => '다운로드를 재개했습니다',
 			'downloads.serverErrorBitrate' => '서버 오류: 파일이 원격 비트레이트 제한을 초과할 수 있습니다',
 			'downloads.episodesQueued' => ({required Object count}) => '${count} 에피소드가 다운로드 대기열에 추가 되었습니다',
 			'downloads.downloadDeleted' => '다운로드 삭제됨',
@@ -3160,6 +3165,7 @@ extension on TranslationsKo {
 			'downloads.customAmount' => '직접 입력...',
 			'downloads.includeSpecials' => '스페셜 포함',
 			'downloads.howManyEpisodes' => '몇 개의 에피소드?',
+			'downloads.invalidEpisodeCount' => '올바른 에피소드 수를 입력하세요.',
 			'downloads.keepSynced' => '동기화 유지',
 			'downloads.downloadOnce' => '한 번만 다운로드',
 			'downloads.keepNUnwatched' => ({required Object count}) => '미시청 ${count}개 유지',

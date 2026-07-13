@@ -697,6 +697,7 @@ class _TranslationsMessagesNb extends TranslationsMessagesEn {
 	@override String get removedFromContinueWatching => 'Fjernet fra Fortsett å se';
 	@override String errorLoading({required Object error}) => 'Feil: ${error}';
 	@override String get streamInterrupted => 'Avspillingen ble avbrutt. Trykk på Spill av eller spol for å prøve på nytt.';
+	@override String get liveStreamInterrupted => 'Direktesendingen ble avbrutt. Trykk på Spill av for å prøve på nytt.';
 	@override String get fileInfoNotAvailable => 'Filinformasjon ikke tilgjengelig';
 	@override String errorLoadingFileInfo({required Object error}) => 'Feil ved lasting av filinformasjon: ${error}';
 	@override String get errorLoadingSeries => 'Feil ved lasting av serie';
@@ -1130,6 +1131,7 @@ class _TranslationsLiveTvNb extends TranslationsLiveTvEn {
 	@override String get watchChannel => 'Se kanal';
 	@override String get favorites => 'Favoritter';
 	@override String get reorderFavorites => 'Endre rekkefølge på favoritter';
+	@override String get favoritesLoadFailed => 'Kunne ikke laste inn favoritter. Kontroller tilkoblingen og prøv på nytt.';
 	@override String get joinSession => 'Bli med i pågående økt';
 	@override String watchFromStart({required Object minutes}) => 'Se fra starten (${minutes} min siden)';
 	@override String get watchLive => 'Se direkte';
@@ -1389,6 +1391,7 @@ class _TranslationsDownloadsNb extends TranslationsDownloadsEn {
 	@override String get customAmount => 'Egendefinert antall...';
 	@override String get includeSpecials => 'Inkluder spesialepisoder';
 	@override String get howManyEpisodes => 'Hvor mange episoder?';
+	@override String get invalidEpisodeCount => 'Angi et gyldig antall episoder.';
 	@override String get keepSynced => 'Hold synkronisert';
 	@override String get downloadOnce => 'Last ned én gang';
 	@override String keepNUnwatched({required Object count}) => 'Behold ${count} usette';
@@ -2610,15 +2613,16 @@ extension on TranslationsNb {
 			'messages.removedFromContinueWatching' => 'Fjernet fra Fortsett å se',
 			'messages.errorLoading' => ({required Object error}) => 'Feil: ${error}',
 			'messages.streamInterrupted' => 'Avspillingen ble avbrutt. Trykk på Spill av eller spol for å prøve på nytt.',
+			'messages.liveStreamInterrupted' => 'Direktesendingen ble avbrutt. Trykk på Spill av for å prøve på nytt.',
 			'messages.fileInfoNotAvailable' => 'Filinformasjon ikke tilgjengelig',
 			'messages.errorLoadingFileInfo' => ({required Object error}) => 'Feil ved lasting av filinformasjon: ${error}',
 			'messages.errorLoadingSeries' => 'Feil ved lasting av serie',
 			'messages.musicNotSupported' => 'Musikkavspilling støttes ikke ennå',
 			'messages.noDescriptionAvailable' => 'Ingen beskrivelse tilgjengelig',
 			'messages.noProfilesAvailable' => 'Ingen profiler tilgjengelige',
-			'messages.contactAdminForProfiles' => 'Kontakt serveradministratoren din for å legge til profiler',
 			_ => null,
 		} ?? switch (path) {
+			'messages.contactAdminForProfiles' => 'Kontakt serveradministratoren din for å legge til profiler',
 			'messages.unableToDetermineLibrarySection' => 'Kan ikke fastslå bibliotekseksjonen for dette elementet',
 			'messages.logsCleared' => 'Logger tømt',
 			'messages.logsCopied' => 'Logger kopiert til utklippstavle',
@@ -2949,6 +2953,7 @@ extension on TranslationsNb {
 			'liveTv.watchChannel' => 'Se kanal',
 			'liveTv.favorites' => 'Favoritter',
 			'liveTv.reorderFavorites' => 'Endre rekkefølge på favoritter',
+			'liveTv.favoritesLoadFailed' => 'Kunne ikke laste inn favoritter. Kontroller tilkoblingen og prøv på nytt.',
 			'liveTv.joinSession' => 'Bli med i pågående økt',
 			'liveTv.watchFromStart' => ({required Object minutes}) => 'Se fra starten (${minutes} min siden)',
 			'liveTv.watchLive' => 'Se direkte',
@@ -3129,10 +3134,10 @@ extension on TranslationsNb {
 			'downloads.downloadNow' => 'Last ned',
 			'downloads.deleteDownload' => 'Slett nedlasting',
 			'downloads.retryDownload' => 'Prøv nedlasting på nytt',
-			'downloads.downloadQueued' => 'Nedlasting i kø',
-			'downloads.downloadResumed' => 'Nedlasting gjenopptatt',
 			_ => null,
 		} ?? switch (path) {
+			'downloads.downloadQueued' => 'Nedlasting i kø',
+			'downloads.downloadResumed' => 'Nedlasting gjenopptatt',
 			'downloads.serverErrorBitrate' => 'Serverfeil: filen kan overskride grensen for ekstern bitrate',
 			'downloads.episodesQueued' => ({required Object count}) => '${count} episoder i nedlastingskø',
 			'downloads.downloadDeleted' => 'Nedlasting slettet',
@@ -3162,6 +3167,7 @@ extension on TranslationsNb {
 			'downloads.customAmount' => 'Egendefinert antall...',
 			'downloads.includeSpecials' => 'Inkluder spesialepisoder',
 			'downloads.howManyEpisodes' => 'Hvor mange episoder?',
+			'downloads.invalidEpisodeCount' => 'Angi et gyldig antall episoder.',
 			'downloads.keepSynced' => 'Hold synkronisert',
 			'downloads.downloadOnce' => 'Last ned én gang',
 			'downloads.keepNUnwatched' => ({required Object count}) => 'Behold ${count} usette',

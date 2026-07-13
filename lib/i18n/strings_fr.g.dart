@@ -697,6 +697,7 @@ class _TranslationsMessagesFr extends TranslationsMessagesEn {
 	@override String get removedFromContinueWatching => 'Supprimer de "Continuer à regarder"';
 	@override String errorLoading({required Object error}) => 'Erreur: ${error}';
 	@override String get streamInterrupted => 'La lecture a été interrompue. Appuyez sur Lecture ou avancez pour réessayer.';
+	@override String get liveStreamInterrupted => 'Le direct a été interrompu. Appuyez sur Lecture pour réessayer.';
 	@override String get fileInfoNotAvailable => 'Informations sur le fichier non disponibles';
 	@override String errorLoadingFileInfo({required Object error}) => 'Erreur lors du chargement des informations sur le fichier: ${error}';
 	@override String get errorLoadingSeries => 'Erreur lors du chargement de la série';
@@ -1130,6 +1131,7 @@ class _TranslationsLiveTvFr extends TranslationsLiveTvEn {
 	@override String get watchChannel => 'Regarder la chaîne';
 	@override String get favorites => 'Favoris';
 	@override String get reorderFavorites => 'Réorganiser les favoris';
+	@override String get favoritesLoadFailed => 'Impossible de charger les favoris. Vérifiez votre connexion et réessayez.';
 	@override String get joinSession => 'Rejoindre la session en cours';
 	@override String watchFromStart({required Object minutes}) => 'Regarder depuis le début (il y a ${minutes} min)';
 	@override String get watchLive => 'Regarder en direct';
@@ -1389,6 +1391,7 @@ class _TranslationsDownloadsFr extends TranslationsDownloadsEn {
 	@override String get customAmount => 'Quantité personnalisée...';
 	@override String get includeSpecials => 'Inclure les spéciaux';
 	@override String get howManyEpisodes => 'Combien d\'épisodes ?';
+	@override String get invalidEpisodeCount => 'Saisissez un nombre d\'épisodes valide.';
 	@override String get keepSynced => 'Garder synchronisé';
 	@override String get downloadOnce => 'Télécharger une fois';
 	@override String keepNUnwatched({required Object count}) => 'Garder ${count} non vus';
@@ -2610,15 +2613,16 @@ extension on TranslationsFr {
 			'messages.removedFromContinueWatching' => 'Supprimer de "Continuer à regarder"',
 			'messages.errorLoading' => ({required Object error}) => 'Erreur: ${error}',
 			'messages.streamInterrupted' => 'La lecture a été interrompue. Appuyez sur Lecture ou avancez pour réessayer.',
+			'messages.liveStreamInterrupted' => 'Le direct a été interrompu. Appuyez sur Lecture pour réessayer.',
 			'messages.fileInfoNotAvailable' => 'Informations sur le fichier non disponibles',
 			'messages.errorLoadingFileInfo' => ({required Object error}) => 'Erreur lors du chargement des informations sur le fichier: ${error}',
 			'messages.errorLoadingSeries' => 'Erreur lors du chargement de la série',
 			'messages.musicNotSupported' => 'La lecture de musique n\'est pas encore prise en charge',
 			'messages.noDescriptionAvailable' => 'Aucune description disponible',
 			'messages.noProfilesAvailable' => 'Aucun profil disponible',
-			'messages.contactAdminForProfiles' => 'Contactez votre administrateur serveur pour ajouter des profils',
 			_ => null,
 		} ?? switch (path) {
+			'messages.contactAdminForProfiles' => 'Contactez votre administrateur serveur pour ajouter des profils',
 			'messages.unableToDetermineLibrarySection' => 'Impossible de déterminer la section de la bibliothèque pour cet élément',
 			'messages.logsCleared' => 'Logs effacés',
 			'messages.logsCopied' => 'Logs copiés dans le presse-papier',
@@ -2949,6 +2953,7 @@ extension on TranslationsFr {
 			'liveTv.watchChannel' => 'Regarder la chaîne',
 			'liveTv.favorites' => 'Favoris',
 			'liveTv.reorderFavorites' => 'Réorganiser les favoris',
+			'liveTv.favoritesLoadFailed' => 'Impossible de charger les favoris. Vérifiez votre connexion et réessayez.',
 			'liveTv.joinSession' => 'Rejoindre la session en cours',
 			'liveTv.watchFromStart' => ({required Object minutes}) => 'Regarder depuis le début (il y a ${minutes} min)',
 			'liveTv.watchLive' => 'Regarder en direct',
@@ -3129,10 +3134,10 @@ extension on TranslationsFr {
 			'downloads.downloadNow' => 'Télécharger',
 			'downloads.deleteDownload' => 'Supprimer le téléchargement',
 			'downloads.retryDownload' => 'Réessayer le téléchargement',
-			'downloads.downloadQueued' => 'Téléchargement en attente',
-			'downloads.downloadResumed' => 'Téléchargement repris',
 			_ => null,
 		} ?? switch (path) {
+			'downloads.downloadQueued' => 'Téléchargement en attente',
+			'downloads.downloadResumed' => 'Téléchargement repris',
 			'downloads.serverErrorBitrate' => 'Erreur serveur : le fichier peut dépasser la limite de bitrate distant',
 			'downloads.episodesQueued' => ({required Object count}) => '${count} épisodes en attente de téléchargement',
 			'downloads.downloadDeleted' => 'Télécharger supprimé',
@@ -3162,6 +3167,7 @@ extension on TranslationsFr {
 			'downloads.customAmount' => 'Quantité personnalisée...',
 			'downloads.includeSpecials' => 'Inclure les spéciaux',
 			'downloads.howManyEpisodes' => 'Combien d\'épisodes ?',
+			'downloads.invalidEpisodeCount' => 'Saisissez un nombre d\'épisodes valide.',
 			'downloads.keepSynced' => 'Garder synchronisé',
 			'downloads.downloadOnce' => 'Télécharger une fois',
 			'downloads.keepNUnwatched' => ({required Object count}) => 'Garder ${count} non vus',

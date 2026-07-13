@@ -697,6 +697,7 @@ class _TranslationsMessagesBg extends TranslationsMessagesEn {
 	@override String get removedFromContinueWatching => 'Премахнато от продължаване на гледането';
 	@override String errorLoading({required Object error}) => 'Грешка: ${error}';
 	@override String get streamInterrupted => 'Потокът прекъсна. Натиснете „Пусни“ или превъртете, за да опитате отново.';
+	@override String get liveStreamInterrupted => 'Потокът на живо прекъсна. Натиснете „Пусни“, за да опитате отново.';
 	@override String get fileInfoNotAvailable => 'Информацията за файла не е налична';
 	@override String errorLoadingFileInfo({required Object error}) => 'Грешка при зареждане на информация за файла: ${error}';
 	@override String get errorLoadingSeries => 'Грешка при зареждане на сериала';
@@ -1130,6 +1131,7 @@ class _TranslationsLiveTvBg extends TranslationsLiveTvEn {
 	@override String get watchChannel => 'Гледай канал';
 	@override String get favorites => 'Любими';
 	@override String get reorderFavorites => 'Пренареди любимите';
+	@override String get favoritesLoadFailed => 'Любимите не можаха да се заредят. Проверете връзката си и опитайте отново.';
 	@override String get joinSession => 'Присъедини се към текуща сесия';
 	@override String watchFromStart({required Object minutes}) => 'Гледай от началото (преди ${minutes} мин)';
 	@override String get watchLive => 'Гледай на живо';
@@ -1389,6 +1391,7 @@ class _TranslationsDownloadsBg extends TranslationsDownloadsEn {
 	@override String get customAmount => 'Персонален брой...';
 	@override String get includeSpecials => 'Включи специалните';
 	@override String get howManyEpisodes => 'Колко епизода?';
+	@override String get invalidEpisodeCount => 'Въведете валиден брой епизоди.';
 	@override String get keepSynced => 'Поддържай синхронизирано';
 	@override String get downloadOnce => 'Изтегли еднократно';
 	@override String keepNUnwatched({required Object count}) => 'Пази ${count} негледани';
@@ -2610,15 +2613,16 @@ extension on TranslationsBg {
 			'messages.removedFromContinueWatching' => 'Премахнато от продължаване на гледането',
 			'messages.errorLoading' => ({required Object error}) => 'Грешка: ${error}',
 			'messages.streamInterrupted' => 'Потокът прекъсна. Натиснете „Пусни“ или превъртете, за да опитате отново.',
+			'messages.liveStreamInterrupted' => 'Потокът на живо прекъсна. Натиснете „Пусни“, за да опитате отново.',
 			'messages.fileInfoNotAvailable' => 'Информацията за файла не е налична',
 			'messages.errorLoadingFileInfo' => ({required Object error}) => 'Грешка при зареждане на информация за файла: ${error}',
 			'messages.errorLoadingSeries' => 'Грешка при зареждане на сериала',
 			'messages.musicNotSupported' => 'Възпроизвеждането на музика все още не се поддържа',
 			'messages.noDescriptionAvailable' => 'Няма налично описание',
 			'messages.noProfilesAvailable' => 'Няма налични профили',
-			'messages.contactAdminForProfiles' => 'Свържете се с администратора на сървъра, за да добави профили',
 			_ => null,
 		} ?? switch (path) {
+			'messages.contactAdminForProfiles' => 'Свържете се с администратора на сървъра, за да добави профили',
 			'messages.unableToDetermineLibrarySection' => 'Не може да се определи секцията на библиотеката за този елемент',
 			'messages.logsCleared' => 'Логовете са изчистени',
 			'messages.logsCopied' => 'Логовете са копирани в клипборда',
@@ -2949,6 +2953,7 @@ extension on TranslationsBg {
 			'liveTv.watchChannel' => 'Гледай канал',
 			'liveTv.favorites' => 'Любими',
 			'liveTv.reorderFavorites' => 'Пренареди любимите',
+			'liveTv.favoritesLoadFailed' => 'Любимите не можаха да се заредят. Проверете връзката си и опитайте отново.',
 			'liveTv.joinSession' => 'Присъедини се към текуща сесия',
 			'liveTv.watchFromStart' => ({required Object minutes}) => 'Гледай от началото (преди ${minutes} мин)',
 			'liveTv.watchLive' => 'Гледай на живо',
@@ -3129,10 +3134,10 @@ extension on TranslationsBg {
 			'downloads.downloadNow' => 'Изтегли',
 			'downloads.deleteDownload' => 'Изтрий изтегляне',
 			'downloads.retryDownload' => 'Опитай изтеглянето отново',
-			'downloads.downloadQueued' => 'Изтеглянето е добавено в опашката',
-			'downloads.downloadResumed' => 'Изтеглянето е възобновено',
 			_ => null,
 		} ?? switch (path) {
+			'downloads.downloadQueued' => 'Изтеглянето е добавено в опашката',
+			'downloads.downloadResumed' => 'Изтеглянето е възобновено',
 			'downloads.serverErrorBitrate' => 'Грешка на сървъра: файлът може да надвишава лимита за отдалечен битрейт',
 			'downloads.episodesQueued' => ({required Object count}) => '${count} епизода са добавени в опашката за изтегляне',
 			'downloads.downloadDeleted' => 'Изтеглянето е изтрито',
@@ -3162,6 +3167,7 @@ extension on TranslationsBg {
 			'downloads.customAmount' => 'Персонален брой...',
 			'downloads.includeSpecials' => 'Включи специалните',
 			'downloads.howManyEpisodes' => 'Колко епизода?',
+			'downloads.invalidEpisodeCount' => 'Въведете валиден брой епизоди.',
 			'downloads.keepSynced' => 'Поддържай синхронизирано',
 			'downloads.downloadOnce' => 'Изтегли еднократно',
 			'downloads.keepNUnwatched' => ({required Object count}) => 'Пази ${count} негледани',
