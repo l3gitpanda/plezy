@@ -28,6 +28,14 @@ import '../utils/scroll_utils.dart';
 import 'horizontal_scroll_with_arrows.dart';
 import '../i18n/strings.g.dart';
 
+enum HubCardSizing {
+  /// Larger cards optimized for top-level TV shelves.
+  shelf,
+
+  /// Grid-equivalent cards for shelves embedded in dense detail content.
+  grid,
+}
+
 /// Shared hub section widget used in both discover and library screens
 /// Displays a hub title with icon and a horizontal scrollable list of items
 ///
@@ -49,6 +57,12 @@ class HubSection extends StatefulWidget {
   /// Reports the current focused media item. Used by TV spotlight layouts.
   final ValueChanged<MediaItem>? onFocusedItemChanged;
 
+  /// Overrides the default media navigation for an item.
+  final ValueChanged<MediaItem>? onItemTap;
+
+  /// Overrides the standard media context menu for an item.
+  final ValueChanged<MediaItem>? onItemLongPress;
+
   /// Callback for vertical navigation (up/down). Return true if handled.
   final bool Function(bool isUp)? onVerticalNavigation;
 
@@ -68,6 +82,12 @@ class HubSection extends StatefulWidget {
   /// Use when the parent already provides edge spacing (e.g. inside Padding(16)).
   final bool inset;
 
+  /// Controls whether cards follow top-level shelf or grid geometry.
+  final HubCardSizing cardSizing;
+
+  /// Overrides the global episode artwork mode for this hub.
+  final EpisodePosterMode? episodePosterModeOverride;
+
   /// Vertical viewport alignment when this hub is focused.
   final double focusScrollAlignment;
 
@@ -82,11 +102,15 @@ class HubSection extends StatefulWidget {
     this.showServerName = false,
     this.loadMoreItems,
     this.onFocusedItemChanged,
+    this.onItemTap,
+    this.onItemLongPress,
     this.onVerticalNavigation,
     this.onBack,
     this.onNavigateUp,
     this.onNavigateToSidebar,
     this.inset = false,
+    this.cardSizing = HubCardSizing.shelf,
+    this.episodePosterModeOverride,
     this.focusScrollAlignment = 0.3,
   }) : usesContinueWatchingAction = usesContinueWatchingAction ?? isInContinueWatching;
 
@@ -333,12 +357,21 @@ class HubSectionState extends State<HubSection> with MountedSetStateMixin, Skele
     }
     if (_focusedIndex >= widget.hub.items.length) return;
     final item = widget.hub.items[_focusedIndex];
+    if (widget.onItemTap case final onItemTap?) {
+      onItemTap(item);
+      return;
+    }
     _navigateToItem(item);
   }
 
   void _showContextMenuForCurrentItem() {
     // No context menu for the "View All" card
     if (_focusedIndex >= widget.hub.items.length) return;
+    final item = widget.hub.items[_focusedIndex];
+    if (widget.onItemLongPress case final onItemLongPress?) {
+      onItemLongPress(item);
+      return;
+    }
     _mediaCardKeys[_focusedIndex]?.currentState?.showContextMenu();
   }
 
@@ -384,7 +417,11 @@ class HubSectionState extends State<HubSection> with MountedSetStateMixin, Skele
     ).textTheme.titleLarge?.copyWith(fontSize: isTv ? 26 : null, fontWeight: isTv ? FontWeight.w700 : null);
 
     return Padding(
-      padding: .only(bottom: isTv && !widget.inset ? TvLayoutConstants.shelfVerticalGap : 0),
+      padding: .only(
+        bottom: isTv && !widget.inset && widget.cardSizing == HubCardSizing.shelf
+            ? TvLayoutConstants.shelfVerticalGap
+            : 0,
+      ),
       child: Column(
         crossAxisAlignment: .start,
         mainAxisSize: .min,
@@ -449,11 +486,12 @@ class HubSectionState extends State<HubSection> with MountedSetStateMixin, Skele
                     final svc = SettingsService.instanceOrNull;
                     if (svc == null) return const SizedBox.shrink();
                     final density = svc.read(SettingsService.libraryDensity);
-                    final baseCardWidth = isTv
+                    final baseCardWidth = isTv && widget.cardSizing == HubCardSizing.shelf
                         ? _getTvCardWidth(constraints.maxWidth, density, leadingPadding)
                         : GridSizeCalculator.getCellWidth(constraints.maxWidth, context, density);
 
-                    final episodePosterMode = svc.read(SettingsService.episodePosterMode);
+                    final EpisodePosterMode episodePosterMode =
+                        widget.episodePosterModeOverride ?? svc.read(SettingsService.episodePosterMode);
 
                     final hasEpisodes = widget.hub.items.any((item) => item.usesWideAspectRatio(episodePosterMode));
                     final hasNonEpisodes = widget.hub.items.any((item) => !item.usesWideAspectRatio(episodePosterMode));
@@ -494,6 +532,7 @@ class HubSectionState extends State<HubSection> with MountedSetStateMixin, Skele
                       posterHeight,
                       useWideLayout,
                       isMixedHub,
+                      episodePosterMode,
                       isKeyboardMode,
                       widget.inset,
                       widget.isInContinueWatching,
@@ -609,7 +648,10 @@ class HubSectionState extends State<HubSection> with MountedSetStateMixin, Skele
                                   // building a second dead gesture-detector stack per card.
                                   onTap: isKeyboardMode ? () => _onItemTapped(index) : null,
                                   onLongPress: isKeyboardMode
-                                      ? () => _mediaCardKeys[index]?.currentState?.showContextMenu()
+                                      ? () {
+                                          _onItemTapped(index);
+                                          _mediaCardKeys[index]?.currentState?.showContextMenu();
+                                        }
                                       : null,
                                   delegateFocusBorder: true,
                                   child: MediaCard(
@@ -619,10 +661,23 @@ class HubSectionState extends State<HubSection> with MountedSetStateMixin, Skele
                                     height: posterHeight,
                                     onRefresh: widget.onRefresh,
                                     onRemoveFromContinueWatching: widget.onRemoveFromContinueWatching,
+                                    onTap: widget.onItemTap == null
+                                        ? null
+                                        : () {
+                                            _onItemTapped(index);
+                                            widget.onItemTap!(item);
+                                          },
+                                    onLongPress: widget.onItemLongPress == null
+                                        ? null
+                                        : () {
+                                            _onItemTapped(index);
+                                            widget.onItemLongPress!(item);
+                                          },
                                     forceGridMode: true,
                                     isInContinueWatching: widget.isInContinueWatching,
                                     usesContinueWatchingAction: widget.usesContinueWatchingAction,
                                     mixedHubContext: isMixedHub,
+                                    episodePosterModeOverride: episodePosterMode,
                                   ),
                                 ),
                               ),
