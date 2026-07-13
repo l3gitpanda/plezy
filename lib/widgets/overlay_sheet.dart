@@ -156,20 +156,56 @@ class OverlaySheetController {
 
   /// Push a sub-page using the overlay system if available, otherwise fall
   /// back to [showModalBottomSheet]. Returns the result from the page.
+  ///
+  /// When a hosted sheet is already open, this pushes a nested page and
+  /// retains the root sheet's presentation. When a host is available but
+  /// idle, this opens [builder] as its root sheet using the supplied hosted
+  /// presentation options. Without a host, the modal fallback is used.
+  ///
+  /// [isScrollControlled] applies only to the modal fallback; hosted sheets
+  /// use their explicit or default constraints.
   static Future<T?> pushAdaptive<T>(
     BuildContext context, {
     required WidgetBuilder builder,
     FocusNode? initialFocusNode,
+    BoxConstraints? constraints,
+    Color? backgroundColor,
+    bool barrierDismissible = true,
+    bool isScrollControlled = false,
+    bool showDragHandle = false,
   }) async {
     final controller = maybeOf(context);
     if (controller != null) {
-      return controller.push<T>(builder: builder, initialFocusNode: initialFocusNode);
+      if (controller.isOpen) {
+        return controller.push<T>(builder: builder, initialFocusNode: initialFocusNode);
+      }
+      return controller.show<T>(
+        builder: builder,
+        constraints: constraints,
+        backgroundColor: backgroundColor,
+        barrierDismissible: barrierDismissible,
+        initialFocusNode: initialFocusNode,
+        showDragHandle: showDragHandle,
+      );
     }
+    final effectiveConstraints =
+        constraints ??
+        () {
+          final size = MediaQuery.sizeOf(context);
+          final isDesktop = size.width > 600;
+          return BoxConstraints(maxWidth: isDesktop ? 700 : double.infinity, maxHeight: size.height * 0.75);
+        }();
+    BackKeyCoordinator.clear();
     openSheetCount.value++;
     try {
       return await showModalBottomSheet<T>(
         context: context,
         builder: (context) => SafeArea(top: false, child: builder(context)),
+        constraints: effectiveConstraints,
+        backgroundColor: backgroundColor ?? Theme.of(context).colorScheme.surface,
+        isDismissible: barrierDismissible,
+        isScrollControlled: isScrollControlled,
+        showDragHandle: showDragHandle,
       );
     } finally {
       openSheetCount.value--;
@@ -310,6 +346,7 @@ class _OverlaySheetHostState extends State<OverlaySheetHost> with SingleTickerPr
     Alignment alignment = Alignment.bottomCenter,
     bool showDragHandle = false,
   }) {
+    BackKeyCoordinator.clear();
     // If already open, close first (instant)
     final wasOpen = _isOpen;
     if (_isOpen) {

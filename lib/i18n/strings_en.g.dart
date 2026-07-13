@@ -1127,6 +1127,12 @@ class TranslationsHotkeysEn {
 	/// en: 'Current shortcut:'
 	String get currentShortcut => 'Current shortcut:';
 
+	/// en: 'Select to record a shortcut'
+	String get pressToRecord => 'Select to record a shortcut';
+
+	/// en: 'Press the shortcut now'
+	String get recordingShortcut => 'Press the shortcut now';
+
 	late final TranslationsHotkeysActionsEn actions = TranslationsHotkeysActionsEn.internal(_root);
 }
 
@@ -1359,6 +1365,12 @@ class TranslationsAccessibilityEn {
 
 	/// en: 'Hex color'
 	String get hexColor => 'Hex color';
+
+	/// en: 'Expand text'
+	String get expandText => 'Expand text';
+
+	/// en: 'Collapse text'
+	String get collapseText => 'Collapse text';
 }
 
 // Path: tooltips
@@ -3029,6 +3041,12 @@ class TranslationsWatchTogetherEn {
 	/// en: 'Session Code'
 	String get sessionCode => 'Session Code';
 
+	/// en: 'Open Watch Together session controls'
+	String get openSessionControls => 'Open Watch Together session controls';
+
+	/// en: 'Copy session code'
+	String get copySessionCode => 'Copy session code';
+
 	/// en: 'Host controls playback'
 	String get hostControlsPlayback => 'Host controls playback';
 
@@ -3780,6 +3798,12 @@ class TranslationsMetadataEditEn {
 
 	/// en: 'No artwork available'
 	String get noArtworkAvailable => 'No artwork available';
+
+	/// en: 'Artwork option ${index}'
+	String artworkOption({required Object index}) => 'Artwork option ${index}';
+
+	/// en: 'Artwork option ${index}, selected'
+	String selectedArtworkOption({required Object index}) => 'Artwork option ${index}, selected';
 
 	/// en: 'Not set'
 	String get notSet => 'Not set';
@@ -4842,6 +4866,9 @@ class TranslationsServicesDeviceCodeEn {
 	/// en: 'Open ${service} to activate'
 	String openToActivate({required Object service}) => 'Open ${service} to activate';
 
+	/// en: 'Copy activation code'
+	String get copyCode => 'Copy activation code';
+
 	/// en: 'Waiting for authorization…'
 	String get waitingForAuthorization => 'Waiting for authorization…';
 
@@ -4865,6 +4892,9 @@ class TranslationsServicesOauthProxyEn {
 
 	/// en: 'Open ${service} to sign in'
 	String openToSignIn({required Object service}) => 'Open ${service} to sign in';
+
+	/// en: 'Copy sign-in URL'
+	String get copyUrl => 'Copy sign-in URL';
 
 	/// en: 'URL copied'
 	String get urlCopied => 'URL copied';
@@ -5245,6 +5275,8 @@ extension on Translations {
 			'hotkeys.clearShortcut' => 'Clear shortcut',
 			'hotkeys.noShortcutSet' => 'No shortcut set',
 			'hotkeys.currentShortcut' => 'Current shortcut:',
+			'hotkeys.pressToRecord' => 'Select to record a shortcut',
+			'hotkeys.recordingShortcut' => 'Press the shortcut now',
 			'hotkeys.actions.playPause' => 'Play/Pause',
 			'hotkeys.actions.volumeUp' => 'Volume Up',
 			'hotkeys.actions.volumeDown' => 'Volume Down',
@@ -5335,6 +5367,8 @@ extension on Translations {
 			'accessibility.saturation' => 'Saturation',
 			'accessibility.brightness' => 'Brightness',
 			'accessibility.hexColor' => 'Hex color',
+			'accessibility.expandText' => 'Expand text',
+			'accessibility.collapseText' => 'Collapse text',
 			'tooltips.shufflePlay' => 'Shuffle play',
 			'tooltips.playTrailer' => 'Play trailer',
 			'tooltips.markAsWatched' => 'Mark as watched',
@@ -5431,12 +5465,12 @@ extension on Translations {
 			'messages.liveStreamInterrupted' => 'The live stream was interrupted. Press play to retry.',
 			'messages.fileInfoNotAvailable' => 'File information not available',
 			'messages.errorLoadingFileInfo' => ({required Object error}) => 'Error loading file info: ${error}',
+			_ => null,
+		} ?? switch (path) {
 			'messages.errorLoadingSeries' => 'Error loading series',
 			'messages.musicNotSupported' => 'Music playback is not yet supported',
 			'messages.noDescriptionAvailable' => 'No description available',
 			'messages.noProfilesAvailable' => 'No profiles available',
-			_ => null,
-		} ?? switch (path) {
 			'messages.contactAdminForProfiles' => 'Contact your server administrator to add profiles',
 			'messages.unableToDetermineLibrarySection' => 'Unable to determine library section for this item',
 			'messages.logsCleared' => 'Logs cleared',
@@ -5883,6 +5917,8 @@ extension on Translations {
 			'watchTogether.hostingSession' => 'Hosting Session',
 			'watchTogether.inSession' => 'In Session',
 			'watchTogether.sessionCode' => 'Session Code',
+			'watchTogether.openSessionControls' => 'Open Watch Together session controls',
+			'watchTogether.copySessionCode' => 'Copy session code',
 			'watchTogether.hostControlsPlayback' => 'Host controls playback',
 			'watchTogether.anyoneCanControl' => 'Anyone can control playback',
 			'watchTogether.hostControls' => 'Host controls',
@@ -5943,14 +5979,14 @@ extension on Translations {
 			'downloads.noDownloadsDescription' => 'Downloaded content will appear here for offline viewing',
 			'downloads.downloadNow' => 'Download',
 			'downloads.deleteDownload' => 'Delete download',
+			_ => null,
+		} ?? switch (path) {
 			'downloads.retryDownload' => 'Retry download',
 			'downloads.downloadQueued' => 'Download queued',
 			'downloads.downloadResumed' => 'Download resumed',
 			'downloads.serverErrorBitrate' => 'Server error: file may exceed the remote bitrate limit',
 			'downloads.episodesQueued' => ({required Object count}) => '${count} episodes queued for download',
 			'downloads.downloadDeleted' => 'Download deleted',
-			_ => null,
-		} ?? switch (path) {
 			'downloads.deleteConfirm' => ({required Object title}) => 'Delete "${title}" from this device?',
 			'downloads.cancelledDownloadTitle' => 'Cancelled Download',
 			'downloads.cancelledDownloadMessage' => 'This download was cancelled. What would you like to do?',
@@ -6174,6 +6210,8 @@ extension on Translations {
 			'metadataEdit.artworkUpdated' => 'Artwork updated',
 			'metadataEdit.artworkUpdateFailed' => 'Failed to update artwork',
 			'metadataEdit.noArtworkAvailable' => 'No artwork available',
+			'metadataEdit.artworkOption' => ({required Object index}) => 'Artwork option ${index}',
+			'metadataEdit.selectedArtworkOption' => ({required Object index}) => 'Artwork option ${index}, selected',
 			'metadataEdit.notSet' => 'Not set',
 			'metadataEdit.libraryDefault' => 'Library default',
 			'metadataEdit.accountDefault' => 'Account default',
@@ -6288,11 +6326,13 @@ extension on Translations {
 			'services.deviceCode.title' => ({required Object service}) => 'Activate Plezy on ${service}',
 			'services.deviceCode.body' => ({required Object url}) => 'Visit ${url} and enter this code:',
 			'services.deviceCode.openToActivate' => ({required Object service}) => 'Open ${service} to activate',
+			'services.deviceCode.copyCode' => 'Copy activation code',
 			'services.deviceCode.waitingForAuthorization' => 'Waiting for authorization…',
 			'services.deviceCode.codeCopied' => 'Code copied',
 			'services.oauthProxy.title' => ({required Object service}) => 'Sign in to ${service}',
 			'services.oauthProxy.body' => 'Scan this QR code or open the URL on any device.',
 			'services.oauthProxy.openToSignIn' => ({required Object service}) => 'Open ${service} to sign in',
+			'services.oauthProxy.copyUrl' => 'Copy sign-in URL',
 			'services.oauthProxy.urlCopied' => 'URL copied',
 			'services.libraryFilter.title' => 'Library filter',
 			'services.libraryFilter.subtitleAllSyncing' => 'Syncing all libraries',
