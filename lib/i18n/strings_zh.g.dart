@@ -1111,6 +1111,11 @@ class _TranslationsLiveTvZh extends TranslationsLiveTvEn {
 	@override String get unknownChannel => '未知频道';
 	@override String get live => '直播';
 	@override String get reloadGuide => '重新加载节目指南';
+	@override String get searchGuide => '搜索节目指南';
+	@override String get searchHint => '搜索频道和节目';
+	@override String searchNoResults({required Object query}) => '没有与"${query}"匹配的结果';
+	@override String get channelsSection => '频道';
+	@override String get programsSection => '节目';
 	@override String get now => '现在';
 	@override String get today => '今天';
 	@override String get tomorrow => '明天';
@@ -2924,6 +2929,11 @@ extension on TranslationsZh {
 			'liveTv.unknownChannel' => '未知频道',
 			'liveTv.live' => '直播',
 			'liveTv.reloadGuide' => '重新加载节目指南',
+			'liveTv.searchGuide' => '搜索节目指南',
+			'liveTv.searchHint' => '搜索频道和节目',
+			'liveTv.searchNoResults' => ({required Object query}) => '没有与"${query}"匹配的结果',
+			'liveTv.channelsSection' => '频道',
+			'liveTv.programsSection' => '节目',
 			'liveTv.now' => '现在',
 			'liveTv.today' => '今天',
 			'liveTv.tomorrow' => '明天',
@@ -3119,13 +3129,13 @@ extension on TranslationsZh {
 			'downloads.deleteDownload' => '删除下载',
 			'downloads.retryDownload' => '重试下载',
 			'downloads.downloadQueued' => '下载已排队',
+			_ => null,
+		} ?? switch (path) {
 			'downloads.downloadResumed' => '下载已继续',
 			'downloads.serverErrorBitrate' => '服务器错误：文件可能超过远程比特率限制',
 			'downloads.episodesQueued' => ({required Object count}) => '${count} 集已加入下载队列',
 			'downloads.downloadDeleted' => '下载已删除',
 			'downloads.deleteConfirm' => ({required Object title}) => '要从此设备删除“${title}”吗？',
-			_ => null,
-		} ?? switch (path) {
 			'downloads.cancelledDownloadTitle' => '已取消的下载',
 			'downloads.cancelledDownloadMessage' => '此下载已取消。你想怎么做？',
 			'downloads.allEpisodesAlreadyDownloaded' => '所有剧集均已下载',

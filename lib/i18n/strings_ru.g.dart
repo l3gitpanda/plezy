@@ -1114,6 +1114,11 @@ class _TranslationsLiveTvRu extends TranslationsLiveTvEn {
 	@override String get unknownChannel => 'Неизвестный канал';
 	@override String get live => 'ЭФИР';
 	@override String get reloadGuide => 'Перезагрузить программу';
+	@override String get searchGuide => 'Поиск по программе';
+	@override String get searchHint => 'Поиск каналов и передач';
+	@override String searchNoResults({required Object query}) => 'Ничего не найдено по запросу «${query}»';
+	@override String get channelsSection => 'Каналы';
+	@override String get programsSection => 'Передачи';
 	@override String get now => 'Сейчас';
 	@override String get today => 'Сегодня';
 	@override String get tomorrow => 'Завтра';
@@ -2930,6 +2935,11 @@ extension on TranslationsRu {
 			'liveTv.unknownChannel' => 'Неизвестный канал',
 			'liveTv.live' => 'ЭФИР',
 			'liveTv.reloadGuide' => 'Перезагрузить программу',
+			'liveTv.searchGuide' => 'Поиск по программе',
+			'liveTv.searchHint' => 'Поиск каналов и передач',
+			'liveTv.searchNoResults' => ({required Object query}) => 'Ничего не найдено по запросу «${query}»',
+			'liveTv.channelsSection' => 'Каналы',
+			'liveTv.programsSection' => 'Передачи',
 			'liveTv.now' => 'Сейчас',
 			'liveTv.today' => 'Сегодня',
 			'liveTv.tomorrow' => 'Завтра',
@@ -3125,13 +3135,13 @@ extension on TranslationsRu {
 			'downloads.deleteDownload' => 'Удалить загрузку',
 			'downloads.retryDownload' => 'Повторить загрузку',
 			'downloads.downloadQueued' => 'Загрузка поставлена в очередь',
+			_ => null,
+		} ?? switch (path) {
 			'downloads.downloadResumed' => 'Загрузка возобновлена',
 			'downloads.serverErrorBitrate' => 'Ошибка сервера: файл может превышать удаленный лимит bitrate',
 			'downloads.episodesQueued' => ({required Object count}) => '${count} эпизодов поставлено в очередь загрузки',
 			'downloads.downloadDeleted' => 'Загрузка удалена',
 			'downloads.deleteConfirm' => ({required Object title}) => 'Удалить "${title}" с этого устройства?',
-			_ => null,
-		} ?? switch (path) {
 			'downloads.cancelledDownloadTitle' => 'Загрузка отменена',
 			'downloads.cancelledDownloadMessage' => 'Эта загрузка была отменена. Что вы хотите сделать?',
 			'downloads.allEpisodesAlreadyDownloaded' => 'Все эпизоды уже загружены',

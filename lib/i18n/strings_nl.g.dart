@@ -1112,6 +1112,11 @@ class _TranslationsLiveTvNl extends TranslationsLiveTvEn {
 	@override String get unknownChannel => 'Onbekend kanaal';
 	@override String get live => 'LIVE';
 	@override String get reloadGuide => 'Gids herladen';
+	@override String get searchGuide => 'Gids doorzoeken';
+	@override String get searchHint => 'Zoek zenders en programma’s';
+	@override String searchNoResults({required Object query}) => 'Geen resultaten voor "${query}"';
+	@override String get channelsSection => 'Zenders';
+	@override String get programsSection => 'Programma’s';
 	@override String get now => 'Nu';
 	@override String get today => 'Vandaag';
 	@override String get tomorrow => 'Morgen';
@@ -2926,6 +2931,11 @@ extension on TranslationsNl {
 			'liveTv.unknownChannel' => 'Onbekend kanaal',
 			'liveTv.live' => 'LIVE',
 			'liveTv.reloadGuide' => 'Gids herladen',
+			'liveTv.searchGuide' => 'Gids doorzoeken',
+			'liveTv.searchHint' => 'Zoek zenders en programma’s',
+			'liveTv.searchNoResults' => ({required Object query}) => 'Geen resultaten voor "${query}"',
+			'liveTv.channelsSection' => 'Zenders',
+			'liveTv.programsSection' => 'Programma’s',
 			'liveTv.now' => 'Nu',
 			'liveTv.today' => 'Vandaag',
 			'liveTv.tomorrow' => 'Morgen',
@@ -3121,13 +3131,13 @@ extension on TranslationsNl {
 			'downloads.deleteDownload' => 'Download verwijderen',
 			'downloads.retryDownload' => 'Download opnieuw proberen',
 			'downloads.downloadQueued' => 'Download in wachtrij',
+			_ => null,
+		} ?? switch (path) {
 			'downloads.downloadResumed' => 'Download hervat',
 			'downloads.serverErrorBitrate' => 'Serverfout: bestand overschrijdt mogelijk de externe bitrate-limiet',
 			'downloads.episodesQueued' => ({required Object count}) => '${count} afleveringen in wachtrij voor download',
 			'downloads.downloadDeleted' => 'Download verwijderd',
 			'downloads.deleteConfirm' => ({required Object title}) => '"${title}" van dit apparaat verwijderen?',
-			_ => null,
-		} ?? switch (path) {
 			'downloads.cancelledDownloadTitle' => 'Geannuleerde download',
 			'downloads.cancelledDownloadMessage' => 'Deze download is geannuleerd. Wat wil je doen?',
 			'downloads.allEpisodesAlreadyDownloaded' => 'Alle afleveringen zijn al gedownload',

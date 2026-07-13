@@ -1112,6 +1112,11 @@ class _TranslationsLiveTvPt extends TranslationsLiveTvEn {
 	@override String get unknownChannel => 'Canal desconhecido';
 	@override String get live => 'AO VIVO';
 	@override String get reloadGuide => 'Recarregar Guia';
+	@override String get searchGuide => 'Pesquisar no guia';
+	@override String get searchHint => 'Pesquisar canais e programas';
+	@override String searchNoResults({required Object query}) => 'Sem resultados para "${query}"';
+	@override String get channelsSection => 'Canais';
+	@override String get programsSection => 'Programas';
 	@override String get now => 'Agora';
 	@override String get today => 'Hoje';
 	@override String get tomorrow => 'Amanhã';
@@ -2926,6 +2931,11 @@ extension on TranslationsPt {
 			'liveTv.unknownChannel' => 'Canal desconhecido',
 			'liveTv.live' => 'AO VIVO',
 			'liveTv.reloadGuide' => 'Recarregar Guia',
+			'liveTv.searchGuide' => 'Pesquisar no guia',
+			'liveTv.searchHint' => 'Pesquisar canais e programas',
+			'liveTv.searchNoResults' => ({required Object query}) => 'Sem resultados para "${query}"',
+			'liveTv.channelsSection' => 'Canais',
+			'liveTv.programsSection' => 'Programas',
 			'liveTv.now' => 'Agora',
 			'liveTv.today' => 'Hoje',
 			'liveTv.tomorrow' => 'Amanhã',
@@ -3121,13 +3131,13 @@ extension on TranslationsPt {
 			'downloads.deleteDownload' => 'Excluir download',
 			'downloads.retryDownload' => 'Tentar download novamente',
 			'downloads.downloadQueued' => 'Download na fila',
+			_ => null,
+		} ?? switch (path) {
 			'downloads.downloadResumed' => 'Download retomado',
 			'downloads.serverErrorBitrate' => 'Erro do servidor: o arquivo pode exceder o limite remoto de bitrate',
 			'downloads.episodesQueued' => ({required Object count}) => '${count} episódios na fila de download',
 			'downloads.downloadDeleted' => 'Download excluído',
 			'downloads.deleteConfirm' => ({required Object title}) => 'Excluir "${title}" deste dispositivo?',
-			_ => null,
-		} ?? switch (path) {
 			'downloads.cancelledDownloadTitle' => 'Download cancelado',
 			'downloads.cancelledDownloadMessage' => 'Este download foi cancelado. O que você deseja fazer?',
 			'downloads.allEpisodesAlreadyDownloaded' => 'Todos os episódios já foram baixados',

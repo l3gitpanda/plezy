@@ -1112,6 +1112,11 @@ class _TranslationsLiveTvFr extends TranslationsLiveTvEn {
 	@override String get unknownChannel => 'Chaîne inconnue';
 	@override String get live => 'EN DIRECT';
 	@override String get reloadGuide => 'Recharger le guide';
+	@override String get searchGuide => 'Rechercher dans le guide';
+	@override String get searchHint => 'Rechercher chaînes et programmes';
+	@override String searchNoResults({required Object query}) => 'Aucun résultat pour « ${query} »';
+	@override String get channelsSection => 'Chaînes';
+	@override String get programsSection => 'Programmes';
 	@override String get now => 'Maintenant';
 	@override String get today => 'Aujourd\'hui';
 	@override String get tomorrow => 'Demain';
@@ -2926,6 +2931,11 @@ extension on TranslationsFr {
 			'liveTv.unknownChannel' => 'Chaîne inconnue',
 			'liveTv.live' => 'EN DIRECT',
 			'liveTv.reloadGuide' => 'Recharger le guide',
+			'liveTv.searchGuide' => 'Rechercher dans le guide',
+			'liveTv.searchHint' => 'Rechercher chaînes et programmes',
+			'liveTv.searchNoResults' => ({required Object query}) => 'Aucun résultat pour « ${query} »',
+			'liveTv.channelsSection' => 'Chaînes',
+			'liveTv.programsSection' => 'Programmes',
 			'liveTv.now' => 'Maintenant',
 			'liveTv.today' => 'Aujourd\'hui',
 			'liveTv.tomorrow' => 'Demain',
@@ -3121,13 +3131,13 @@ extension on TranslationsFr {
 			'downloads.deleteDownload' => 'Supprimer le téléchargement',
 			'downloads.retryDownload' => 'Réessayer le téléchargement',
 			'downloads.downloadQueued' => 'Téléchargement en attente',
+			_ => null,
+		} ?? switch (path) {
 			'downloads.downloadResumed' => 'Téléchargement repris',
 			'downloads.serverErrorBitrate' => 'Erreur serveur : le fichier peut dépasser la limite de bitrate distant',
 			'downloads.episodesQueued' => ({required Object count}) => '${count} épisodes en attente de téléchargement',
 			'downloads.downloadDeleted' => 'Télécharger supprimé',
 			'downloads.deleteConfirm' => ({required Object title}) => 'Supprimer "${title}" de cet appareil ?',
-			_ => null,
-		} ?? switch (path) {
 			'downloads.cancelledDownloadTitle' => 'Téléchargement annulé',
 			'downloads.cancelledDownloadMessage' => 'Ce téléchargement a été annulé. Que voulez-vous faire ?',
 			'downloads.allEpisodesAlreadyDownloaded' => 'Tous les épisodes sont déjà téléchargés',
