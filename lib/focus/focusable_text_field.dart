@@ -889,13 +889,20 @@ class _FocusableTextInputHostState extends State<_FocusableTextInputHost> {
             _suppressTvKeyboardAutoOpen = false;
           } else if (!nativeUnavailableAtOpen && AppleTvNativeKeyboard.isKnownUnavailable) {
             // Unavailability flipped during this session: the native keyboard
-            // failed to present rather than the user dismissing it. Clear the
-            // suppression so the sync below reopens with the custom fallback
-            // instead of leaving the focused field with no keyboard.
+            // failed to present rather than the user dismissing it. Reopen
+            // directly with the custom fallback instead of leaving the
+            // focused field with no keyboard — going through the auto-open
+            // sync would park the open behind another frame that nothing is
+            // scheduled to produce.
             _suppressTvKeyboardAutoOpen = false;
+            _openTvKeyboard();
+            return;
           }
           _syncTvKeyboardAutoOpen();
         });
+        // A native session has no Flutter route, so nothing else guarantees
+        // the frame that runs the callback above.
+        WidgetsBinding.instance.ensureVisualUpdate();
       }),
     );
   }
