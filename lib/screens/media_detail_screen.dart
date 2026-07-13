@@ -768,6 +768,11 @@ class _MediaDetailScreenState extends State<MediaDetailScreen>
     Navigator.pop(context, _watchStateChanged);
   }
 
+  void _handleMediaDetailSystemBack() {
+    if (BackKeyCoordinator.consumeIfHandled()) return;
+    _popMediaDetailIfBackNotSuppressed();
+  }
+
   bool _isTvDetailReadyToReveal(MediaItem metadata) {
     if (_isLoadingMetadata) return false;
     if (!_hasLoadedTvDetailSupplementalSections(metadata)) return false;
@@ -1082,8 +1087,8 @@ class _MediaDetailScreenState extends State<MediaDetailScreen>
   }
 
   void _showRatingDialog(BuildContext sheetContext, MediaItem metadata) {
-    OverlaySheetController.showAdaptive(
-      sheetContext,
+    OverlaySheetController.of(sheetContext).show(
+      showDragHandle: true,
       builder: (context) => RatingBottomSheet(
         item: metadata,
         serverClient: _getMediaClientForMetadata(this.context),
@@ -2144,7 +2149,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen>
     if (!widget.isOffline) _ratingChipFocusNode.requestFocus();
   }
 
-  /// Focus the first available section below the primary action row.
+  /// Focus the overview, or the first available content section when there is no overview.
   void _focusBelowActionRow() {
     final metadata = _fullMetadata ?? _metadata;
 
@@ -2153,13 +2158,20 @@ class _MediaDetailScreenState extends State<MediaDetailScreen>
       return;
     }
 
-    // DOWN order: overview → seasons → cast → extras
-    if (!PlatformDetector.isTV() && metadata.summary != null && metadata.summary!.isNotEmpty) {
+    if (metadata.summary != null && metadata.summary!.isNotEmpty) {
       _overviewFocusNode.requestFocus();
       _scrollSectionIntoView(_overviewSectionKey);
       return;
     }
 
+    _focusBelowOverview();
+  }
+
+  /// Focus the first available content section after the overview.
+  void _focusBelowOverview() {
+    final metadata = _fullMetadata ?? _metadata;
+
+    // DOWN order: season tabs → episodes → cast → extras → related hubs → info rows.
     if (metadata.isShow && !_showEpisodesDirectly && _seasons.isNotEmpty && _seasonTabFocusNodes.isNotEmpty) {
       // Focus the selected season tab chip
       _seasonTabFocusNodes[_selectedSeasonIndex].requestFocus();
@@ -2189,56 +2201,16 @@ class _MediaDetailScreenState extends State<MediaDetailScreen>
       _relatedHubKeys.first.currentState?.requestFocusFromMemory();
       return;
     }
+
+    if (_hasInfoRows) {
+      _focusInfoRows();
+    }
   }
 
   /// Get the responsive card width used by seasons/extras/cast rows.
   /// Delegates to the cast strip's calculator so the dpad scroll math and
   /// the rendered cards can never disagree.
   double _getResponsiveCardWidth() => CastMemberStrip.responsiveCardWidth(context);
-
-  /// Handle key events for the overview section
-  KeyEventResult _handleOverviewKeyEvent(FocusNode _, KeyEvent event) {
-    final key = event.logicalKey;
-    if (key.isBackKey) return KeyEventResult.ignored;
-    if (!event.isActionable) return KeyEventResult.ignored;
-
-    final metadata = _fullMetadata ?? _metadata;
-
-    // UP: always play button (overview is directly below play)
-    if (key.isUpKey) {
-      _scrollController.animateTo(0, duration: const Duration(milliseconds: 200), curve: Curves.easeOut);
-      _playButtonFocusNode.requestFocus();
-      return KeyEventResult.handled;
-    }
-
-    if (key.isDownKey) {
-      if (metadata.isShow && !_showEpisodesDirectly && _seasons.isNotEmpty && _seasonTabFocusNodes.isNotEmpty) {
-        _seasonTabFocusNodes[_selectedSeasonIndex].requestFocus();
-        _scrollSectionIntoView(_seasonsSectionKey);
-      } else if (_episodes.isNotEmpty) {
-        _firstEpisodeFocusNode.requestFocus();
-        _scrollSectionIntoView(_seasonsSectionKey);
-      } else if (metadata.roles != null && metadata.roles!.isNotEmpty) {
-        _castStripKey.currentState?.requestFocus();
-        _scrollSectionIntoView(_castSectionKey);
-      } else if (_extras != null && _extras!.isNotEmpty) {
-        _extrasFocusNode.requestFocus();
-        _scrollSectionIntoView(_extrasSectionKey);
-      } else if (_relatedHubs.isNotEmpty) {
-        _relatedHubKeys.first.currentState?.requestFocusFromMemory();
-      } else if (_hasInfoRows) {
-        _focusInfoRows();
-      }
-      return KeyEventResult.handled;
-    }
-
-    // LEFT/RIGHT/SELECT: consume to prevent unwanted traversal
-    if (key.isLeftKey || key.isRightKey || key.isSelectKey) {
-      return KeyEventResult.handled;
-    }
-
-    return KeyEventResult.ignored;
-  }
 
   /// Show context menu for a season tab
   void _showSeasonTabContextMenu(int index, {Offset? position}) {
@@ -2536,7 +2508,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen>
   }
 
   /// Handle key events for the trailing info rows (studio / contentRating).
-  /// UP returns to the previous focusable section; all other directions consume.
+  /// UP returns to the previous focusable section; terminal geometry is trapped.
   KeyEventResult _handleInfoRowsKeyEvent(FocusNode _, KeyEvent event) {
     final key = event.logicalKey;
     if (key.isBackKey) return KeyEventResult.ignored;
@@ -2547,8 +2519,10 @@ class _MediaDetailScreenState extends State<MediaDetailScreen>
       return KeyEventResult.handled;
     }
 
-    // DOWN / LEFT / RIGHT / SELECT: consume — info rows are the terminal row.
-    return KeyEventResult.handled;
+    if (key.isDownKey || key.isLeftKey || key.isRightKey || key.isSelectKey) {
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
   }
 
   IconData _getRelatedHubIcon(MediaHub hub) {
@@ -3120,8 +3094,9 @@ class _MediaDetailScreenState extends State<MediaDetailScreen>
       }
       return PopScope(
         canPop: false, // Prevent system back from double-popping on Android keyboard/TV
-        // ignore: no-empty-block - required callback, blocks system back on Android TV
-        onPopInvokedWithResult: (didPop, result) {},
+        onPopInvokedWithResult: (didPop, result) {
+          if (!didPop) _handleMediaDetailSystemBack();
+        },
         child: loading,
       );
     }
@@ -3146,6 +3121,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen>
           // keyboard/TV (the key handler owns dpad back); elsewhere canPop:true
           // keeps the iOS swipe-back. The host also closes an open sheet on back.
           canPop: !blockSystemBack,
+          onSystemBack: _handleMediaDetailSystemBack,
           child: Focus(
             onKeyEvent: _handleMediaDetailBackKey,
             child: Scaffold(
@@ -3176,40 +3152,23 @@ class _MediaDetailScreenState extends State<MediaDetailScreen>
                               if (!isTv && metadata.summary != null && metadata.summary!.isNotEmpty) ...[
                                 Text(key: _overviewSectionKey, t.discover.overview, style: sectionTitleStyle),
                                 const SizedBox(height: 12),
-                                Focus(
+                                CollapsibleText(
+                                  text: metadata.summary!,
+                                  maxLines: isMobile ? 6 : 4,
+                                  style: theme.textTheme.bodyLarge?.copyWith(height: 1.6),
                                   focusNode: _overviewFocusNode,
-                                  onKeyEvent: _handleOverviewKeyEvent,
-                                  child: ListenableBuilder(
-                                    listenable: _overviewFocusNode,
-                                    builder: (context, _) {
-                                      final showFocus =
-                                          _overviewFocusNode.hasFocus && InputModeTracker.isKeyboardMode(context);
-                                      return AnimatedContainer(
-                                        duration: const Duration(milliseconds: 150),
-                                        padding: const EdgeInsets.all(4),
-                                        decoration: BoxDecoration(
-                                          borderRadius: const BorderRadius.all(Radius.circular(8)),
-                                          border: Border.all(
-                                            color: showFocus
-                                                ? theme.colorScheme.primary.withValues(alpha: 0.5)
-                                                : Colors.transparent,
-                                            width: 2,
-                                          ),
-                                        ),
-                                        child: () {
-                                          final summaryStyle = theme.textTheme.bodyLarge?.copyWith(height: 1.6);
-                                          if (isTv) {
-                                            return Text(metadata.summary!, style: summaryStyle);
-                                          }
-                                          return CollapsibleText(
-                                            text: metadata.summary!,
-                                            maxLines: isMobile ? 6 : 4,
-                                            style: summaryStyle,
-                                          );
-                                        }(),
-                                      );
-                                    },
-                                  ),
+                                  skipTraversal: false,
+                                  onNavigateUp: () {
+                                    _scrollController.animateTo(
+                                      0,
+                                      duration: const Duration(milliseconds: 200),
+                                      curve: Curves.easeOut,
+                                    );
+                                    _playButtonFocusNode.requestFocus();
+                                  },
+                                  onNavigateDown: _focusBelowOverview,
+                                  onNavigateLeft: () {},
+                                  onNavigateRight: () {},
                                 ),
                                 const SizedBox(height: 24),
                               ],
@@ -3451,6 +3410,7 @@ class _MediaDetailScreenState extends State<MediaDetailScreen>
       // blockSystemBack keeps the route from double-popping on Android keyboard/
       // TV (the key handler owns dpad back); the host also closes an open sheet.
       canPop: !blockSystemBack,
+      onSystemBack: _handleMediaDetailSystemBack,
       child: Focus(
         onKeyEvent: handleBack,
         child: Scaffold(
