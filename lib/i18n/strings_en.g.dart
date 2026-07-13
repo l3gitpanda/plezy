@@ -1650,6 +1650,9 @@ class TranslationsMessagesEn {
 	/// en: 'The stream was interrupted. Press play or seek to retry.'
 	String get streamInterrupted => 'The stream was interrupted. Press play or seek to retry.';
 
+	/// en: 'The live stream was interrupted. Press play to retry.'
+	String get liveStreamInterrupted => 'The live stream was interrupted. Press play to retry.';
+
 	/// en: 'File information not available'
 	String get fileInfoNotAvailable => 'File information not available';
 
@@ -2630,6 +2633,9 @@ class TranslationsLiveTvEn {
 	/// en: 'Reorder Favorites'
 	String get reorderFavorites => 'Reorder Favorites';
 
+	/// en: 'Could not load favorites. Check your connection and try again.'
+	String get favoritesLoadFailed => 'Could not load favorites. Check your connection and try again.';
+
 	/// en: 'Join Session in Progress'
 	String get joinSession => 'Join Session in Progress';
 
@@ -3310,6 +3316,9 @@ class TranslationsDownloadsEn {
 
 	/// en: 'How many episodes?'
 	String get howManyEpisodes => 'How many episodes?';
+
+	/// en: 'Enter a valid episode count.'
+	String get invalidEpisodeCount => 'Enter a valid episode count.';
 
 	/// en: 'Keep synced'
 	String get keepSynced => 'Keep synced';
@@ -5420,14 +5429,15 @@ extension on Translations {
 			'messages.removedFromContinueWatching' => 'Removed from Continue Watching',
 			'messages.errorLoading' => ({required Object error}) => 'Error: ${error}',
 			'messages.streamInterrupted' => 'The stream was interrupted. Press play or seek to retry.',
+			'messages.liveStreamInterrupted' => 'The live stream was interrupted. Press play to retry.',
 			'messages.fileInfoNotAvailable' => 'File information not available',
 			'messages.errorLoadingFileInfo' => ({required Object error}) => 'Error loading file info: ${error}',
 			'messages.errorLoadingSeries' => 'Error loading series',
 			'messages.musicNotSupported' => 'Music playback is not yet supported',
 			'messages.noDescriptionAvailable' => 'No description available',
-			'messages.noProfilesAvailable' => 'No profiles available',
 			_ => null,
 		} ?? switch (path) {
+			'messages.noProfilesAvailable' => 'No profiles available',
 			'messages.contactAdminForProfiles' => 'Contact your server administrator to add profiles',
 			'messages.unableToDetermineLibrarySection' => 'Unable to determine library section for this item',
 			'messages.logsCleared' => 'Logs cleared',
@@ -5754,6 +5764,7 @@ extension on Translations {
 			'liveTv.watchChannel' => 'Watch Channel',
 			'liveTv.favorites' => 'Favorites',
 			'liveTv.reorderFavorites' => 'Reorder Favorites',
+			'liveTv.favoritesLoadFailed' => 'Could not load favorites. Check your connection and try again.',
 			'liveTv.joinSession' => 'Join Session in Progress',
 			'liveTv.watchFromStart' => ({required Object minutes}) => 'Watch from start (${minutes} min ago)',
 			'liveTv.watchLive' => 'Watch Live',
@@ -5938,10 +5949,10 @@ extension on Translations {
 			'downloads.downloadResumed' => 'Download resumed',
 			'downloads.serverErrorBitrate' => 'Server error: file may exceed the remote bitrate limit',
 			'downloads.episodesQueued' => ({required Object count}) => '${count} episodes queued for download',
-			'downloads.downloadDeleted' => 'Download deleted',
-			'downloads.deleteConfirm' => ({required Object title}) => 'Delete "${title}" from this device?',
 			_ => null,
 		} ?? switch (path) {
+			'downloads.downloadDeleted' => 'Download deleted',
+			'downloads.deleteConfirm' => ({required Object title}) => 'Delete "${title}" from this device?',
 			'downloads.cancelledDownloadTitle' => 'Cancelled Download',
 			'downloads.cancelledDownloadMessage' => 'This download was cancelled. What would you like to do?',
 			'downloads.allEpisodesAlreadyDownloaded' => 'All episodes already downloaded',
@@ -5967,6 +5978,7 @@ extension on Translations {
 			'downloads.customAmount' => 'Custom amount...',
 			'downloads.includeSpecials' => 'Include Specials',
 			'downloads.howManyEpisodes' => 'How many episodes?',
+			'downloads.invalidEpisodeCount' => 'Enter a valid episode count.',
 			'downloads.keepSynced' => 'Keep synced',
 			'downloads.downloadOnce' => 'Download once',
 			'downloads.keepNUnwatched' => ({required Object count}) => 'Keep ${count} unwatched',

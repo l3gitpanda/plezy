@@ -39,11 +39,22 @@ jobs:
 
           flutter pub get
 
+      - name: Install saf_util development dependencies
+        working-directory: packages/saf_util
+        run: flutter pub get
+
       - name: Verify generated files committed
         run: scripts/codegen.sh --check
 
       - name: Verify translation hygiene
         run: python3 scripts/clean_translations.py --check --strict
+
+      - name: Verify workflow and script guards
+        run: |
+          python3 scripts/check_build_workflow.py
+          python3 scripts/check_update_packages_workflow.py
+          python3 scripts/test_pubspec_version.py
+          python3 scripts/test_clean_translations.py
 
       - name: Verify formatting
         run: |

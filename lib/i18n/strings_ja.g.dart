@@ -698,6 +698,7 @@ class _TranslationsMessagesJa extends TranslationsMessagesEn {
 	@override String get removedFromContinueWatching => '視聴中から削除しました';
 	@override String errorLoading({required Object error}) => 'エラー: ${error}';
 	@override String get streamInterrupted => 'ストリームが中断されました。再生を押すかシークして再試行してください。';
+	@override String get liveStreamInterrupted => 'ライブストリームが中断されました。再生を押して再試行してください。';
 	@override String get fileInfoNotAvailable => 'ファイル情報が利用できません';
 	@override String errorLoadingFileInfo({required Object error}) => 'ファイル情報の読み込みエラー: ${error}';
 	@override String get errorLoadingSeries => 'シリーズの読み込みエラー';
@@ -1125,6 +1126,7 @@ class _TranslationsLiveTvJa extends TranslationsLiveTvEn {
 	@override String get watchChannel => 'チャンネルを視聴';
 	@override String get favorites => 'お気に入り';
 	@override String get reorderFavorites => 'お気に入りを並べ替え';
+	@override String get favoritesLoadFailed => 'お気に入りを読み込めませんでした。接続を確認してもう一度お試しください。';
 	@override String get joinSession => '進行中のセッションに参加';
 	@override String watchFromStart({required Object minutes}) => '最初から視聴（${minutes}分前に開始）';
 	@override String get watchLive => 'ライブで視聴';
@@ -1383,6 +1385,7 @@ class _TranslationsDownloadsJa extends TranslationsDownloadsEn {
 	@override String get customAmount => '数を指定...';
 	@override String get includeSpecials => 'スペシャルを含める';
 	@override String get howManyEpisodes => '何エピソード？';
+	@override String get invalidEpisodeCount => '有効なエピソード数を入力してください。';
 	@override String get keepSynced => '同期を維持';
 	@override String get downloadOnce => '一度だけダウンロード';
 	@override String keepNUnwatched({required Object count}) => '未視聴を${count}件保持';
@@ -2603,14 +2606,15 @@ extension on TranslationsJa {
 			'messages.removedFromContinueWatching' => '視聴中から削除しました',
 			'messages.errorLoading' => ({required Object error}) => 'エラー: ${error}',
 			'messages.streamInterrupted' => 'ストリームが中断されました。再生を押すかシークして再試行してください。',
+			'messages.liveStreamInterrupted' => 'ライブストリームが中断されました。再生を押して再試行してください。',
 			'messages.fileInfoNotAvailable' => 'ファイル情報が利用できません',
 			'messages.errorLoadingFileInfo' => ({required Object error}) => 'ファイル情報の読み込みエラー: ${error}',
 			'messages.errorLoadingSeries' => 'シリーズの読み込みエラー',
 			'messages.musicNotSupported' => '音楽の再生はまだサポートされていません',
 			'messages.noDescriptionAvailable' => '説明はありません',
-			'messages.noProfilesAvailable' => '利用可能なプロフィールがありません',
 			_ => null,
 		} ?? switch (path) {
+			'messages.noProfilesAvailable' => '利用可能なプロフィールがありません',
 			'messages.contactAdminForProfiles' => 'プロファイルを追加するにはサーバー管理者に連絡してください',
 			'messages.unableToDetermineLibrarySection' => 'このアイテムのライブラリセクションを判別できません',
 			'messages.logsCleared' => 'ログをクリアしました',
@@ -2937,6 +2941,7 @@ extension on TranslationsJa {
 			'liveTv.watchChannel' => 'チャンネルを視聴',
 			'liveTv.favorites' => 'お気に入り',
 			'liveTv.reorderFavorites' => 'お気に入りを並べ替え',
+			'liveTv.favoritesLoadFailed' => 'お気に入りを読み込めませんでした。接続を確認してもう一度お試しください。',
 			'liveTv.joinSession' => '進行中のセッションに参加',
 			'liveTv.watchFromStart' => ({required Object minutes}) => '最初から視聴（${minutes}分前に開始）',
 			'liveTv.watchLive' => 'ライブで視聴',
@@ -3121,10 +3126,10 @@ extension on TranslationsJa {
 			'downloads.downloadResumed' => 'ダウンロードを再開しました',
 			'downloads.serverErrorBitrate' => 'サーバーエラー: ファイルがリモートビットレート制限を超えている可能性があります',
 			'downloads.episodesQueued' => ({required Object count}) => '${count}エピソードをダウンロードキューに追加しました',
-			'downloads.downloadDeleted' => 'ダウンロードを削除しました',
-			'downloads.deleteConfirm' => ({required Object title}) => 'このデバイスから「${title}」を削除しますか？',
 			_ => null,
 		} ?? switch (path) {
+			'downloads.downloadDeleted' => 'ダウンロードを削除しました',
+			'downloads.deleteConfirm' => ({required Object title}) => 'このデバイスから「${title}」を削除しますか？',
 			'downloads.cancelledDownloadTitle' => 'キャンセルされたダウンロード',
 			'downloads.cancelledDownloadMessage' => 'このダウンロードはキャンセルされました。どうしますか？',
 			'downloads.allEpisodesAlreadyDownloaded' => 'すべてのエピソードはすでにダウンロード済みです',
@@ -3150,6 +3155,7 @@ extension on TranslationsJa {
 			'downloads.customAmount' => '数を指定...',
 			'downloads.includeSpecials' => 'スペシャルを含める',
 			'downloads.howManyEpisodes' => '何エピソード？',
+			'downloads.invalidEpisodeCount' => '有効なエピソード数を入力してください。',
 			'downloads.keepSynced' => '同期を維持',
 			'downloads.downloadOnce' => '一度だけダウンロード',
 			'downloads.keepNUnwatched' => ({required Object count}) => '未視聴を${count}件保持',
