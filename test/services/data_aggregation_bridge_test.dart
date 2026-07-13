@@ -785,7 +785,7 @@ void main() {
         'library.movies.recent',
         'library.mv.recent',
         'library.home-vids.recent',
-        'library.music.recent',
+        'library.music.latestalbums',
       ]);
       expect(hubs[1].items.single.kind, MediaKind.clip);
       expect(hubs[3].items.single.kind, MediaKind.album);
@@ -793,6 +793,76 @@ void main() {
         captured.where((uri) => uri.path == '/Users/user-1/Items/Latest').map((uri) => uri.queryParameters['ParentId']),
         ['movies', 'mv', 'home-vids', 'music'],
       );
+      expect(
+        captured.where((uri) => uri.path == '/Items' && uri.queryParameters['Filters'] == 'IsPlayed'),
+        isEmpty,
+        reason: 'the home screen excludes playback-derived music rows',
+      );
+      // Music Latest returns album FOLDER dtos — count/user-data fields would
+      // each cost a recursive per-album COUNT query (#1552); video libraries
+      // keep the full browse fields (series leaf counts).
+      final musicLatest = captured.singleWhere(
+        (uri) => uri.path == '/Users/user-1/Items/Latest' && uri.queryParameters['ParentId'] == 'music',
+      );
+      expect(musicLatest.queryParameters['Fields'], 'PremiereDate,OriginalTitle,SortName');
+      expect(musicLatest.queryParameters['EnableUserData'], 'false');
+      final movieLatest = captured.singleWhere(
+        (uri) => uri.path == '/Users/user-1/Items/Latest' && uri.queryParameters['ParentId'] == 'movies',
+      );
+      expect(movieLatest.queryParameters['Fields'], contains('RecursiveItemCount'));
+      expect(movieLatest.queryParameters.containsKey('EnableUserData'), isFalse);
+    });
+
+    test('music library recommendations retain recently and most-played rows', () async {
+      final captured = <Uri>[];
+      final client = JellyfinClient.forTesting(
+        connection: _conn(),
+        httpClient: MockClient((req) async {
+          captured.add(req.url);
+          if (req.url.path == '/Users/user-1/Items/Latest') {
+            return _json([
+              {'Id': 'album-1', 'Type': 'MusicAlbum', 'Name': 'Latest Album', 'ParentLibraryId': 'music'},
+            ]);
+          }
+          if (req.url.path == '/Items' && req.url.queryParameters['Filters'] == 'IsPlayed') {
+            final sortBy = req.url.queryParameters['SortBy'];
+            return _json({
+              'Items': [
+                {
+                  'Id': sortBy == 'DatePlayed' ? 'recent-track' : 'most-played-track',
+                  'Type': 'Audio',
+                  'Name': sortBy == 'DatePlayed' ? 'Recent Track' : 'Most Played Track',
+                  'ParentLibraryId': 'music',
+                },
+              ],
+            });
+          }
+          return http.Response('unexpected request', 500);
+        }),
+      );
+      addTearDown(client.close);
+
+      final hubs = await client.fetchLibraryHubs(
+        'music',
+        libraryName: 'Music',
+        libraryKind: MediaKind.artist,
+        includePlaybackHubs: true,
+      );
+
+      expect(hubs.map((hub) => hub.identifier), [
+        'library.music.latestalbums',
+        'library.music.recentlyplayed',
+        'library.music.mostplayed',
+      ]);
+      final playedQueries = captured
+          .where((uri) => uri.path == '/Items' && uri.queryParameters['Filters'] == 'IsPlayed')
+          .toList();
+      expect(playedQueries.map((uri) => uri.queryParameters['SortBy']), ['DatePlayed', 'PlayCount']);
+      // Audio LEAF dtos: UserData stays (cheap, drives play state); the
+      // folder count fields and Overview are dropped.
+      expect(playedQueries.map((uri) => uri.queryParameters['Fields']).toSet(), {
+        'UserData,PremiereDate,OriginalTitle,SortName',
+      });
     });
 
     test('Plex home layout keeps promoted hubs instead of splitting by preview libraries', () async {
