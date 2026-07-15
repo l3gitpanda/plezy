@@ -24,6 +24,7 @@ import '../../services/jellyfin_auth_service.dart';
 import '../../services/jellyfin_endpoint_discovery.dart';
 import '../../services/jellyfin_lan_discovery_service.dart';
 import '../../services/storage_service.dart';
+import '../../services/tailscale_peer_discovery.dart';
 import '../../theme/mono_tokens.dart';
 import '../../utils/app_logger.dart';
 import '../../utils/device_identity.dart';
@@ -140,7 +141,10 @@ class _AddJellyfinScreenState extends State<AddJellyfinScreen> with AsyncFormSta
       final factory = widget._localDiscoveryFactory;
       final servers = factory != null
           ? await factory()
-          : await JellyfinLanDiscoveryService().discover(responseWindow: const Duration(milliseconds: 1300));
+          : await JellyfinLanDiscoveryService().discover(
+              responseWindow: const Duration(milliseconds: 1300),
+              additionalTargets: const TailscalePeerDiscovery().discoverPeerAddresses(),
+            );
       if (!mounted || attemptId != _localDiscoveryAttemptId) return;
       setState(() {
         _localServers = servers;

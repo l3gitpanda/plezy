@@ -26,6 +26,24 @@ void main() {
       expect(server?.address, '192.168.1.20');
     });
 
+    test('uses the responding Tailscale peer for a private reported address', () {
+      final server = JellyfinLanDiscoveryService.parseDiscoveryResponse(
+        utf8.encode(jsonEncode({'Address': 'http://192.168.1.20:8096/', 'Id': 'srv-1', 'Name': 'Home'})),
+        sourceAddress: InternetAddress('100.101.102.103'),
+      );
+
+      expect(server?.address, 'http://100.101.102.103:8096');
+    });
+
+    test('preserves a published hostname in a Tailscale discovery response', () {
+      final server = JellyfinLanDiscoveryService.parseDiscoveryResponse(
+        utf8.encode(jsonEncode({'Address': 'https://jellyfin.example.com/', 'Id': 'srv-1', 'Name': 'Home'})),
+        sourceAddress: InternetAddress('100.101.102.103'),
+      );
+
+      expect(server?.address, 'https://jellyfin.example.com');
+    });
+
     test('ignores malformed discovery responses', () {
       expect(JellyfinLanDiscoveryService.parseDiscoveryResponse(utf8.encode('not json')), isNull);
       expect(

@@ -1534,7 +1534,7 @@
   "addServer": {
     "addJellyfinTitle": "Add Jellyfin server",
     "serverUrls": "Server URLs",
-    "serverUrlsHelper": "Multiple URLs allowed, separated by commas.",
+    "serverUrlsHelper": "Tailscale IPs and MagicDNS names are supported. Separate multiple URLs with commas.",
     "findServer": "Find server",
     "searchingLocalServers": "Looking for local Jellyfin servers...",
     "localServers": "Local Jellyfin servers",

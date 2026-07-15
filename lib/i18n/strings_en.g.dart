@@ -4212,8 +4212,8 @@ class TranslationsAddServerEn {
 	/// en: 'Server URLs'
 	String get serverUrls => 'Server URLs';
 
-	/// en: 'Multiple URLs allowed, separated by commas.'
-	String get serverUrlsHelper => 'Multiple URLs allowed, separated by commas.';
+	/// en: 'Tailscale IPs and MagicDNS names are supported. Separate multiple URLs with commas.'
+	String get serverUrlsHelper => 'Tailscale IPs and MagicDNS names are supported. Separate multiple URLs with commas.';
 
 	/// en: 'Find server'
 	String get findServer => 'Find server';
@@ -6379,7 +6379,7 @@ extension on Translations {
 			'services.libraryFilter.noLibraries' => 'No libraries available',
 			'addServer.addJellyfinTitle' => 'Add Jellyfin server',
 			'addServer.serverUrls' => 'Server URLs',
-			'addServer.serverUrlsHelper' => 'Multiple URLs allowed, separated by commas.',
+			'addServer.serverUrlsHelper' => 'Tailscale IPs and MagicDNS names are supported. Separate multiple URLs with commas.',
 			'addServer.findServer' => 'Find server',
 			'addServer.searchingLocalServers' => 'Looking for local Jellyfin servers...',
 			'addServer.localServers' => 'Local Jellyfin servers',
