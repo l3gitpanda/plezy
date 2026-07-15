@@ -1,6 +1,7 @@
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+import '../../focus/remote_text_input_registry.dart';
 import '../../models/companion_remote/remote_command.dart';
 import '../../utils/app_logger.dart';
 import '../../utils/key_event_simulator.dart';
@@ -128,12 +129,24 @@ class CompanionRemoteReceiver {
           simulateKeyPress(LogicalKeyboardKey.keyF);
         }
 
+      case RemoteCommandType.textInput:
+        final data = command.data;
+        if (data != null) {
+          RemoteTextInputRegistry.instance.handleTextInput(
+            op: data['op'] as String? ?? 'set',
+            text: data['text'] as String? ?? '',
+            sel: data['sel'] as int?,
+            fieldId: data['fid'] as String?,
+          );
+        }
+
       case RemoteCommandType.ping:
       case RemoteCommandType.pong:
       case RemoteCommandType.ack:
       case RemoteCommandType.deviceInfo:
       case RemoteCommandType.disconnect:
       case RemoteCommandType.syncState:
+      case RemoteCommandType.textFieldFocus: // host → phone only
         break;
 
       default:

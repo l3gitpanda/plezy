@@ -52,6 +52,10 @@ enum RemoteCommandType {
   disconnect,
   ack,
   syncState,
+
+  // Commands serialize by enum index — only append new values, never reorder.
+  textInput,
+  textFieldFocus,
 }
 
 class _RemoteCommandTypeConverter extends IndexedEnumConverter<RemoteCommandType> {

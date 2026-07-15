@@ -1262,7 +1262,12 @@
       "fullscreen": "Fullscreen",
       "subtitles": "Subtitles",
       "audio": "Audio",
-      "searchHint": "Search on desktop..."
+      "searchHint": "Search on desktop...",
+      "keyboardTitle": "Keyboard",
+      "keyboardHint": "Type here...",
+      "hideKeyboard": "Hide keyboard",
+      "navUp": "Up",
+      "navDown": "Down"
     },
     "errors": {
       "noNetworkInterface": "No network interface found",

@@ -67,5 +67,53 @@ void main() {
       final unknown = RemoteCommand.fromJson({'t': 999});
       expect(unknown.type, RemoteCommandType.ping);
     });
+
+    test('RemoteCommandType keeps stable wire indices for text input commands', () {
+      // Commands serialize by enum index; these values are part of the wire
+      // format and must never shift.
+      expect(RemoteCommandType.syncState.index, 39);
+      expect(RemoteCommandType.textInput.index, 40);
+      expect(RemoteCommandType.textFieldFocus.index, 41);
+    });
+
+    test('textInput command round trips its payload', () {
+      const command = RemoteCommand(
+        type: RemoteCommandType.textInput,
+        data: {'op': 'set', 'text': 'plezy', 'sel': 5, 'fid': 'f3'},
+      );
+
+      final decoded = RemoteCommand.fromJson(command.toJson());
+      expect(decoded.type, RemoteCommandType.textInput);
+      expect(decoded.data, {'op': 'set', 'text': 'plezy', 'sel': 5, 'fid': 'f3'});
+    });
+
+    test('textFieldFocus command round trips focus and blur payloads', () {
+      const focused = RemoteCommand(
+        type: RemoteCommandType.textFieldFocus,
+        data: {
+          'focused': true,
+          'fid': 'f1',
+          'text': 'hello',
+          'sel': 5,
+          'hint': 'Search',
+          'obscure': false,
+          'multiline': false,
+          'maxLength': 64,
+          'inputType': 'text',
+          'action': 'search',
+        },
+      );
+
+      final decodedFocused = RemoteCommand.fromJson(focused.toJson());
+      expect(decodedFocused.type, RemoteCommandType.textFieldFocus);
+      expect(decodedFocused.data?['focused'], isTrue);
+      expect(decodedFocused.data?['fid'], 'f1');
+      expect(decodedFocused.data?['text'], 'hello');
+
+      const blurred = RemoteCommand(type: RemoteCommandType.textFieldFocus, data: {'focused': false});
+      final decodedBlurred = RemoteCommand.fromJson(blurred.toJson());
+      expect(decodedBlurred.type, RemoteCommandType.textFieldFocus);
+      expect(decodedBlurred.data?['focused'], isFalse);
+    });
   });
 }

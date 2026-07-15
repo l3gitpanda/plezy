@@ -56,6 +56,8 @@ import '../widgets/music/mini_player.dart';
 import '../widgets/side_navigation_rail.dart';
 import '../focus/dpad_navigator.dart';
 import '../focus/key_event_utils.dart';
+import '../focus/remote_text_input_registry.dart';
+import '../models/companion_remote/remote_command.dart';
 import 'discover_screen.dart';
 import 'explore_screen.dart';
 import 'libraries/library_quick_picker_sheet.dart';
@@ -740,6 +742,8 @@ class _MainScreenState extends State<MainScreen>
   }
 
   bool _companionRemoteSetup = false;
+  CompanionRemoteProvider? _companionRemoteProvider;
+  String? _companionRemoteClientId;
   ValueChanged<String>? _systemShelfTapCallback;
 
   @override
@@ -844,6 +848,35 @@ class _MainScreenState extends State<MainScreen>
         });
       }
     };
+
+    _companionRemoteProvider = companionRemote;
+    _companionRemoteClientId = companionRemote.connectedDevice?.id;
+    companionRemote.addListener(_handleCompanionRemoteConnectionChanged);
+    RemoteTextInputRegistry.instance.onActiveFieldChanged = (snapshot) {
+      // A host session is "connected" from server start; an actual remote
+      // client is only present once connectedDevice is set.
+      if (!companionRemote.isHost || companionRemote.connectedDevice == null) return;
+      companionRemote.sendCommand(
+        RemoteCommandType.textFieldFocus,
+        data: snapshot?.toWireData() ?? const {'focused': false},
+      );
+    };
+  }
+
+  /// A remote that connects while a field is already focused would miss the
+  /// focus signal, so re-announce the current field whenever a (new) client
+  /// device appears.
+  void _handleCompanionRemoteConnectionChanged() {
+    final provider = _companionRemoteProvider;
+    if (provider == null) return;
+    final clientId = provider.connectedDevice?.id;
+    if (clientId != null && clientId != _companionRemoteClientId && provider.isHost) {
+      final snapshot = RemoteTextInputRegistry.instance.currentSnapshot;
+      if (snapshot != null) {
+        provider.sendCommand(RemoteCommandType.textFieldFocus, data: snapshot.toWireData());
+      }
+    }
+    _companionRemoteClientId = clientId;
   }
 
   Future<void> _autoStartCompanionRemoteServer() async {
@@ -883,6 +916,7 @@ class _MainScreenState extends State<MainScreen>
     // Clean up only callbacks still owned by this screen. A replacement
     // MainScreen may already have installed its callbacks this frame.
     if (_companionRemoteSetup) {
+      _companionRemoteProvider?.removeListener(_handleCompanionRemoteConnectionChanged);
       final receiver = CompanionRemoteReceiver.instance;
       if (identical(receiver.navigationOwner, this)) {
         receiver.onTabNext = null;
@@ -895,6 +929,7 @@ class _MainScreenState extends State<MainScreen>
         receiver.onHome = null;
         receiver.onSearchAction = null;
         receiver.navigationOwner = null;
+        RemoteTextInputRegistry.instance.onActiveFieldChanged = null;
       }
     }
     final shelfCallback = _systemShelfTapCallback;

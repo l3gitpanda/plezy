@@ -4817,6 +4817,21 @@ class TranslationsCompanionRemoteRemoteEn {
 
 	/// en: 'Search on desktop...'
 	String get searchHint => 'Search on desktop...';
+
+	/// en: 'Keyboard'
+	String get keyboardTitle => 'Keyboard';
+
+	/// en: 'Type here...'
+	String get keyboardHint => 'Type here...';
+
+	/// en: 'Hide keyboard'
+	String get hideKeyboard => 'Hide keyboard';
+
+	/// en: 'Up'
+	String get navUp => 'Up';
+
+	/// en: 'Down'
+	String get navDown => 'Down';
 }
 
 // Path: companionRemote.errors
@@ -6139,6 +6154,11 @@ extension on Translations {
 			'companionRemote.remote.subtitles' => 'Subtitles',
 			'companionRemote.remote.audio' => 'Audio',
 			'companionRemote.remote.searchHint' => 'Search on desktop...',
+			'companionRemote.remote.keyboardTitle' => 'Keyboard',
+			'companionRemote.remote.keyboardHint' => 'Type here...',
+			'companionRemote.remote.hideKeyboard' => 'Hide keyboard',
+			'companionRemote.remote.navUp' => 'Up',
+			'companionRemote.remote.navDown' => 'Down',
 			'companionRemote.errors.noNetworkInterface' => 'No network interface found',
 			'companionRemote.errors.authenticationFailed' => 'Authentication failed',
 			'companionRemote.errors.serverStartFailed' => ({required Object error}) => 'Failed to start remote server: ${error}',

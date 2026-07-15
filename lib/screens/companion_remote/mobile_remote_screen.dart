@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -6,6 +7,7 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:provider/provider.dart';
 
 import '../../focus/focusable_text_field.dart';
+import '../../models/companion_remote/focused_remote_text_field.dart';
 import '../../models/companion_remote/remote_command.dart';
 import '../../models/companion_remote/remote_session.dart';
 import '../../i18n/strings.g.dart';
@@ -132,6 +134,11 @@ class _RemoteControlContent extends StatefulWidget {
 class _RemoteControlContentState extends State<_RemoteControlContent> {
   int _selectedTab = 0;
 
+  /// Field session the user manually hid the keyboard for. Suppresses
+  /// auto-open for that session only; the host mints a fresh id on the next
+  /// focus, which reopens the keyboard.
+  String? _dismissedFieldId;
+
   void _showSearchSheet({bool switchToSearchTab = false}) {
     if (switchToSearchTab) {
       _sendCommand(RemoteCommandType.tabSearch);
@@ -151,6 +158,10 @@ class _RemoteControlContentState extends State<_RemoteControlContent> {
 
   @override
   Widget build(BuildContext context) {
+    final provider = context.watch<CompanionRemoteProvider>();
+    final focusedField = provider.focusedTextField;
+    final keyboardField = focusedField != null && focusedField.fieldId != _dismissedFieldId ? focusedField : null;
+
     return Column(
       children: [
         Consumer<CompanionRemoteProvider>(
@@ -194,43 +205,56 @@ class _RemoteControlContentState extends State<_RemoteControlContent> {
             );
           },
         ),
-        Expanded(
-          child: ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              SegmentedButton<int>(
-                showSelectedIcon: false,
-                segments: [
-                  ButtonSegment(
-                    value: 0,
-                    label: Text(t.companionRemote.remote.tabRemote),
-                    icon: const AppIcon(Symbols.navigation_rounded),
-                  ),
-                  ButtonSegment(
-                    value: 1,
-                    label: Text(t.companionRemote.remote.tabPlay),
-                    icon: const AppIcon(Symbols.play_arrow_rounded),
-                  ),
-                  ButtonSegment(
-                    value: 2,
-                    label: Text(t.companionRemote.remote.tabMore),
-                    icon: const AppIcon(Symbols.flash_on_rounded),
-                  ),
-                ],
-                selected: {_selectedTab},
-                onSelectionChanged: (Set<int> selection) {
-                  setState(() {
-                    _selectedTab = selection.first;
-                  });
-                },
-              ),
-              const SizedBox(height: 24),
-              if (_selectedTab == 0) _buildNavigationTab(),
-              if (_selectedTab == 1) _buildPlaybackTab(),
-              if (_selectedTab == 2) _buildQuickActionsTab(),
-            ],
+        if (keyboardField != null)
+          Expanded(
+            child: _RemoteKeyboardPanel(
+              // A focus move to another host field mints a new fieldId, so the
+              // panel remounts and reseeds from that field's snapshot.
+              key: ValueKey(keyboardField.fieldId),
+              field: keyboardField,
+              provider: provider,
+              onDismiss: () => setState(() => _dismissedFieldId = keyboardField.fieldId),
+              onSendCommand: _sendCommand,
+            ),
+          )
+        else
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                SegmentedButton<int>(
+                  showSelectedIcon: false,
+                  segments: [
+                    ButtonSegment(
+                      value: 0,
+                      label: Text(t.companionRemote.remote.tabRemote),
+                      icon: const AppIcon(Symbols.navigation_rounded),
+                    ),
+                    ButtonSegment(
+                      value: 1,
+                      label: Text(t.companionRemote.remote.tabPlay),
+                      icon: const AppIcon(Symbols.play_arrow_rounded),
+                    ),
+                    ButtonSegment(
+                      value: 2,
+                      label: Text(t.companionRemote.remote.tabMore),
+                      icon: const AppIcon(Symbols.flash_on_rounded),
+                    ),
+                  ],
+                  selected: {_selectedTab},
+                  onSelectionChanged: (Set<int> selection) {
+                    setState(() {
+                      _selectedTab = selection.first;
+                    });
+                  },
+                ),
+                const SizedBox(height: 24),
+                if (_selectedTab == 0) _buildNavigationTab(),
+                if (_selectedTab == 1) _buildPlaybackTab(),
+                if (_selectedTab == 2) _buildQuickActionsTab(),
+              ],
+            ),
           ),
-        ),
       ],
     );
   }
@@ -655,6 +679,217 @@ class _RemoteChip extends StatelessWidget {
       },
       icon: AppIcon(icon, size: 18),
       label: Text(label),
+    );
+  }
+}
+
+/// Leading+trailing throttle for live text sync: the first edit in a window
+/// is sent immediately, later edits coalesce into one trailing send carrying
+/// only the latest value.
+class _TextSyncThrottle {
+  _TextSyncThrottle(this._send);
+
+  static const _interval = Duration(milliseconds: 80);
+
+  final void Function(String text, int selection) _send;
+  Timer? _timer;
+  String? _pendingText;
+  int? _pendingSelection;
+
+  void schedule(String text, int selection) {
+    if (_timer == null) {
+      _send(text, selection);
+      _timer = Timer(_interval, _flush);
+    } else {
+      _pendingText = text;
+      _pendingSelection = selection;
+    }
+  }
+
+  void _flush() {
+    _timer = null;
+    final text = _pendingText;
+    final selection = _pendingSelection;
+    _pendingText = null;
+    _pendingSelection = null;
+    if (text != null) {
+      _send(text, selection ?? text.length);
+      _timer = Timer(_interval, _flush);
+    }
+  }
+
+  void cancelPending() {
+    _timer?.cancel();
+    _timer = null;
+    _pendingText = null;
+    _pendingSelection = null;
+  }
+
+  void dispose() => cancelPending();
+}
+
+/// Live remote keyboard: mirrors every local edit to the host's focused text
+/// field. Shown automatically while the host reports a focused field; closed
+/// by the host's blur signal or the hide button.
+class _RemoteKeyboardPanel extends StatefulWidget {
+  final FocusedRemoteTextField field;
+  final CompanionRemoteProvider provider;
+  final VoidCallback onDismiss;
+  final void Function(RemoteCommandType) onSendCommand;
+
+  const _RemoteKeyboardPanel({
+    super.key,
+    required this.field,
+    required this.provider,
+    required this.onDismiss,
+    required this.onSendCommand,
+  });
+
+  @override
+  State<_RemoteKeyboardPanel> createState() => _RemoteKeyboardPanelState();
+}
+
+class _RemoteKeyboardPanelState extends State<_RemoteKeyboardPanel> with ControllerDisposerMixin {
+  // Actions the host may report that are safe to request from the local IME
+  // on every mobile platform.
+  static const _supportedActions = [
+    TextInputAction.done,
+    TextInputAction.go,
+    TextInputAction.next,
+    TextInputAction.search,
+    TextInputAction.send,
+    TextInputAction.newline,
+  ];
+
+  late final TextEditingController _controller = createTextEditingController(
+    value: TextEditingValue(
+      text: widget.field.text,
+      selection: TextSelection.collapsed(offset: widget.field.selection),
+    ),
+  );
+  late final _TextSyncThrottle _throttle = _TextSyncThrottle(_sendSet);
+
+  @override
+  void dispose() {
+    _throttle.dispose();
+    super.dispose();
+  }
+
+  int get _caretOffset {
+    final selection = _controller.selection;
+    return selection.isValid ? selection.extentOffset : _controller.text.length;
+  }
+
+  TextInputType get _keyboardType {
+    return switch (widget.field.inputType) {
+      'number' => TextInputType.number,
+      'phone' => TextInputType.phone,
+      'email' => TextInputType.emailAddress,
+      'url' => TextInputType.url,
+      'multiline' => TextInputType.multiline,
+      _ => TextInputType.text,
+    };
+  }
+
+  TextInputAction get _textInputAction {
+    for (final action in _supportedActions) {
+      if (action.name == widget.field.action) return action;
+    }
+    // Match the host default: enter inserts a newline in multiline fields
+    // (the send button still submits) and submits single-line fields.
+    return widget.field.multiline && !widget.field.obscureText ? TextInputAction.newline : TextInputAction.done;
+  }
+
+  void _sendSet(String text, int selection) {
+    widget.provider.sendCommand(
+      RemoteCommandType.textInput,
+      data: {'op': 'set', 'text': text, 'sel': selection, 'fid': widget.field.fieldId},
+    );
+  }
+
+  void _handleChanged(String text) {
+    _throttle.schedule(text, _caretOffset);
+  }
+
+  void _submit(String text) {
+    HapticFeedback.lightImpact();
+    // Submit carries the final text itself, so a pending throttled set is
+    // redundant — drop it instead of racing it against the submit.
+    _throttle.cancelPending();
+    widget.provider.sendCommand(
+      RemoteCommandType.textInput,
+      data: {'op': 'submit', 'text': text, 'sel': _caretOffset, 'fid': widget.field.fieldId},
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final field = widget.field;
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        Row(
+          children: [
+            const AppIcon(Symbols.keyboard_rounded),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                field.hint ?? t.companionRemote.remote.keyboardTitle,
+                style: Theme.of(context).textTheme.titleMedium,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            IconButton(
+              icon: const AppIcon(Symbols.keyboard_hide_rounded),
+              tooltip: t.companionRemote.remote.hideKeyboard,
+              onPressed: widget.onDismiss,
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        FocusableTextField(
+          controller: _controller,
+          autofocus: true,
+          obscureText: field.obscureText,
+          maxLength: field.maxLength,
+          maxLines: field.obscureText ? 1 : (field.multiline ? 4 : 1),
+          keyboardType: _keyboardType,
+          textInputAction: _textInputAction,
+          decoration: pillInputDecoration(
+            context,
+            hintText: field.hint ?? t.companionRemote.remote.keyboardHint,
+            suffixIcon: IconButton(
+              icon: const AppIcon(Symbols.send_rounded),
+              onPressed: () => _submit(_controller.text),
+            ),
+          ),
+          onChanged: _handleChanged,
+          onSubmitted: _submit,
+        ),
+        const SizedBox(height: 32),
+        Row(
+          mainAxisAlignment: .spaceEvenly,
+          children: [
+            _RemoteButton(
+              icon: Symbols.arrow_back_rounded,
+              label: t.common.back,
+              onPressed: () => widget.onSendCommand(RemoteCommandType.back),
+            ),
+            _RemoteButton(
+              icon: Symbols.keyboard_arrow_up_rounded,
+              label: t.companionRemote.remote.navUp,
+              onPressed: () => widget.onSendCommand(RemoteCommandType.dpadUp),
+            ),
+            _RemoteButton(
+              icon: Symbols.keyboard_arrow_down_rounded,
+              label: t.companionRemote.remote.navDown,
+              onPressed: () => widget.onSendCommand(RemoteCommandType.dpadDown),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }

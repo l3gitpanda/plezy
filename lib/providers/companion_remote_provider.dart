@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../connection/connection.dart';
 import '../connection/connection_registry.dart';
 import '../i18n/strings.g.dart';
+import '../models/companion_remote/focused_remote_text_field.dart';
 import '../models/companion_remote/remote_command.dart';
 import '../models/companion_remote/remote_session.dart';
 import '../models/plex/plex_home.dart';
@@ -38,6 +39,7 @@ class CompanionRemoteProvider with ChangeNotifier, DisposableChangeNotifierMixin
   String _deviceName = t.companionRemote.unknownDevice;
   String _platform = 'unknown';
   bool _isPlayerActive = false;
+  FocusedRemoteTextField? _focusedTextField;
 
   static const int _maxReconnectAttempts = 5;
 
@@ -88,6 +90,10 @@ class CompanionRemoteProvider with ChangeNotifier, DisposableChangeNotifierMixin
   RemoteSessionStatus get status => _session?.status ?? RemoteSessionStatus.disconnected;
   RemoteDevice? get connectedDevice => _session?.connectedDevice;
   bool get isPlayerActive => _isPlayerActive;
+
+  /// Text field currently focused on the connected host, if any. Non-null only
+  /// on the remote (phone) side while the host has an editable field focused.
+  FocusedRemoteTextField? get focusedTextField => _focusedTextField;
   bool get isHostServerRunning => _peerService?.isServerRunning ?? false;
 
   CompanionRemoteProvider() {
@@ -514,6 +520,7 @@ class CompanionRemoteProvider with ChangeNotifier, DisposableChangeNotifierMixin
 
     _session = null;
     _isPlayerActive = false;
+    _focusedTextField = null;
     _intentionalDisconnect = false;
     safeNotifyListeners();
   }
@@ -636,19 +643,7 @@ class CompanionRemoteProvider with ChangeNotifier, DisposableChangeNotifierMixin
     // fan out to a stale service.
     _cleanupSubscriptions();
     _commandSubscription = _peerService!.onCommandReceived.listen(
-      (command) {
-        appLogger.d('CompanionRemote: Command received: ${command.type}');
-
-        if (command.type == RemoteCommandType.deviceInfo) {
-          _handleDeviceInfo(command);
-        } else if (command.type == RemoteCommandType.syncState) {
-          _handleSyncState(command);
-        } else if (command.type != RemoteCommandType.ping &&
-            command.type != RemoteCommandType.pong &&
-            command.type != RemoteCommandType.ack) {
-          onCommandReceived?.call(command);
-        }
-      },
+      handleInboundCommand,
       onError: (error) {
         appLogger.e('CompanionRemote: Stream error', error: error);
       },
@@ -662,6 +657,9 @@ class CompanionRemoteProvider with ChangeNotifier, DisposableChangeNotifierMixin
 
     _deviceDisconnectedSubscription = _peerService!.onDeviceDisconnected.listen((_) {
       appLogger.d('CompanionRemote: Device disconnected (intentional: $_intentionalDisconnect)');
+      // A dropped host should close the phone's remote keyboard immediately,
+      // not after the reconnect settles.
+      _focusedTextField = null;
       if (_intentionalDisconnect) {
         _session = _session?.copyWith(status: RemoteSessionStatus.disconnected, connectedDevice: null);
         safeNotifyListeners();
@@ -693,6 +691,23 @@ class CompanionRemoteProvider with ChangeNotifier, DisposableChangeNotifierMixin
     });
   }
 
+  @visibleForTesting
+  void handleInboundCommand(RemoteCommand command) {
+    appLogger.d('CompanionRemote: Command received: ${command.type}');
+
+    if (command.type == RemoteCommandType.deviceInfo) {
+      _handleDeviceInfo(command);
+    } else if (command.type == RemoteCommandType.syncState) {
+      _handleSyncState(command);
+    } else if (command.type == RemoteCommandType.textFieldFocus) {
+      _handleTextFieldFocus(command);
+    } else if (command.type != RemoteCommandType.ping &&
+        command.type != RemoteCommandType.pong &&
+        command.type != RemoteCommandType.ack) {
+      onCommandReceived?.call(command);
+    }
+  }
+
   void _handleDeviceInfo(RemoteCommand command) {
     if (command.data != null) {
       final id = command.data!['id'] as String? ?? 'unknown';
@@ -715,6 +730,13 @@ class CompanionRemoteProvider with ChangeNotifier, DisposableChangeNotifierMixin
       _isPlayerActive = playerActive;
       safeNotifyListeners();
     }
+  }
+
+  void _handleTextFieldFocus(RemoteCommand command) {
+    final focusedField = FocusedRemoteTextField.fromWireData(command.data);
+    if (focusedField == null && _focusedTextField == null) return;
+    _focusedTextField = focusedField;
+    safeNotifyListeners();
   }
 
   void _cleanupSubscriptions() {
@@ -847,6 +869,7 @@ class CompanionRemoteProvider with ChangeNotifier, DisposableChangeNotifierMixin
       _session = null;
     }
     _isPlayerActive = false;
+    _focusedTextField = null;
     _intentionalDisconnect = false;
     safeNotifyListeners();
   }

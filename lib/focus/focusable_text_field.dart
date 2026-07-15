@@ -9,6 +9,7 @@ import '../utils/text_input_diagnostics.dart';
 import '../widgets/tv_virtual_keyboard.dart';
 import 'dpad_navigator.dart';
 import 'owned_focus_node_binding.dart';
+import 'remote_text_input_registry.dart';
 
 bool _usesTvKeyboard(bool enableTvKeyboard) => enableTvKeyboard && PlatformDetector.isTV();
 
@@ -345,6 +346,16 @@ KeyEventResult _handleTvHardwareKeyboardKey({
 
 bool _isMultilineTextInput({TextInputType? keyboardType, int? maxLines}) {
   return keyboardType?.index == TextInputType.multiline.index || (maxLines != null && maxLines != 1);
+}
+
+String? _remoteInputTypeName({TextInputType? keyboardType, int? maxLines}) {
+  if (_isMultilineTextInput(keyboardType: keyboardType, maxLines: maxLines)) return 'multiline';
+  if (keyboardType == null) return null;
+  if (keyboardType.index == TextInputType.number.index) return 'number';
+  if (keyboardType.index == TextInputType.phone.index) return 'phone';
+  if (keyboardType.index == TextInputType.emailAddress.index) return 'email';
+  if (keyboardType.index == TextInputType.url.index) return 'url';
+  return 'text';
 }
 
 bool _isControlCharacter(String text) {
@@ -688,7 +699,7 @@ class _FocusableTextInputHost extends StatefulWidget {
   State<_FocusableTextInputHost> createState() => _FocusableTextInputHostState();
 }
 
-class _FocusableTextInputHostState extends State<_FocusableTextInputHost> {
+class _FocusableTextInputHostState extends State<_FocusableTextInputHost> implements RemoteTextInputTarget {
   final OwnedFocusNodeBinding _focusNodeBinding = OwnedFocusNodeBinding();
   FocusNode? _installedFocusNode;
   FocusOnKeyEventCallback? _previousOnKeyEvent;
@@ -750,6 +761,69 @@ class _FocusableTextInputHostState extends State<_FocusableTextInputHost> {
   void _handleFocusChanged() {
     _syncNativeTextInputFocus();
     _syncTvKeyboardAutoOpen();
+    _syncRemoteTextInputRegistry();
+  }
+
+  void _syncRemoteTextInputRegistry() {
+    // The TV OSK dialog takes focus from the field's node while editing the
+    // same controller, so an open (or opening) OSK counts as this field still
+    // being active for remote input.
+    final focused =
+        (_installedFocusNode?.hasFocus == true || _tvKeyboardOpen || _tvKeyboardOpenScheduled) && widget.input.enabled;
+    if (focused) {
+      RemoteTextInputRegistry.instance.notifyFocused(this);
+    } else {
+      RemoteTextInputRegistry.instance.notifyBlurred(this);
+    }
+  }
+
+  @override
+  RemoteTextFieldSnapshot describeForRemote(String fieldId) {
+    final input = widget.input;
+    final value = input.controller.value;
+    final selection = value.selection.isValid
+        ? value.selection.extentOffset.clamp(0, value.text.length)
+        : value.text.length;
+    return RemoteTextFieldSnapshot(
+      fieldId: fieldId,
+      text: value.text,
+      selection: selection,
+      hint: _keyboardHint(input.decoration),
+      obscureText: input.obscureText,
+      multiline: _isMultilineTextInput(keyboardType: input.keyboardType, maxLines: input.maxLines),
+      maxLength: input.maxLength,
+      inputType: _remoteInputTypeName(keyboardType: input.keyboardType, maxLines: input.maxLines),
+      action: input.textInputAction?.name,
+    );
+  }
+
+  @override
+  void applyRemoteText(String text, int selection) {
+    final input = widget.input;
+    _replaceTextValue(
+      controller: input.controller,
+      nextValue: TextEditingValue(
+        text: text,
+        selection: TextSelection.collapsed(offset: selection.clamp(0, text.length)),
+      ),
+      inputFormatters: input.inputFormatters,
+      maxLength: input.maxLength,
+      onChanged: input.onChanged,
+    );
+  }
+
+  @override
+  void submitFromRemote(String text, int selection) {
+    final input = widget.input;
+    if (input.controller.text != text) {
+      applyRemoteText(text, selection);
+    }
+    _submitTextInput(
+      controller: input.controller,
+      textInputAction: input.textInputAction,
+      onSubmitted: input.onSubmitted,
+      onEditingComplete: input.onEditingComplete,
+    );
   }
 
   void _syncNativeTextInputFocus() {
@@ -876,7 +950,9 @@ class _FocusableTextInputHostState extends State<_FocusableTextInputHost> {
           if (_installedFocusNode?.hasFocus != true) {
             _suppressTvKeyboardAutoOpen = false;
           }
-          _syncTvKeyboardAutoOpen();
+          // Full sync: with the OSK gone and the field unfocused, the remote
+          // registry must blur too.
+          _handleFocusChanged();
         });
       }),
     );
@@ -955,6 +1031,7 @@ class _FocusableTextInputHostState extends State<_FocusableTextInputHost> {
   void _restoreInstalledHandler() {
     _logTvTextInput('Host.restoreInstalledHandler node=${_installedFocusNode?.debugLabel}');
     _setNativeTextInputFocused(false);
+    RemoteTextInputRegistry.instance.notifyBlurred(this);
     final node = _installedFocusNode;
     if (node != null) {
       node.removeListener(_focusListener);

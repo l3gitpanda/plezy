@@ -121,6 +121,97 @@ void main() {
     });
   });
 
+  group('CompanionRemoteProvider — inbound commands', () {
+    test('textFieldFocus with focused payload sets focusedTextField', () {
+      final p = CompanionRemoteProvider();
+      expect(p.focusedTextField, isNull);
+
+      p.handleInboundCommand(
+        const RemoteCommand(
+          type: RemoteCommandType.textFieldFocus,
+          data: {'focused': true, 'fid': 'f1', 'text': 'abc', 'sel': 2, 'hint': 'Search', 'obscure': true},
+        ),
+      );
+
+      final field = p.focusedTextField;
+      expect(field, isNotNull);
+      expect(field!.fieldId, 'f1');
+      expect(field.text, 'abc');
+      expect(field.selection, 2);
+      expect(field.hint, 'Search');
+      expect(field.obscureText, isTrue);
+      p.dispose();
+    });
+
+    test('textFieldFocus blur payload clears focusedTextField', () {
+      final p = CompanionRemoteProvider();
+      p.handleInboundCommand(
+        const RemoteCommand(type: RemoteCommandType.textFieldFocus, data: {'focused': true, 'fid': 'f1', 'text': ''}),
+      );
+      expect(p.focusedTextField, isNotNull);
+
+      p.handleInboundCommand(const RemoteCommand(type: RemoteCommandType.textFieldFocus, data: {'focused': false}));
+      expect(p.focusedTextField, isNull);
+      p.dispose();
+    });
+
+    test('malformed textFieldFocus payloads are ignored', () {
+      final p = CompanionRemoteProvider();
+      p.handleInboundCommand(const RemoteCommand(type: RemoteCommandType.textFieldFocus));
+      expect(p.focusedTextField, isNull);
+
+      p.handleInboundCommand(const RemoteCommand(type: RemoteCommandType.textFieldFocus, data: {'focused': true}));
+      expect(p.focusedTextField, isNull, reason: 'focused without a fid must not open the keyboard');
+
+      p.handleInboundCommand(
+        const RemoteCommand(
+          type: RemoteCommandType.textFieldFocus,
+          data: {'focused': true, 'fid': 'f1', 'text': 'ab', 'sel': 99},
+        ),
+      );
+      expect(p.focusedTextField?.selection, 2, reason: 'out-of-range caret must clamp to text length');
+      p.dispose();
+    });
+
+    test('textFieldFocus does not leak into onCommandReceived', () {
+      final p = CompanionRemoteProvider();
+      final received = <RemoteCommand>[];
+      p.onCommandReceived = received.add;
+
+      p.handleInboundCommand(
+        const RemoteCommand(type: RemoteCommandType.textFieldFocus, data: {'focused': true, 'fid': 'f1', 'text': ''}),
+      );
+      p.handleInboundCommand(const RemoteCommand(type: RemoteCommandType.textInput, data: {'op': 'set', 'text': 'x'}));
+
+      expect(received.map((c) => c.type), [
+        RemoteCommandType.textInput,
+      ], reason: 'textFieldFocus is provider state; textInput must still reach the receiver');
+      p.dispose();
+    });
+
+    test('syncState playerActive behavior is unchanged', () {
+      final p = CompanionRemoteProvider();
+      p.handleInboundCommand(const RemoteCommand(type: RemoteCommandType.syncState, data: {'playerActive': true}));
+      expect(p.isPlayerActive, isTrue);
+
+      p.handleInboundCommand(const RemoteCommand(type: RemoteCommandType.syncState, data: {'playerActive': false}));
+      expect(p.isPlayerActive, isFalse);
+      p.dispose();
+    });
+
+    test('leaveSession clears focusedTextField', () async {
+      final p = CompanionRemoteProvider();
+      p.handleInboundCommand(
+        const RemoteCommand(type: RemoteCommandType.textFieldFocus, data: {'focused': true, 'fid': 'f1', 'text': ''}),
+      );
+      expect(p.focusedTextField, isNotNull);
+
+      await p.leaveSession();
+      expect(p.focusedTextField, isNull);
+      p.dispose();
+    });
+  });
+
   group('CompanionRemoteProvider — public API safety', () {
     test('connectToDiscoveredHost reports localized auth failure when crypto is not ready', () async {
       final p = CompanionRemoteProvider();
