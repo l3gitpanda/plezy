@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -135,6 +136,137 @@ void main() {
       expect(
         () => auth.signInWithLocal(baseUrl: 'https://seerr.example.com', email: 'a@b.c', password: 'x'),
         throwsA(isA<SeerrAuthException>()),
+      );
+    });
+
+    test('initiates Jellyfin Quick Connect with POST and parses the response', () async {
+      final auth = SeerrAuthService(
+        httpClientFactory: () => MockClient((request) async {
+          expect(request.method, 'POST');
+          expect(request.url.path, '/api/v1/auth/jellyfin/quickconnect/initiate');
+          expect(request.url.query, isEmpty);
+          expect(request.body, isEmpty);
+          return _json({'code': '123456', 'secret': 'abcdef123456'});
+        }),
+      );
+
+      final initiation = await auth.initiateJellyfinQuickConnect(baseUrl: 'https://seerr.example.com/');
+
+      expect(initiation.code, '123456');
+      expect(initiation.secret, 'abcdef123456');
+    });
+
+    test('approved Jellyfin Quick Connect authenticates and packs a non-reauth session', () async {
+      final requests = <String>[];
+      final auth = SeerrAuthService(
+        httpClientFactory: () => MockClient((request) async {
+          requests.add('${request.method} ${request.url.path}');
+          switch (request.url.path) {
+            case '/api/v1/auth/jellyfin/quickconnect/check':
+              expect(request.method, 'GET');
+              expect(request.url.queryParameters, {'secret': 'abcdef123456'});
+              return _json({'authenticated': true});
+            case '/api/v1/auth/jellyfin/quickconnect/authenticate':
+              expect(request.method, 'POST');
+              expect(jsonDecode(request.body), {'secret': 'abcdef123456'});
+              return _json(_user(), headers: {'set-cookie': '${SeerrConstants.sessionCookieName}=fresh-qc; Path=/'});
+            default:
+              fail('Unexpected request: ${request.method} ${request.url}');
+          }
+        }),
+      );
+
+      final session = await auth.signInWithJellyfinQuickConnect(
+        baseUrl: 'https://seerr.example.com/',
+        secret: 'abcdef123456',
+      );
+
+      expect(requests, [
+        'GET /api/v1/auth/jellyfin/quickconnect/check',
+        'POST /api/v1/auth/jellyfin/quickconnect/authenticate',
+      ]);
+      expect(session, isNotNull);
+      expect(session!.baseUrl, 'https://seerr.example.com');
+      expect(session.method, SeerrAuthMethod.jellyfin);
+      expect(session.identifier, isEmpty);
+      expect(session.secret, isEmpty);
+      expect(session.cookie, 'fresh-qc');
+      expect(session.userId, 7);
+      expect(session.permissions, 2);
+      expect(session.displayName, 'Alice');
+    });
+
+    test('expired Jellyfin Quick Connect returns null without authenticating', () async {
+      final requests = <String>[];
+      var authenticateCalls = 0;
+      final auth = SeerrAuthService(
+        httpClientFactory: () => MockClient((request) async {
+          requests.add('${request.method} ${request.url.path}');
+          if (request.url.path == '/api/v1/auth/jellyfin/quickconnect/check') {
+            expect(request.url.queryParameters, {'secret': 'expired-secret'});
+            return _json({'message': 'Not Found'}, status: 404);
+          }
+          if (request.url.path == '/api/v1/auth/jellyfin/quickconnect/authenticate') authenticateCalls++;
+          return _json(_user());
+        }),
+      );
+
+      final session = await auth.signInWithJellyfinQuickConnect(
+        baseUrl: 'https://seerr.example.com',
+        secret: 'expired-secret',
+      );
+
+      expect(session, isNull);
+      expect(authenticateCalls, 0);
+      expect(requests, ['GET /api/v1/auth/jellyfin/quickconnect/check']);
+    });
+
+    test('cancellation after an in-flight approval prevents authentication', () async {
+      final approval = Completer<http.Response>();
+      final checkStarted = Completer<void>();
+      var cancelled = false;
+      var authenticateCalls = 0;
+      final auth = SeerrAuthService(
+        httpClientFactory: () => MockClient((request) async {
+          if (request.url.path == '/api/v1/auth/jellyfin/quickconnect/check') {
+            checkStarted.complete();
+            return approval.future;
+          }
+          if (request.url.path == '/api/v1/auth/jellyfin/quickconnect/authenticate') authenticateCalls++;
+          return _json(_user());
+        }),
+      );
+
+      final sessionFuture = auth.signInWithJellyfinQuickConnect(
+        baseUrl: 'https://seerr.example.com',
+        secret: 'abcdef123456',
+        shouldCancel: () => cancelled,
+      );
+      await checkStarted.future;
+      cancelled = true;
+      approval.complete(_json({'authenticated': true}));
+
+      expect(await sessionFuture, isNull);
+      expect(authenticateCalls, 0);
+    });
+
+    test('malformed Jellyfin Quick Connect initiation is rejected', () async {
+      final auth = SeerrAuthService(httpClientFactory: () => MockClient((request) async => _json({'code': '123456'})));
+
+      await expectLater(
+        auth.initiateJellyfinQuickConnect(baseUrl: 'https://seerr.example.com'),
+        throwsA(isA<SeerrAuthException>()),
+      );
+    });
+
+    test('old Seerr without Jellyfin Quick Connect surfaces its 404', () async {
+      final auth = SeerrAuthService(
+        httpClientFactory: () => MockClient((request) async => _json({'message': 'Not Found'}, status: 404)),
+      );
+
+      await expectLater(
+        auth.initiateJellyfinQuickConnect(baseUrl: 'https://seerr.example.com'),
+        throwsA(isA<SeerrApiException>().having((error) => error.statusCode, 'statusCode', 404)),
       );
     });
   });

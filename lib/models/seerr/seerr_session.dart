@@ -7,7 +7,7 @@ enum SeerrAuthMethod {
   /// re-auth time, never copied into the session).
   plex,
 
-  /// `POST /auth/jellyfin` with stored username/password, serverType 2.
+  /// Jellyfin sign-in, either with stored username/password or Quick Connect.
   jellyfin,
 
   /// `POST /auth/jellyfin` with stored username/password, serverType 3.
@@ -22,14 +22,15 @@ enum SeerrAuthMethod {
 /// Seerr-side user it maps to.
 ///
 /// [secret] is the plaintext password while in memory; the store protects it
-/// with CredentialVault before persisting. Empty for [SeerrAuthMethod.plex]
-/// and after an unrecoverable decrypt failure (session then lives until the
-/// cookie expires and the user must reconnect).
+/// with CredentialVault before persisting. Empty for [SeerrAuthMethod.plex],
+/// Jellyfin Quick Connect, and after an unrecoverable decrypt failure (the
+/// session then lives until the cookie expires and the user must reconnect).
 class SeerrSession {
   final String baseUrl;
   final SeerrAuthMethod method;
 
-  /// Username (jellyfin/emby) or email (local); empty for plex.
+  /// Username (jellyfin/emby) or email (local); empty for Plex and Jellyfin
+  /// Quick Connect.
   final String identifier;
   final String secret;
 

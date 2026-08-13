@@ -9,6 +9,7 @@ import '../../mixins/controller_disposer_mixin.dart';
 import '../../models/seerr/seerr_public_settings.dart';
 import '../../models/seerr/seerr_session.dart';
 import '../../providers/seerr_account_provider.dart';
+import '../../services/seerr/seerr_auth_service.dart';
 import '../../services/seerr/seerr_constants.dart';
 import '../../services/seerr/seerr_exceptions.dart';
 import '../../theme/mono_tokens.dart';
@@ -44,20 +45,29 @@ class _SeerrConnectScreenState extends State<SeerrConnectScreen> with AsyncFormS
   final _changeServerFocus = FocusNode(debugLabel: 'SeerrConnect:ChangeServer');
   final _identifierFocus = FocusNode(debugLabel: 'SeerrConnect:Identifier');
   final _passwordFocus = FocusNode(debugLabel: 'SeerrConnect:Password');
+  final _quickConnectFocus = FocusNode(debugLabel: 'SeerrConnect:QuickConnect');
+  final _cancelQuickConnectFocus = FocusNode(debugLabel: 'SeerrConnect:CancelQuickConnect');
   final _formKey = GlobalKey<FormState>();
 
   SeerrPublicSettings? _instance;
   String _baseUrl = '';
   bool _plexTokenAvailable = false;
   _CredentialForm _form = _CredentialForm.none;
+  SeerrQuickConnectInitiation? _qcInitiation;
+  bool _qcCancelled = false;
+  int _qcAttemptId = 0;
 
   @override
   void dispose() {
+    _qcCancelled = true;
+    _qcAttemptId++;
     _urlFocus.dispose();
     _continueFocus.dispose();
     _changeServerFocus.dispose();
     _identifierFocus.dispose();
     _passwordFocus.dispose();
+    _quickConnectFocus.dispose();
+    _cancelQuickConnectFocus.dispose();
     super.dispose();
   }
 
@@ -67,6 +77,11 @@ class _SeerrConnectScreenState extends State<SeerrConnectScreen> with AsyncFormS
         instance.mediaServerLogin &&
         instance.mediaServerType == SeerrMediaServerType.plex &&
         _plexTokenAvailable;
+  }
+
+  bool get _offersQuickConnect {
+    final instance = _instance;
+    return instance != null && instance.mediaServerLogin && instance.mediaServerType == SeerrMediaServerType.jellyfin;
   }
 
   _CredentialForm get _mediaServerForm {
@@ -146,6 +161,64 @@ class _SeerrConnectScreenState extends State<SeerrConnectScreen> with AsyncFormS
     }, errorMapper: _describeError);
   }
 
+  Future<void> _startQuickConnect() async {
+    if (!_offersQuickConnect) return;
+    final attemptId = ++_qcAttemptId;
+    setState(() => _qcCancelled = false);
+    await runAsync<void>(
+      () async {
+        final account = context.read<SeerrAccountProvider>();
+        final initiation = await account.authService.initiateJellyfinQuickConnect(baseUrl: _baseUrl);
+        if (!_isCurrentQuickConnectAttempt(attemptId)) return;
+
+        // Once the code is visible, waiting is the active state rather than a
+        // disabled form with a progress spinner.
+        setState(() => _qcInitiation = initiation);
+        _requestFocusAfterFrame(_cancelQuickConnectFocus);
+        setBusy(false);
+
+        final session = await account.authService.signInWithJellyfinQuickConnect(
+          baseUrl: _baseUrl,
+          secret: initiation.secret,
+          shouldCancel: () => _qcCancelled || attemptId != _qcAttemptId,
+        );
+        if (!_isCurrentQuickConnectAttempt(attemptId)) return;
+        if (session == null) {
+          setState(() => _qcInitiation = null);
+          if (!_qcCancelled) setErrorText(t.auth.quickConnectExpired);
+          return;
+        }
+        await _finish(account, session);
+      },
+      errorMapper: _describeQuickConnectError,
+      shouldApplyState: () => attemptId == _qcAttemptId,
+    );
+
+    // Return to the regular sign-in form after a failed initiation, poll, or
+    // final exchange so password and local login remain available.
+    if (_isCurrentQuickConnectAttempt(attemptId) && errorText != null && _qcInitiation != null) {
+      setState(() => _qcInitiation = null);
+    }
+  }
+
+  bool _isCurrentQuickConnectAttempt(int attemptId) => mounted && attemptId == _qcAttemptId;
+
+  void _cancelQuickConnect() {
+    _qcAttemptId++;
+    setState(() {
+      _qcCancelled = true;
+      _qcInitiation = null;
+    });
+    setBusy(false);
+  }
+
+  void _requestFocusAfterFrame(FocusNode node) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !node.canRequestFocus) return;
+      node.requestFocus();
+    });
+  }
+
   Future<void> _finish(SeerrAccountProvider account, SeerrSession session) async {
     await account.adoptSession(session.copyWith(instanceLabel: _instance?.instanceLabel));
     if (!mounted) return;
@@ -158,24 +231,38 @@ class _SeerrConnectScreenState extends State<SeerrConnectScreen> with AsyncFormS
     _ => t.addServer.couldNotReachServer(error: e.toString()),
   };
 
+  String _describeQuickConnectError(Object e) => switch (e) {
+    SeerrApiException(statusCode: 404) => t.addServer.quickConnectRejected,
+    _ => _describeError(e),
+  };
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return FocusedScrollScaffold(
       title: Text(t.seerr.connectTitle),
       slivers: [
-        SliverPadding(
-          padding: const EdgeInsets.all(16),
-          sliver: SliverToBoxAdapter(
-            child: Form(
-              key: _formKey,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: _instance == null ? _buildUrlStep(theme) : _buildSignInStep(theme),
+        if (_qcInitiation != null)
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(24, 24, 24, 24 + MediaQuery.paddingOf(context).bottom),
+              child: Center(child: _buildQuickConnectPanel(theme)),
+            ),
+          )
+        else
+          SliverPadding(
+            padding: const EdgeInsets.all(16),
+            sliver: SliverToBoxAdapter(
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: _instance == null ? _buildUrlStep(theme) : _buildSignInStep(theme),
+                ),
               ),
             ),
           ),
-        ),
       ],
     );
   }
@@ -238,6 +325,19 @@ class _SeerrConnectScreenState extends State<SeerrConnectScreen> with AsyncFormS
               onPressed: busy ? null : _signInWithPlex,
               icon: busy ? const LoadingIndicatorBox() : const AppIcon(Symbols.login_rounded, fill: 1),
               label: Text(t.auth.signInWithPlex),
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+        if (_offersQuickConnect) ...[
+          FocusableButton(
+            focusNode: _quickConnectFocus,
+            useBackgroundFocus: true,
+            onPressed: busy ? null : _startQuickConnect,
+            child: OutlinedButton.icon(
+              onPressed: busy ? null : _startQuickConnect,
+              icon: const AppIcon(Symbols.tap_and_play_rounded, fill: 1),
+              label: Text(t.auth.useQuickConnect),
             ),
           ),
           const SizedBox(height: 12),
@@ -366,5 +466,59 @@ class _SeerrConnectScreenState extends State<SeerrConnectScreen> with AsyncFormS
       _identifierController.clear();
       _passwordController.clear();
     });
+  }
+
+  Widget _buildQuickConnectPanel(ThemeData theme) {
+    final code = _qcInitiation!.code;
+    final muted = theme.colorScheme.onSurface.withValues(alpha: 0.7);
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 420),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            t.auth.quickConnectInstructions,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyLarge?.copyWith(color: muted),
+          ),
+          const SizedBox(height: 32),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Padding(
+              padding: const EdgeInsets.only(left: 12),
+              child: Text(
+                code,
+                style: theme.textTheme.displayLarge?.copyWith(
+                  fontFamily: 'monospace',
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 12,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 32),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const LoadingIndicatorBox(size: 16),
+              const SizedBox(width: 10),
+              Text(t.auth.quickConnectWaiting, style: theme.textTheme.bodyMedium?.copyWith(color: muted)),
+            ],
+          ),
+          const SizedBox(height: 32),
+          FocusableButton(
+            focusNode: _cancelQuickConnectFocus,
+            useBackgroundFocus: true,
+            onPressed: _cancelQuickConnect,
+            child: OutlinedButton.icon(
+              onPressed: _cancelQuickConnect,
+              icon: const AppIcon(Symbols.close_rounded, fill: 1),
+              label: Text(t.auth.quickConnectCancel),
+            ),
+          ),
+          ...buildInlineError(theme, gap: 16, center: true),
+        ],
+      ),
+    );
   }
 }
