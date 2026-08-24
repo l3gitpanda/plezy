@@ -1385,6 +1385,11 @@ class _Translations$liveTv$sv extends Translations$liveTv$en {
 	@override String get unknownChannel => 'Okänd kanal';
 	@override String get live => 'LIVE';
 	@override String get reloadGuide => 'Ladda om programguide';
+	@override String get searchGuide => 'Sök i guiden';
+	@override String get searchHint => 'Sök kanaler och program';
+	@override String searchNoResults({required Object query}) => 'Inga träffar för "${query}"';
+	@override String get channelsSection => 'Kanaler';
+	@override String get programsSection => 'Program';
 	@override String get now => 'Nu';
 	@override String get today => 'Idag';
 	@override String get tomorrow => 'I morgon';
@@ -3956,6 +3961,11 @@ extension on TranslationsSv {
 			'liveTv.unknownChannel' => 'Okänd kanal',
 			'liveTv.live' => 'LIVE',
 			'liveTv.reloadGuide' => 'Ladda om programguide',
+			'liveTv.searchGuide' => 'Sök i guiden',
+			'liveTv.searchHint' => 'Sök kanaler och program',
+			'liveTv.searchNoResults' => ({required Object query}) => 'Inga träffar för "${query}"',
+			'liveTv.channelsSection' => 'Kanaler',
+			'liveTv.programsSection' => 'Program',
 			'liveTv.now' => 'Nu',
 			'liveTv.today' => 'Idag',
 			'liveTv.tomorrow' => 'I morgon',
@@ -4311,13 +4321,13 @@ extension on TranslationsSv {
 			'companionRemote.pairing.hostAddressHint' => '192.168.1.100:48632',
 			'companionRemote.pairing.connecting' => 'Ansluter...',
 			'companionRemote.pairing.searchingForDevices' => 'Söker efter enheter...',
+			_ => null,
+		} ?? switch (path) {
 			'companionRemote.pairing.noDevicesFound' => 'Inga enheter hittades i ditt nätverk',
 			'companionRemote.pairing.noDevicesHint' => 'Öppna Plezy på datorn och använd samma wifi',
 			'companionRemote.pairing.availableDevices' => 'Tillgängliga enheter',
 			'companionRemote.pairing.manualConnection' => 'Manuell anslutning',
 			'companionRemote.pairing.cryptoInitFailed' => 'Kunde inte starta säker anslutning. Logga in på Plex först.',
-			_ => null,
-		} ?? switch (path) {
 			'companionRemote.pairing.validationHostRequired' => 'Ange värdadress',
 			'companionRemote.pairing.validationHostFormat' => 'Formatet måste vara IP:port (t.ex. 192.168.1.100:48632)',
 			'companionRemote.pairing.connectionTimedOut' => 'Anslutningen tog för lång tid. Använd samma nätverk på båda enheterna.',
