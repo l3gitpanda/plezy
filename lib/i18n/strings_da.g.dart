@@ -1385,6 +1385,11 @@ class _Translations$liveTv$da extends Translations$liveTv$en {
 	@override String get unknownChannel => 'Ukendt kanal';
 	@override String get live => 'LIVE';
 	@override String get reloadGuide => 'Genindlæs guide';
+	@override String get searchGuide => 'Søg i guide';
+	@override String get searchHint => 'Søg efter kanaler og programmer';
+	@override String searchNoResults({required Object query}) => 'Ingen resultater for "${query}"';
+	@override String get channelsSection => 'Kanaler';
+	@override String get programsSection => 'Programmer';
 	@override String get now => 'Nu';
 	@override String get today => 'I dag';
 	@override String get tomorrow => 'I morgen';
@@ -3956,6 +3961,11 @@ extension on TranslationsDa {
 			'liveTv.unknownChannel' => 'Ukendt kanal',
 			'liveTv.live' => 'LIVE',
 			'liveTv.reloadGuide' => 'Genindlæs guide',
+			'liveTv.searchGuide' => 'Søg i guide',
+			'liveTv.searchHint' => 'Søg efter kanaler og programmer',
+			'liveTv.searchNoResults' => ({required Object query}) => 'Ingen resultater for "${query}"',
+			'liveTv.channelsSection' => 'Kanaler',
+			'liveTv.programsSection' => 'Programmer',
 			'liveTv.now' => 'Nu',
 			'liveTv.today' => 'I dag',
 			'liveTv.tomorrow' => 'I morgen',
@@ -4311,13 +4321,13 @@ extension on TranslationsDa {
 			'companionRemote.pairing.hostAddressHint' => '192.168.1.100:48632',
 			'companionRemote.pairing.connecting' => 'Opretter forbindelse...',
 			'companionRemote.pairing.searchingForDevices' => 'Søger efter enheder...',
+			_ => null,
+		} ?? switch (path) {
 			'companionRemote.pairing.noDevicesFound' => 'Ingen enheder fundet på dit netværk',
 			'companionRemote.pairing.noDevicesHint' => 'Åbn Plezy på din computer, og brug det samme Wi-Fi-netværk',
 			'companionRemote.pairing.availableDevices' => 'Tilgængelige enheder',
 			'companionRemote.pairing.manualConnection' => 'Manuel forbindelse',
 			'companionRemote.pairing.cryptoInitFailed' => 'Kunne ikke starte sikker forbindelse. Log ind på Plex først.',
-			_ => null,
-		} ?? switch (path) {
 			'companionRemote.pairing.validationHostRequired' => 'Angiv en værtsadresse',
 			'companionRemote.pairing.validationHostFormat' => 'Format skal være IP:port (f.eks. 192.168.1.100:48632)',
 			'companionRemote.pairing.connectionTimedOut' => 'Forbindelsen fik timeout. Brug samme netværk på begge enheder.',

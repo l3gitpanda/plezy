@@ -1385,6 +1385,11 @@ class _Translations$liveTv$es extends Translations$liveTv$en {
 	@override String get unknownChannel => 'Canal desconocido';
 	@override String get live => 'EN VIVO';
 	@override String get reloadGuide => 'Recargar guía';
+	@override String get searchGuide => 'Buscar en la guía';
+	@override String get searchHint => 'Buscar canales y programas';
+	@override String searchNoResults({required Object query}) => 'Sin coincidencias para "${query}"';
+	@override String get channelsSection => 'Canales';
+	@override String get programsSection => 'Programas';
 	@override String get now => 'Ahora';
 	@override String get today => 'Hoy';
 	@override String get tomorrow => 'Mañana';
@@ -3956,6 +3961,11 @@ extension on TranslationsEs {
 			'liveTv.unknownChannel' => 'Canal desconocido',
 			'liveTv.live' => 'EN VIVO',
 			'liveTv.reloadGuide' => 'Recargar guía',
+			'liveTv.searchGuide' => 'Buscar en la guía',
+			'liveTv.searchHint' => 'Buscar canales y programas',
+			'liveTv.searchNoResults' => ({required Object query}) => 'Sin coincidencias para "${query}"',
+			'liveTv.channelsSection' => 'Canales',
+			'liveTv.programsSection' => 'Programas',
 			'liveTv.now' => 'Ahora',
 			'liveTv.today' => 'Hoy',
 			'liveTv.tomorrow' => 'Mañana',
@@ -4311,13 +4321,13 @@ extension on TranslationsEs {
 			'companionRemote.pairing.hostAddressHint' => '192.168.1.100:48632',
 			'companionRemote.pairing.connecting' => 'Conectando...',
 			'companionRemote.pairing.searchingForDevices' => 'Buscando dispositivos...',
+			_ => null,
+		} ?? switch (path) {
 			'companionRemote.pairing.noDevicesFound' => 'No se encontraron dispositivos en tu red',
 			'companionRemote.pairing.noDevicesHint' => 'Abre Plezy en tu equipo y usa la misma red WiFi',
 			'companionRemote.pairing.availableDevices' => 'Dispositivos disponibles',
 			'companionRemote.pairing.manualConnection' => 'Conexión manual',
 			'companionRemote.pairing.cryptoInitFailed' => 'No se pudo iniciar la conexión segura. Inicia sesión en Plex primero.',
-			_ => null,
-		} ?? switch (path) {
 			'companionRemote.pairing.validationHostRequired' => 'Introduce la dirección del host',
 			'companionRemote.pairing.validationHostFormat' => 'El formato debe ser IP:puerto (p. ej., 192.168.1.100:48632)',
 			'companionRemote.pairing.connectionTimedOut' => 'Tiempo de conexión agotado. Usa la misma red en ambos dispositivos.',
