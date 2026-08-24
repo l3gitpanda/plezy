@@ -20,6 +20,10 @@ on:
         description: Build macOS
         default: true
         type: boolean
+      build_tvos:
+        description: Build tvOS (unsigned)
+        default: false
+        type: boolean
       build_windows:
         description: Build Windows
         default: true
@@ -52,8 +56,12 @@ jobs:
     steps:
       - name: Require the protected main branch
         shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
-          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+          # Fork-only relaxation: artifact-only builds (no release tag) may run
+          # from any ref; tagged releases stay locked to main.
+          if [[ "$GITHUB_REF" != "refs/heads/main" && -n "$RELEASE_TAG" ]]; then
             echo "Release builds may only run from refs/heads/main." >&2
             exit 1
           fi
@@ -271,6 +279,11 @@ jobs:
         run: ./scripts/upload-symbols.sh macos
 
       - name: Import Code Signing Certificate
+        # Fork-only: no Developer ID secret here, so every signing/notarizing
+        # step is gated on the certificate's presence and an ad-hoc fallback
+        # keeps the DMG usable. `secrets` is illegal in a step `if`, hence the
+        # step-env indirection (same idiom as the Sparkle step below).
+        if: env.MACOS_CERTIFICATE_BASE64 != ''
         env:
           MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
           MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
@@ -289,8 +302,19 @@ jobs:
           # Add keychain to search list
           security list-keychains -d user -s $KEYCHAIN_PATH login.keychain
 
-      - name: Sign Application
+      - name: Ad-hoc Sign (no certificate available)
+        if: env.MACOS_CERTIFICATE_BASE64 == ''
         env:
+          MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
+        run: |
+          APP_PATH="build/macos/Build/Products/Release/Plezy.app"
+          codesign --force --deep --sign - "$APP_PATH"
+          codesign --force --sign - --entitlements macos/Runner/Release.entitlements "$APP_PATH"
+
+      - name: Sign Application
+        if: env.MACOS_CERTIFICATE_BASE64 != ''
+        env:
+          MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           # Find the identity
@@ -318,6 +342,9 @@ jobs:
           codesign --force --sign "$IDENTITY" --timestamp --options runtime --entitlements macos/Runner/Release.entitlements "$APP_PATH"
 
       - name: Verify Signature
+        if: env.MACOS_CERTIFICATE_BASE64 != ''
+        env:
+          MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
         run: |
           APP_PATH="build/macos/Build/Products/Release/Plezy.app"
           echo "Verifying signature..."
@@ -330,7 +357,9 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "$APP_PATH"
 
       - name: Notarize Application
+        if: env.MACOS_CERTIFICATE_BASE64 != ''
         env:
+          MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -395,6 +424,103 @@ jobs:
             plezy-macos.dmg
             macos-ed-signature.txt
             macos-dmg-size.txt
+
+  # Fork-only job: upstream has no tvOS CI. Produces an unsigned Payload zip
+  # for sideloading; opt-in via the build_tvos dispatch input and deliberately
+  # absent from create-release's needs list.
+  build-tvos:
+    needs: validate-trusted-ref
+    name: Build tvOS (unsigned)
+    if: ${{ inputs.build_tvos }}
+    runs-on: macos-26
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          channel: "stable"
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+          cache-key: "${{ env.TRUSTED_BUILD_CACHE_VERSION }}-flutter-:os:-:channel:-:version:-:arch:-:hash:"
+          pub-cache: false
+
+      - name: Cache Pub dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/.pub-cache
+          key: ${{ env.TRUSTED_BUILD_CACHE_VERSION }}-${{ runner.os }}-${{ runner.arch }}-pub-${{ hashFiles('pubspec.yaml', 'pubspec.lock') }}
+
+      - name: Cache tvOS Flutter engine
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/.cache/flutter-tvos-engine
+          key: ${{ env.TRUSTED_BUILD_CACHE_VERSION }}-tvos-engine-${{ hashFiles('tvos/engine.version') }}
+
+      - name: Cache CocoaPods
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            tvos/Pods
+            ~/Library/Caches/CocoaPods
+            ~/.cocoapods
+          key: ${{ env.TRUSTED_BUILD_CACHE_VERSION }}-${{ runner.os }}-tvos-pods-${{ hashFiles('tvos/Podfile') }}
+
+      - name: Ensure Rosetta 2 (engine host tools are x86_64)
+        run: |
+          if [[ "$(uname -m)" == "arm64" ]] && ! /usr/bin/pgrep -q oahd; then
+            sudo softwareupdate --install-rosetta --agree-to-license
+          fi
+
+      - name: Ensure tvOS platform SDK
+        run: |
+          if ! xcodebuild -showsdks | grep -q appletvos; then
+            sudo xcodebuild -downloadPlatform tvOS
+          fi
+
+      - name: Install dependencies
+        run: flutter pub get --enforce-lockfile --no-example
+
+      - name: Fetch tvOS Flutter engine
+        run: bash tvos/scripts/fetch_engine.sh
+
+      - name: Install CocoaPods dependencies
+        run: bash tvos/scripts/pod_install.sh
+
+      - name: Build tvOS (no codesign)
+        run: |
+          xcodebuild build \
+            -workspace tvos/Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Release \
+            -destination "generic/platform=tvOS" \
+            -derivedDataPath "$RUNNER_TEMP/tvos-derived" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            ENABLE_USER_SCRIPT_SANDBOXING=NO
+
+      - name: Create IPA
+        run: |
+          APP_PATH="$RUNNER_TEMP/tvos-derived/Build/Products/Release-appletvos/Runner.app"
+          if [ ! -d "$APP_PATH" ]; then
+            echo "Runner.app not found at $APP_PATH" >&2
+            find "$RUNNER_TEMP/tvos-derived/Build/Products" -maxdepth 2 -name "*.app" >&2 || true
+            exit 1
+          fi
+          mkdir -p Payload
+          cp -R "$APP_PATH" Payload/
+          zip -r plezy-tvos.ipa Payload
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: tvos-ipa
+          path: plezy-tvos.ipa
 
   build-windows:
     needs: validate-trusted-ref
