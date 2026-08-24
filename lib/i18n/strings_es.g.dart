@@ -1758,6 +1758,7 @@ class _Translations$companionRemote$es extends Translations$companionRemote$en {
 	@override String get title => 'Control remoto';
 	@override String connectedTo({required Object name}) => 'Conectado a ${name}';
 	@override String get unknownDevice => 'Dispositivo desconocido';
+	@override String playSentToDevice({required Object device}) => 'Sent to ${device}';
 	@override late final _Translations$companionRemote$session$es session = _Translations$companionRemote$session$es._(_root);
 	@override late final _Translations$companionRemote$pairing$es pairing = _Translations$companionRemote$pairing$es._(_root);
 	@override late final _Translations$companionRemote$remote$es remote = _Translations$companionRemote$remote$es._(_root);
@@ -4305,6 +4306,7 @@ extension on TranslationsEs {
 			'companionRemote.title' => 'Control remoto',
 			'companionRemote.connectedTo' => ({required Object name}) => 'Conectado a ${name}',
 			'companionRemote.unknownDevice' => 'Dispositivo desconocido',
+			'companionRemote.playSentToDevice' => ({required Object device}) => 'Sent to ${device}',
 			'companionRemote.session.startingServer' => 'Iniciando servidor remoto...',
 			'companionRemote.session.hostAddress' => 'Dirección del host',
 			'companionRemote.session.connected' => 'Conectado',
@@ -4320,9 +4322,9 @@ extension on TranslationsEs {
 			'companionRemote.pairing.discoveryDescription' => 'Los dispositivos Plezy con la misma cuenta Plex aparecen aquí',
 			'companionRemote.pairing.hostAddressHint' => '192.168.1.100:48632',
 			'companionRemote.pairing.connecting' => 'Conectando...',
-			'companionRemote.pairing.searchingForDevices' => 'Buscando dispositivos...',
 			_ => null,
 		} ?? switch (path) {
+			'companionRemote.pairing.searchingForDevices' => 'Buscando dispositivos...',
 			'companionRemote.pairing.noDevicesFound' => 'No se encontraron dispositivos en tu red',
 			'companionRemote.pairing.noDevicesHint' => 'Abre Plezy en tu equipo y usa la misma red WiFi',
 			'companionRemote.pairing.availableDevices' => 'Dispositivos disponibles',

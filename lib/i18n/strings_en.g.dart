@@ -1686,6 +1686,9 @@ class Translations$mediaMenu$en {
 
 	/// en: 'Play Version...'
 	String get playVersion => 'Play Version...';
+
+	/// en: 'Play on Connected Device'
+	String get playOnConnectedDevice => 'Play on Connected Device';
 }
 
 // Path: rateSheet
@@ -4297,6 +4300,9 @@ class Translations$companionRemote$en {
 
 	/// en: 'Unknown Device'
 	String get unknownDevice => 'Unknown Device';
+
+	/// en: 'Sent to ${device}'
+	String playSentToDevice({required Object device}) => 'Sent to ${device}';
 
 	late final Translations$companionRemote$session$en session = Translations$companionRemote$session$en.internal(_root);
 	late final Translations$companionRemote$pairing$en pairing = Translations$companionRemote$pairing$en.internal(_root);
@@ -7127,6 +7133,7 @@ extension on Translations {
 			'mediaMenu.rate' => 'Rate',
 			'mediaMenu.playFromBeginning' => 'Play from Beginning',
 			'mediaMenu.playVersion' => 'Play Version...',
+			'mediaMenu.playOnConnectedDevice' => 'Play on Connected Device',
 			'rateSheet.title' => 'Rate',
 			'rateSheet.server' => 'Server',
 			'rateSheet.favorite' => 'Favorite',
@@ -7605,9 +7612,9 @@ extension on Translations {
 			'explore.selectSource' => 'Select source',
 			'explore.rows.watchlist' => 'Watchlist',
 			'explore.rows.recommendedMovies' => 'Recommended Movies',
-			'explore.rows.recommendedShows' => 'Recommended Shows',
 			_ => null,
 		} ?? switch (path) {
+			'explore.rows.recommendedShows' => 'Recommended Shows',
 			'explore.rows.trendingMovies' => 'Trending Movies',
 			'explore.rows.trendingShows' => 'Trending Shows',
 			'explore.rows.popularMovies' => 'Popular Movies',
@@ -8104,6 +8111,7 @@ extension on Translations {
 			'companionRemote.title' => 'Companion Remote',
 			'companionRemote.connectedTo' => ({required Object name}) => 'Connected to ${name}',
 			'companionRemote.unknownDevice' => 'Unknown Device',
+			'companionRemote.playSentToDevice' => ({required Object device}) => 'Sent to ${device}',
 			'companionRemote.session.startingServer' => 'Starting remote server...',
 			'companionRemote.session.hostAddress' => 'Host Address',
 			'companionRemote.session.connected' => 'Connected',
@@ -8118,10 +8126,10 @@ extension on Translations {
 			'companionRemote.session.manualAddressHint' => 'Manual connection address:',
 			'companionRemote.pairing.discoveryDescription' => 'Plezy devices with the same Plex account appear here',
 			'companionRemote.pairing.hostAddressHint' => '192.168.1.100:48632',
-			'companionRemote.pairing.connecting' => 'Connecting...',
-			'companionRemote.pairing.searchingForDevices' => 'Looking for devices...',
 			_ => null,
 		} ?? switch (path) {
+			'companionRemote.pairing.connecting' => 'Connecting...',
+			'companionRemote.pairing.searchingForDevices' => 'Looking for devices...',
 			'companionRemote.pairing.noDevicesFound' => 'No devices found on your network',
 			'companionRemote.pairing.noDevicesHint' => 'Open Plezy on desktop and use the same Wi-Fi',
 			'companionRemote.pairing.availableDevices' => 'Available Devices',

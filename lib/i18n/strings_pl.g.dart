@@ -1774,6 +1774,7 @@ class _Translations$companionRemote$pl extends Translations$companionRemote$en {
 	@override String get title => 'Pilot';
 	@override String connectedTo({required Object name}) => 'Połączono z ${name}';
 	@override String get unknownDevice => 'Nieznane urządzenie';
+	@override String playSentToDevice({required Object device}) => 'Sent to ${device}';
 	@override late final _Translations$companionRemote$session$pl session = _Translations$companionRemote$session$pl._(_root);
 	@override late final _Translations$companionRemote$pairing$pl pairing = _Translations$companionRemote$pairing$pl._(_root);
 	@override late final _Translations$companionRemote$remote$pl remote = _Translations$companionRemote$remote$pl._(_root);
@@ -4325,6 +4326,7 @@ extension on TranslationsPl {
 			'companionRemote.title' => 'Pilot',
 			'companionRemote.connectedTo' => ({required Object name}) => 'Połączono z ${name}',
 			'companionRemote.unknownDevice' => 'Nieznane urządzenie',
+			'companionRemote.playSentToDevice' => ({required Object device}) => 'Sent to ${device}',
 			'companionRemote.session.startingServer' => 'Uruchamianie serwera zdalnego...',
 			'companionRemote.session.hostAddress' => 'Adres hosta',
 			'companionRemote.session.connected' => 'Połączono',
@@ -4340,9 +4342,9 @@ extension on TranslationsPl {
 			'companionRemote.pairing.discoveryDescription' => 'Urządzenia Plezy z tym samym kontem Plex pojawią się tutaj',
 			'companionRemote.pairing.hostAddressHint' => '192.168.1.100:48632',
 			'companionRemote.pairing.connecting' => 'Łączenie...',
-			'companionRemote.pairing.searchingForDevices' => 'Szukanie urządzeń...',
 			_ => null,
 		} ?? switch (path) {
+			'companionRemote.pairing.searchingForDevices' => 'Szukanie urządzeń...',
 			'companionRemote.pairing.noDevicesFound' => 'Nie znaleziono urządzeń w sieci',
 			'companionRemote.pairing.noDevicesHint' => 'Otwórz Plezy na komputerze i połącz oba urządzenia z tą samą siecią Wi-Fi',
 			'companionRemote.pairing.availableDevices' => 'Dostępne urządzenia',

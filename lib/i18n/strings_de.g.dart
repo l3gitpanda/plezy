@@ -1758,6 +1758,7 @@ class _Translations$companionRemote$de extends Translations$companionRemote$en {
 	@override String get title => 'Companion-Fernbedienung';
 	@override String connectedTo({required Object name}) => 'Verbunden mit ${name}';
 	@override String get unknownDevice => 'Unbekanntes Gerät';
+	@override String playSentToDevice({required Object device}) => 'Sent to ${device}';
 	@override late final _Translations$companionRemote$session$de session = _Translations$companionRemote$session$de._(_root);
 	@override late final _Translations$companionRemote$pairing$de pairing = _Translations$companionRemote$pairing$de._(_root);
 	@override late final _Translations$companionRemote$remote$de remote = _Translations$companionRemote$remote$de._(_root);
@@ -4305,6 +4306,7 @@ extension on TranslationsDe {
 			'companionRemote.title' => 'Companion-Fernbedienung',
 			'companionRemote.connectedTo' => ({required Object name}) => 'Verbunden mit ${name}',
 			'companionRemote.unknownDevice' => 'Unbekanntes Gerät',
+			'companionRemote.playSentToDevice' => ({required Object device}) => 'Sent to ${device}',
 			'companionRemote.session.startingServer' => 'Remote-Server wird gestartet...',
 			'companionRemote.session.hostAddress' => 'Host-Adresse',
 			'companionRemote.session.connected' => 'Verbunden',
@@ -4320,9 +4322,9 @@ extension on TranslationsDe {
 			'companionRemote.pairing.discoveryDescription' => 'Plezy-Geräte mit demselben Plex-Konto erscheinen hier',
 			'companionRemote.pairing.hostAddressHint' => '192.168.1.100:48632',
 			'companionRemote.pairing.connecting' => 'Verbinden...',
-			'companionRemote.pairing.searchingForDevices' => 'Suche nach Geräten...',
 			_ => null,
 		} ?? switch (path) {
+			'companionRemote.pairing.searchingForDevices' => 'Suche nach Geräten...',
 			'companionRemote.pairing.noDevicesFound' => 'Keine Geräte in deinem Netzwerk gefunden',
 			'companionRemote.pairing.noDevicesHint' => 'Öffne Plezy auf dem Desktop und nutze dasselbe WLAN',
 			'companionRemote.pairing.availableDevices' => 'Verfügbare Geräte',

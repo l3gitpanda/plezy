@@ -1774,6 +1774,7 @@ class _Translations$companionRemote$ru extends Translations$companionRemote$en {
 	@override String get title => 'Пульт управления';
 	@override String connectedTo({required Object name}) => 'Подключено к ${name}';
 	@override String get unknownDevice => 'Неизвестное устройство';
+	@override String playSentToDevice({required Object device}) => 'Sent to ${device}';
 	@override late final _Translations$companionRemote$session$ru session = _Translations$companionRemote$session$ru._(_root);
 	@override late final _Translations$companionRemote$pairing$ru pairing = _Translations$companionRemote$pairing$ru._(_root);
 	@override late final _Translations$companionRemote$remote$ru remote = _Translations$companionRemote$remote$ru._(_root);
@@ -4325,6 +4326,7 @@ extension on TranslationsRu {
 			'companionRemote.title' => 'Пульт управления',
 			'companionRemote.connectedTo' => ({required Object name}) => 'Подключено к ${name}',
 			'companionRemote.unknownDevice' => 'Неизвестное устройство',
+			'companionRemote.playSentToDevice' => ({required Object device}) => 'Sent to ${device}',
 			'companionRemote.session.startingServer' => 'Запуск удалённого сервера...',
 			'companionRemote.session.hostAddress' => 'Адрес хоста',
 			'companionRemote.session.connected' => 'Подключено',
@@ -4340,9 +4342,9 @@ extension on TranslationsRu {
 			'companionRemote.pairing.discoveryDescription' => 'Устройства Plezy с тем же аккаунтом Plex появятся здесь',
 			'companionRemote.pairing.hostAddressHint' => '192.168.1.100:48632',
 			'companionRemote.pairing.connecting' => 'Подключение...',
-			'companionRemote.pairing.searchingForDevices' => 'Поиск устройств...',
 			_ => null,
 		} ?? switch (path) {
+			'companionRemote.pairing.searchingForDevices' => 'Поиск устройств...',
 			'companionRemote.pairing.noDevicesFound' => 'Устройства в вашей сети не найдены',
 			'companionRemote.pairing.noDevicesHint' => 'Откройте Plezy на компьютере и подключите оба устройства к одной сети Wi-Fi',
 			'companionRemote.pairing.availableDevices' => 'Доступные устройства',

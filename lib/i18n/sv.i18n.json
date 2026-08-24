@@ -577,7 +577,8 @@
     "mediaFailedToDelete": "Det gick inte att ta bort medieobjektet",
     "rate": "Betygsätt",
     "playFromBeginning": "Spela från början",
-    "playVersion": "Spela version..."
+    "playVersion": "Spela version...",
+    "playOnConnectedDevice": ""
   },
   "rateSheet": {
     "title": "Betygsätt",
@@ -1673,6 +1674,7 @@
     "title": "Fjärrkontroll",
     "connectedTo": "Ansluten till ${name}",
     "unknownDevice": "Okänd enhet",
+    "playSentToDevice": "Sent to ${device}",
     "session": {
       "startingServer": "Startar fjärrserver...",
       "hostAddress": "Värdadress",

@@ -1758,6 +1758,7 @@ class _Translations$companionRemote$nb extends Translations$companionRemote$en {
 	@override String get title => 'Fjernkontroll';
 	@override String connectedTo({required Object name}) => 'Tilkoblet ${name}';
 	@override String get unknownDevice => 'Ukjent enhet';
+	@override String playSentToDevice({required Object device}) => 'Sent to ${device}';
 	@override late final _Translations$companionRemote$session$nb session = _Translations$companionRemote$session$nb._(_root);
 	@override late final _Translations$companionRemote$pairing$nb pairing = _Translations$companionRemote$pairing$nb._(_root);
 	@override late final _Translations$companionRemote$remote$nb remote = _Translations$companionRemote$remote$nb._(_root);
@@ -4305,6 +4306,7 @@ extension on TranslationsNb {
 			'companionRemote.title' => 'Fjernkontroll',
 			'companionRemote.connectedTo' => ({required Object name}) => 'Tilkoblet ${name}',
 			'companionRemote.unknownDevice' => 'Ukjent enhet',
+			'companionRemote.playSentToDevice' => ({required Object device}) => 'Sent to ${device}',
 			'companionRemote.session.startingServer' => 'Starter fjernserver...',
 			'companionRemote.session.hostAddress' => 'Vertsadresse',
 			'companionRemote.session.connected' => 'Tilkoblet',
@@ -4320,9 +4322,9 @@ extension on TranslationsNb {
 			'companionRemote.pairing.discoveryDescription' => 'Plezy-enheter med samme Plex-konto vises her',
 			'companionRemote.pairing.hostAddressHint' => '192.168.1.100:48632',
 			'companionRemote.pairing.connecting' => 'Kobler til...',
-			'companionRemote.pairing.searchingForDevices' => 'Søker etter enheter...',
 			_ => null,
 		} ?? switch (path) {
+			'companionRemote.pairing.searchingForDevices' => 'Søker etter enheter...',
 			'companionRemote.pairing.noDevicesFound' => 'Ingen enheter funnet på nettverket ditt',
 			'companionRemote.pairing.noDevicesHint' => 'Åpne Plezy på datamaskinen, og bruk samme Wi-Fi',
 			'companionRemote.pairing.availableDevices' => 'Tilgjengelige enheter',
