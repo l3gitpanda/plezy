@@ -6,7 +6,7 @@ import '../i18n/strings.g.dart';
 import '../utils/platform_detector.dart';
 
 /// Navigation tab identifiers
-enum NavigationTabId { discover, explore, libraries, liveTv, search, downloads, settings }
+enum NavigationTabId { discover, explore, libraries, liveTv, youTube, search, downloads, settings }
 
 /// Represents a navigation tab with its configuration
 class NavigationTab {
@@ -45,11 +45,13 @@ class NavigationTab {
     required bool isOffline,
     bool hasLiveTv = false,
     bool hasExplore = false,
+    bool hasYouTube = false,
   }) {
     return allNavigationTabs.where((tab) {
       if (isOffline && tab.onlineOnly) return false;
       if (tab.id == NavigationTabId.liveTv && !hasLiveTv) return false;
       if (tab.id == NavigationTabId.explore && !hasExplore) return false;
+      if (tab.id == NavigationTabId.youTube && !hasYouTube) return false;
       if (tab.id == NavigationTabId.downloads && PlatformDetector.isAppleTV()) return false;
       return true;
     }).toList();
@@ -64,9 +66,15 @@ class NavigationTab {
     required bool isOffline,
     required bool hasLiveTv,
     bool hasExplore = false,
+    bool hasYouTube = false,
     required NavigationTabId? preferredStartup,
   }) {
-    final tabs = getVisibleTabs(isOffline: isOffline, hasLiveTv: hasLiveTv, hasExplore: hasExplore);
+    final tabs = getVisibleTabs(
+      isOffline: isOffline,
+      hasLiveTv: hasLiveTv,
+      hasExplore: hasExplore,
+      hasYouTube: hasYouTube,
+    );
     if (isOffline && tabs.any((t) => t.id == NavigationTabId.downloads)) {
       return NavigationTabId.downloads;
     }
@@ -82,6 +90,7 @@ String _getHomeLabel() => t.common.home;
 String _getExploreLabel() => t.navigation.explore;
 String _getLibrariesLabel() => t.navigation.libraries;
 String _getLiveTvLabel() => t.navigation.liveTv;
+String _getYouTubeLabel() => t.navigation.youTube;
 String _getSearchLabel() => t.common.search;
 String _getDownloadsLabel() => t.navigation.downloads;
 String _getSettingsLabel() => t.common.settings;
@@ -101,6 +110,13 @@ const allNavigationTabs = [
     onlineOnly: true,
     icon: Symbols.explore_rounded,
     getLabel: _getExploreLabel,
+  ),
+  // Hidden until a Yattee Server is connected (see getVisibleTabs).
+  NavigationTab(
+    id: NavigationTabId.youTube,
+    onlineOnly: true,
+    icon: Symbols.smart_display_rounded,
+    getLabel: _getYouTubeLabel,
   ),
   NavigationTab(id: NavigationTabId.search, onlineOnly: true, icon: Symbols.search_rounded, getLabel: _getSearchLabel),
   NavigationTab(

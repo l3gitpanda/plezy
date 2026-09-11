@@ -39,6 +39,7 @@ import '../profiles/active_profile_provider.dart';
 import '../profiles/plex_home_service.dart';
 import '../profiles/profile_selection_policy.dart';
 import '../providers/catalog_sources_provider.dart';
+import '../providers/yattee/yattee_account_provider.dart';
 import '../providers/account_preferences_controller.dart';
 import '../providers/download_provider.dart';
 import '../providers/multi_server_provider.dart';
@@ -66,6 +67,7 @@ import '../focus/dpad_navigator.dart';
 import '../focus/key_event_utils.dart';
 import 'discover_screen.dart';
 import 'explore_screen.dart';
+import 'yattee/youtube_screen.dart';
 import 'libraries/library_quick_picker_sheet.dart';
 import 'libraries/libraries_screen.dart';
 import 'livetv/live_tv_screen.dart';
@@ -400,10 +402,12 @@ class _MainScreenState extends State<MainScreen>
   OfflineModeProvider? _offlineModeProvider;
   MultiServerProvider? _multiServerProvider;
   CatalogSourcesProvider? _catalogSourcesProvider;
+  YatteeAccountProvider? _yatteeAccountProvider;
   ValueListenable<bool>? _showExploreTabListenable;
   RouteObserver<PageRoute<dynamic>>? _profileRouteObserver;
   bool _lastHasLiveTv = false;
   bool _lastHasExplore = false;
+  bool _lastHasYouTube = false;
 
   /// Whether a reconnection attempt is in progress
   bool _isReconnecting = false;
@@ -528,6 +532,11 @@ class _MainScreenState extends State<MainScreen>
       _lastHasExplore = context.read<CatalogSourcesProvider>().hasAnySource && _showExploreTabSetting;
     } catch (_) {
       _lastHasExplore = false;
+    }
+    try {
+      _lastHasYouTube = context.read<YatteeAccountProvider>().isConnected;
+    } catch (_) {
+      _lastHasYouTube = false;
     }
     // Re-evaluate Explore tab visibility when the appearance toggle flips
     // mid-session; the catalog-sources listener covers source changes.
@@ -986,6 +995,15 @@ class _MainScreenState extends State<MainScreen>
       _catalogSourcesProvider!.addListener(_handleCatalogSourcesChanged);
     }
 
+    // Listen for the YouTube tab appearing/disappearing when a Yattee Server
+    // is connected or disconnected mid-session.
+    final yatteeAccount = context.read<YatteeAccountProvider>();
+    if (yatteeAccount != _yatteeAccountProvider) {
+      _yatteeAccountProvider?.removeListener(_handleYatteeAccountChanged);
+      _yatteeAccountProvider = yatteeAccount;
+      _yatteeAccountProvider!.addListener(_handleYatteeAccountChanged);
+    }
+
     // Wire up Companion Remote command routing (host devices only, once)
     if (!_companionRemoteSetup && PlatformDetector.shouldActAsRemoteHost(context)) {
       _companionRemoteSetup = true;
@@ -1074,6 +1092,7 @@ class _MainScreenState extends State<MainScreen>
     _offlineModeProvider?.removeListener(_handleOfflineStatusChanged);
     _multiServerProvider?.removeListener(_handleLiveTvChanged);
     _catalogSourcesProvider?.removeListener(_handleCatalogSourcesChanged);
+    _yatteeAccountProvider?.removeListener(_handleYatteeAccountChanged);
     _showExploreTabListenable?.removeListener(_handleCatalogSourcesChanged);
     if (_bindingSettleListener != null) {
       _activeProfileForListener?.removeListener(_bindingSettleListener!);
@@ -1232,6 +1251,7 @@ class _MainScreenState extends State<MainScreen>
         onLibrarySelected: _handleLibrariesScreenSelected,
       ),
       NavigationTabId.liveTv => LiveTvScreen(key: _screenKeys[tab]),
+      NavigationTabId.youTube => YouTubeScreen(key: _screenKeys[tab]),
       NavigationTabId.search => SearchScreen(key: _screenKeys[tab]),
       NavigationTabId.downloads => DownloadsScreen(key: _screenKeys[tab]),
       NavigationTabId.settings => SettingsScreen(key: _screenKeys[tab]),
@@ -1250,6 +1270,7 @@ class _MainScreenState extends State<MainScreen>
     isOffline: isOffline,
     hasLiveTv: _hasLiveTv,
     hasExplore: _lastHasExplore,
+    hasYouTube: _lastHasYouTube,
     preferredStartup: SettingsService.instanceOrNull?.read(SettingsService.startupSection),
   );
 
@@ -1331,6 +1352,14 @@ class _MainScreenState extends State<MainScreen>
     final hasExplore = (_catalogSourcesProvider?.hasAnySource ?? false) && _showExploreTabSetting;
     if (hasExplore == _lastHasExplore) return;
     _lastHasExplore = hasExplore;
+
+    _handleTabAvailabilityChanged();
+  }
+
+  void _handleYatteeAccountChanged() {
+    final hasYouTube = _yatteeAccountProvider?.isConnected ?? false;
+    if (hasYouTube == _lastHasYouTube) return;
+    _lastHasYouTube = hasYouTube;
 
     _handleTabAvailabilityChanged();
   }
@@ -1907,7 +1936,12 @@ class _MainScreenState extends State<MainScreen>
   bool get _hasLiveTv => _lastHasLiveTv;
 
   List<NavigationTab> _getVisibleTabs(bool isOffline) {
-    return NavigationTab.getVisibleTabs(isOffline: isOffline, hasLiveTv: _hasLiveTv, hasExplore: _lastHasExplore);
+    return NavigationTab.getVisibleTabs(
+      isOffline: isOffline,
+      hasLiveTv: _hasLiveTv,
+      hasExplore: _lastHasExplore,
+      hasYouTube: _lastHasYouTube,
+    );
   }
 
   List<NavigationTab> _getBottomNavigationTabs(BuildContext context) {

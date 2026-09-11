@@ -96,7 +96,7 @@ class VideoPlayerRoute extends PageRouteBuilder<bool> {
   }
 }
 
-enum VideoPlayerRouteKind { vod, liveTv }
+enum VideoPlayerRouteKind { vod, liveTv, youTube }
 
 @immutable
 final class VideoPlayerLaunchIdentity {

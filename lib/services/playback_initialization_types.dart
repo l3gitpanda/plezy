@@ -105,6 +105,12 @@ enum TranscodeFallbackReason {
 class PlaybackInitializationResult {
   final List<MediaVersion> availableVersions;
   final String? videoUrl;
+
+  /// Audio-only stream the player attaches alongside a video-only
+  /// [videoUrl] (mpv `audio-files`, ExoPlayer `MergingMediaSource`).
+  /// YouTube's full-resolution renditions ship video and audio as separate
+  /// files; media servers never set this.
+  final String? externalAudioUrl;
   final MediaSourceInfo? mediaInfo;
 
   /// Complete sidecar catalog for this source. Callers resolve the active
@@ -155,6 +161,7 @@ class PlaybackInitializationResult {
   PlaybackInitializationResult({
     required this.availableVersions,
     this.videoUrl,
+    this.externalAudioUrl,
     this.mediaInfo,
     this.subtitleSidecars = const [],
     this.isOffline = false,

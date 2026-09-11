@@ -1273,7 +1273,8 @@
     "libraries": "Kitabxanalar",
     "downloads": "Yükləmələr",
     "liveTv": "Canlı TV",
-    "explore": "Kəşf et"
+    "explore": "Kəşf et",
+    "youTube": ""
   },
   "explore": {
     "title": "Kəşf et",
@@ -2186,6 +2187,55 @@
     "permissionDenied": "Seerr bu əməliyyatı rədd etdi: hesabınızda artıq tələb olunan icazə yoxdur",
     "permissionRevoked": "Bunu sorğulamaq üçün artıq icazəniz yoxdur"
   },
+  "yattee": {
+    "title": "",
+    "connectTitle": "",
+    "serverUrl": "",
+    "serverUrlHelper": "",
+    "checkServer": "",
+    "instance": "",
+    "disconnectConfirm": "",
+    "disconnectConfirmBody": "",
+    "couldNotReach": "",
+    "noInstanceAtUrl": "",
+    "behindAuthProxy": "",
+    "invalidUrl": "",
+    "tooManyAttempts": "",
+    "quality": "",
+    "qualityDescription": "",
+    "qualityBest": "",
+    "quality2160": "",
+    "quality1440": "",
+    "quality1080": "",
+    "quality720": "",
+    "quality480": "",
+    "quality360": "",
+    "rows": {
+      "subscriptions": "",
+      "trending": "",
+      "popular": ""
+    },
+    "searchHint": "",
+    "searchPrompt": "",
+    "searchEmpty": "",
+    "searchFailed": "",
+    "subscribe": "",
+    "unsubscribe": "",
+    "subscribed": "",
+    "unsubscribed": "",
+    "goToChannel": "",
+    "noSubscriptions": "",
+    "feedFetching": "",
+    "emptyMessage": "",
+    "loadFailed": "",
+    "channelLoadFailed": "",
+    "videoLoadFailed": "",
+    "liveUnsupported": "",
+    "noPlayableStream": "",
+    "views": "",
+    "subscribers": "",
+    "connectedAs": ""
+  },
   "services": {
     "title": "Xidmətlər",
     "hubSubtitle": "İzləmə tərəqqisini eyniləşdirin və yeni başlıqlar sorğulayın.",
@@ -2202,7 +2252,8 @@
       "anilist": "AniList",
       "simkl": "Simkl",
       "seerr": "Seerr",
-      "mdblist": "MDBList"
+      "mdblist": "MDBList",
+      "yattee": ""
     },
     "deviceCode": {
       "title": "Plezy-ni ${service} üzərində aktivləşdirin",
