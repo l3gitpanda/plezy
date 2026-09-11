@@ -466,24 +466,7 @@ extension _VideoPlayerPlaybackServiceMethods on VideoPlayerScreenState {
 
     // Set up media control event handling
     _mediaControlSubscriptions.add(
-      mediaControlsManager.controlEvents.listen((event) {
-        if (_mediaControls.suspendedForTvBackground) {
-          appLogger.d('Media control: ${event.runtimeType} ignored while Android TV background-suspended');
-          return;
-        }
-
-        if (_isAppleAudioSessionEvent(event)) {
-          unawaited(_handleAppleAudioSessionEvent(event));
-          return;
-        }
-
-        if (PlatformDetector.isAppleTV() && _isPlaybackMediaControlEvent(event)) {
-          appLogger.d('Media control: ${event.runtimeType} ignored on Apple TV; using native remote bridge');
-          return;
-        }
-
-        mediaControlRouter.route(event);
-      }),
+      mediaControlsManager.controlEvents.listen((event) => _handleMediaControlEvent(event, mediaControlRouter)),
     );
 
     // Wire progress tracker, media-controls metadata, and the
@@ -539,6 +522,37 @@ extension _VideoPlayerPlaybackServiceMethods on VideoPlayerScreenState {
         unawaited(_mediaControls.syncAvailability());
       }),
     );
+  }
+
+  /// Admission policy for one OS media-session event, ahead of the router's
+  /// own authorization gates.
+  void _handleMediaControlEvent(MediaControlEvent event, MediaControlRouter router) {
+    if (_mediaControls.suspendedForTvBackground) {
+      appLogger.d('Media control: ${event.runtimeType} ignored while Android TV background-suspended');
+      return;
+    }
+
+    if (_isAppleAudioSessionEvent(event)) {
+      unawaited(_handleAppleAudioSessionEvent(event));
+      return;
+    }
+
+    // tvOS hands one Siri Remote Play/Pause press to exactly one of two
+    // surfaces, and picks by whether the audio session is active: an active
+    // session steals the press from the responder chain, so it arrives here
+    // as an MPRemoteCommandCenter command, while a press made with playback
+    // already paused reaches the native bridge instead. Dropping this surface
+    // outright therefore did not "use the native bridge" — it killed
+    // whichever direction of the button tvOS chose to deliver through the
+    // command centre, which is why the remote could pause and then refuse to
+    // resume. Both surfaces are honoured now; the arbiter collapses the
+    // press that lands on both.
+    if (PlatformDetector.isAppleTV() && _isPlaybackMediaControlEvent(event) && !_appleTvTransport.accept()) {
+      appLogger.d('Media control: ${event.runtimeType} ignored on Apple TV; already handled by the native bridge');
+      return;
+    }
+
+    router.route(event);
   }
 
   /// The screen's authorization + command policy for OS media-session events.
