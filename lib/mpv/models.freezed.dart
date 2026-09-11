@@ -2154,7 +2154,7 @@ as String,
 /// @nodoc
 mixin _$Media {
 
- String get uri; Map<String, String>? get headers; Duration? get start;
+ String get uri; Map<String, String>? get headers; Duration? get start; String? get audioUri;
 /// Create a copy of Media
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -2165,16 +2165,16 @@ $MediaCopyWith<Media> get copyWith => _$MediaCopyWithImpl<Media>(this as Media, 
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is Media&&(identical(other.uri, uri) || other.uri == uri)&&const DeepCollectionEquality().equals(other.headers, headers)&&(identical(other.start, start) || other.start == start));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is Media&&(identical(other.uri, uri) || other.uri == uri)&&const DeepCollectionEquality().equals(other.headers, headers)&&(identical(other.start, start) || other.start == start)&&(identical(other.audioUri, audioUri) || other.audioUri == audioUri));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,uri,const DeepCollectionEquality().hash(headers),start);
+int get hashCode => Object.hash(runtimeType,uri,const DeepCollectionEquality().hash(headers),start,audioUri);
 
 @override
 String toString() {
-  return 'Media(uri: $uri, headers: $headers, start: $start)';
+  return 'Media(uri: $uri, headers: $headers, start: $start, audioUri: $audioUri)';
 }
 
 
@@ -2185,7 +2185,7 @@ abstract mixin class $MediaCopyWith<$Res>  {
   factory $MediaCopyWith(Media value, $Res Function(Media) _then) = _$MediaCopyWithImpl;
 @useResult
 $Res call({
- String uri, Map<String, String>? headers, Duration? start
+ String uri, Map<String, String>? headers, Duration? start, String? audioUri
 });
 
 
@@ -2202,12 +2202,13 @@ class _$MediaCopyWithImpl<$Res>
 
 /// Create a copy of Media
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? uri = null,Object? headers = freezed,Object? start = freezed,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? uri = null,Object? headers = freezed,Object? start = freezed,Object? audioUri = freezed,}) {
   return _then(_self.copyWith(
 uri: null == uri ? _self.uri : uri // ignore: cast_nullable_to_non_nullable
 as String,headers: freezed == headers ? _self.headers : headers // ignore: cast_nullable_to_non_nullable
 as Map<String, String>?,start: freezed == start ? _self.start : start // ignore: cast_nullable_to_non_nullable
-as Duration?,
+as Duration?,audioUri: freezed == audioUri ? _self.audioUri : audioUri // ignore: cast_nullable_to_non_nullable
+as String?,
   ));
 }
 
@@ -2289,10 +2290,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String uri,  Map<String, String>? headers,  Duration? start)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String uri,  Map<String, String>? headers,  Duration? start,  String? audioUri)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _Media() when $default != null:
-return $default(_that.uri,_that.headers,_that.start);case _:
+return $default(_that.uri,_that.headers,_that.start,_that.audioUri);case _:
   return orElse();
 
 }
@@ -2310,10 +2311,10 @@ return $default(_that.uri,_that.headers,_that.start);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String uri,  Map<String, String>? headers,  Duration? start)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String uri,  Map<String, String>? headers,  Duration? start,  String? audioUri)  $default,) {final _that = this;
 switch (_that) {
 case _Media():
-return $default(_that.uri,_that.headers,_that.start);}
+return $default(_that.uri,_that.headers,_that.start,_that.audioUri);}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -2327,10 +2328,10 @@ return $default(_that.uri,_that.headers,_that.start);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String uri,  Map<String, String>? headers,  Duration? start)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String uri,  Map<String, String>? headers,  Duration? start,  String? audioUri)?  $default,) {final _that = this;
 switch (_that) {
 case _Media() when $default != null:
-return $default(_that.uri,_that.headers,_that.start);case _:
+return $default(_that.uri,_that.headers,_that.start,_that.audioUri);case _:
   return null;
 
 }
@@ -2342,7 +2343,7 @@ return $default(_that.uri,_that.headers,_that.start);case _:
 
 
 class _Media implements Media {
-  const _Media(this.uri, {final  Map<String, String>? headers, this.start}): _headers = headers;
+  const _Media(this.uri, {final  Map<String, String>? headers, this.start, this.audioUri}): _headers = headers;
   
 
 @override final  String uri;
@@ -2356,6 +2357,7 @@ class _Media implements Media {
 }
 
 @override final  Duration? start;
+@override final  String? audioUri;
 
 /// Create a copy of Media
 /// with the given fields replaced by the non-null parameter values.
@@ -2367,16 +2369,16 @@ _$MediaCopyWith<_Media> get copyWith => __$MediaCopyWithImpl<_Media>(this, _$ide
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _Media&&(identical(other.uri, uri) || other.uri == uri)&&const DeepCollectionEquality().equals(other._headers, _headers)&&(identical(other.start, start) || other.start == start));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _Media&&(identical(other.uri, uri) || other.uri == uri)&&const DeepCollectionEquality().equals(other._headers, _headers)&&(identical(other.start, start) || other.start == start)&&(identical(other.audioUri, audioUri) || other.audioUri == audioUri));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,uri,const DeepCollectionEquality().hash(_headers),start);
+int get hashCode => Object.hash(runtimeType,uri,const DeepCollectionEquality().hash(_headers),start,audioUri);
 
 @override
 String toString() {
-  return 'Media(uri: $uri, headers: $headers, start: $start)';
+  return 'Media(uri: $uri, headers: $headers, start: $start, audioUri: $audioUri)';
 }
 
 
@@ -2387,7 +2389,7 @@ abstract mixin class _$MediaCopyWith<$Res> implements $MediaCopyWith<$Res> {
   factory _$MediaCopyWith(_Media value, $Res Function(_Media) _then) = __$MediaCopyWithImpl;
 @override @useResult
 $Res call({
- String uri, Map<String, String>? headers, Duration? start
+ String uri, Map<String, String>? headers, Duration? start, String? audioUri
 });
 
 
@@ -2404,12 +2406,13 @@ class __$MediaCopyWithImpl<$Res>
 
 /// Create a copy of Media
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? uri = null,Object? headers = freezed,Object? start = freezed,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? uri = null,Object? headers = freezed,Object? start = freezed,Object? audioUri = freezed,}) {
   return _then(_Media(
 null == uri ? _self.uri : uri // ignore: cast_nullable_to_non_nullable
 as String,headers: freezed == headers ? _self._headers : headers // ignore: cast_nullable_to_non_nullable
 as Map<String, String>?,start: freezed == start ? _self.start : start // ignore: cast_nullable_to_non_nullable
-as Duration?,
+as Duration?,audioUri: freezed == audioUri ? _self.audioUri : audioUri // ignore: cast_nullable_to_non_nullable
+as String?,
   ));
 }
 

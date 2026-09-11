@@ -109,6 +109,7 @@ import 'video_player/tv_background_suspend_policy.dart';
 import 'video_player/tv_background_suspend_state.dart';
 import 'video_player/visual_effects_controller.dart';
 import 'video_player/widgets/player_prompt_overlays.dart';
+import 'video_player/youtube_session_args.dart';
 import '../widgets/overlay_sheet.dart';
 import '../widgets/video_controls/player_chrome_controller.dart';
 import '../widgets/video_controls/video_controls.dart';
@@ -139,6 +140,7 @@ part 'video_player/parts/playback_start.dart';
 part 'video_player/parts/seeking.dart';
 part 'video_player/parts/build.dart';
 part 'video_player/parts/watch_together.dart';
+part 'video_player/parts/youtube.dart';
 
 final WakelockController _wakelockController = WakelockController();
 
@@ -420,6 +422,12 @@ class VideoPlayerScreen extends StatefulWidget {
 
   bool get isLive => live != null;
 
+  /// Present iff this screen plays a YouTube video through a Yattee Server;
+  /// carries the pre-resolved streams (see [YouTubeSessionArgs]).
+  final YouTubeSessionArgs? youtube;
+
+  bool get isYouTube => youtube != null;
+
   const VideoPlayerScreen({
     super.key,
     required this.metadata,
@@ -433,6 +441,7 @@ class VideoPlayerScreen extends StatefulWidget {
     this.selectedQualityPreset,
     this.selectedAudioStreamId,
     this.live,
+    this.youtube,
     this.watchTogetherLease,
     this.initialPosition,
     this.strictMediaSelection = false,
@@ -1114,7 +1123,11 @@ class VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindin
         selectedMediaSourceId: widget.selectedMediaSourceId,
         selectedQualityPreset: widget.selectedQualityPreset,
         isOffline: widget.isOffline,
-        routeKind: widget.isLive ? VideoPlayerRouteKind.liveTv : VideoPlayerRouteKind.vod,
+        routeKind: widget.isYouTube
+            ? VideoPlayerRouteKind.youTube
+            : widget.isLive
+            ? VideoPlayerRouteKind.liveTv
+            : VideoPlayerRouteKind.vod,
       ),
     );
     _effectiveSelectedMediaIndex = widget.selectedMediaIndex;
@@ -1438,7 +1451,14 @@ class VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindin
       // and the reads below.
       // Skipped for live TV (has its own tune path — only the quality preset
       // is resolved below) and offline (its own branch in _startPlayback).
-      if (!widget.isLive && !_offlineLibraryMode) {
+      if (widget.isYouTube) {
+        // YouTube: the streams were resolved before this screen was pushed
+        // (see YouTubeSessionArgs) and there is no media server to consult,
+        // transcode on, or report to.
+        _serverSupportsTranscoding = false;
+        _selectedQualityPreset = TranscodeQualityPreset.original;
+        _playbackDataFuture = Future.value(widget.youtube!.toPlaybackContext(_currentMetadata));
+      } else if (!widget.isLive && !_offlineLibraryMode) {
         // Backend-neutral lookup so Jellyfin items also flow through here.
         // Plex-specific transcoder caching is gated on capabilities below;
         // Jellyfin's `streamHeaders` is empty because it embeds api_key in

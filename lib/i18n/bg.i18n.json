@@ -1226,7 +1226,8 @@
     "libraries": "Библиотеки",
     "downloads": "Изтегляния",
     "liveTv": "TV на живо",
-    "explore": "Разгледай"
+    "explore": "Разгледай",
+    "youTube": ""
   },
   "explore": {
     "title": "Разгледай",
@@ -2126,6 +2127,55 @@
     "permissionDenied": "",
     "permissionRevoked": ""
   },
+  "yattee": {
+    "title": "",
+    "connectTitle": "",
+    "serverUrl": "",
+    "serverUrlHelper": "",
+    "checkServer": "",
+    "instance": "",
+    "disconnectConfirm": "",
+    "disconnectConfirmBody": "",
+    "couldNotReach": "",
+    "noInstanceAtUrl": "",
+    "behindAuthProxy": "",
+    "invalidUrl": "",
+    "tooManyAttempts": "",
+    "quality": "",
+    "qualityDescription": "",
+    "qualityBest": "",
+    "quality2160": "",
+    "quality1440": "",
+    "quality1080": "",
+    "quality720": "",
+    "quality480": "",
+    "quality360": "",
+    "rows": {
+      "subscriptions": "",
+      "trending": "",
+      "popular": ""
+    },
+    "searchHint": "",
+    "searchPrompt": "",
+    "searchEmpty": "",
+    "searchFailed": "",
+    "subscribe": "",
+    "unsubscribe": "",
+    "subscribed": "",
+    "unsubscribed": "",
+    "goToChannel": "",
+    "noSubscriptions": "",
+    "feedFetching": "",
+    "emptyMessage": "",
+    "loadFailed": "",
+    "channelLoadFailed": "",
+    "videoLoadFailed": "",
+    "liveUnsupported": "",
+    "noPlayableStream": "",
+    "views": "",
+    "subscribers": "",
+    "connectedAs": ""
+  },
   "services": {
     "title": "Услуги",
     "hubSubtitle": "Синхронизирай прогреса на гледане и заявявай нови заглавия.",
@@ -2142,7 +2192,8 @@
       "anilist": "AniList",
       "simkl": "Simkl",
       "seerr": "Seerr",
-      "mdblist": "MDBList"
+      "mdblist": "MDBList",
+      "yattee": ""
     },
     "deviceCode": {
       "title": "Активиране на Plezy в ${service}",

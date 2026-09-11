@@ -89,6 +89,7 @@ class Translations with BaseTranslations<AppLocale, Translations> {
 	late final Translations$serverTasks$en serverTasks = Translations$serverTasks$en.internal(_root);
 	late final Translations$trakt$en trakt = Translations$trakt$en.internal(_root);
 	late final Translations$seerr$en seerr = Translations$seerr$en.internal(_root);
+	late final Translations$yattee$en yattee = Translations$yattee$en.internal(_root);
 	late final Translations$services$en services = Translations$services$en.internal(_root);
 	late final Translations$addServer$en addServer = Translations$addServer$en.internal(_root);
 }
@@ -3404,6 +3405,9 @@ class Translations$navigation$en {
 
 	/// en: 'Explore'
 	String get explore => 'Explore';
+
+	/// en: 'YouTube'
+	String get youTube => 'YouTube';
 }
 
 // Path: explore
@@ -5358,6 +5362,143 @@ class Translations$seerr$en {
 	String get permissionRevoked => 'You no longer have permission to request this';
 }
 
+// Path: yattee
+class Translations$yattee$en {
+	Translations$yattee$en.internal(this._root);
+
+	final Translations _root; // ignore: unused_field
+
+	// Translations
+
+	/// en: 'YouTube'
+	String get title => 'YouTube';
+
+	/// en: 'Connect Yattee Server'
+	String get connectTitle => 'Connect Yattee Server';
+
+	/// en: 'Server URL'
+	String get serverUrl => 'Server URL';
+
+	/// en: 'The address of your Yattee Server instance'
+	String get serverUrlHelper => 'The address of your Yattee Server instance';
+
+	/// en: 'Continue'
+	String get checkServer => 'Continue';
+
+	/// en: 'Instance'
+	String get instance => 'Instance';
+
+	/// en: 'Disconnect Yattee Server?'
+	String get disconnectConfirm => 'Disconnect Yattee Server?';
+
+	/// en: 'Plezy will forget this Yattee Server and your YouTube subscriptions. Reconnect any time.'
+	String get disconnectConfirmBody => 'Plezy will forget this Yattee Server and your YouTube subscriptions. Reconnect any time.';
+
+	/// en: 'Could not reach ${url}: ${error}'
+	String couldNotReach({required Object url, required Object error}) => 'Could not reach ${url}: ${error}';
+
+	/// en: 'No Yattee Server at ${url}'
+	String noInstanceAtUrl({required Object url}) => 'No Yattee Server at ${url}';
+
+	/// en: 'An authenticating reverse proxy answered instead of Yattee Server. Use an address that reaches the server directly.'
+	String get behindAuthProxy => 'An authenticating reverse proxy answered instead of Yattee Server. Use an address that reaches the server directly.';
+
+	/// en: 'Enter a server address like https://yattee.example.com'
+	String get invalidUrl => 'Enter a server address like https://yattee.example.com';
+
+	/// en: 'Too many failed sign-in attempts. Wait a minute and try again.'
+	String get tooManyAttempts => 'Too many failed sign-in attempts. Wait a minute and try again.';
+
+	/// en: 'Maximum quality'
+	String get quality => 'Maximum quality';
+
+	/// en: 'Caps the video stream Plezy picks. Audio always plays at the best available quality.'
+	String get qualityDescription => 'Caps the video stream Plezy picks. Audio always plays at the best available quality.';
+
+	/// en: 'Best available'
+	String get qualityBest => 'Best available';
+
+	/// en: '2160p (4K)'
+	String get quality2160 => '2160p (4K)';
+
+	/// en: '1440p'
+	String get quality1440 => '1440p';
+
+	/// en: '1080p'
+	String get quality1080 => '1080p';
+
+	/// en: '720p'
+	String get quality720 => '720p';
+
+	/// en: '480p'
+	String get quality480 => '480p';
+
+	/// en: '360p'
+	String get quality360 => '360p';
+
+	late final Translations$yattee$rows$en rows = Translations$yattee$rows$en.internal(_root);
+
+	/// en: 'Search YouTube'
+	String get searchHint => 'Search YouTube';
+
+	/// en: 'Search YouTube for videos and channels'
+	String get searchPrompt => 'Search YouTube for videos and channels';
+
+	/// en: 'No results for "${query}"'
+	String searchEmpty({required Object query}) => 'No results for "${query}"';
+
+	/// en: 'Search failed. Try again.'
+	String get searchFailed => 'Search failed. Try again.';
+
+	/// en: 'Subscribe'
+	String get subscribe => 'Subscribe';
+
+	/// en: 'Unsubscribe'
+	String get unsubscribe => 'Unsubscribe';
+
+	/// en: 'Subscribed to ${channel}'
+	String subscribed({required Object channel}) => 'Subscribed to ${channel}';
+
+	/// en: 'Unsubscribed from ${channel}'
+	String unsubscribed({required Object channel}) => 'Unsubscribed from ${channel}';
+
+	/// en: 'Go to channel'
+	String get goToChannel => 'Go to channel';
+
+	/// en: 'Subscribe to channels to see their latest uploads here.'
+	String get noSubscriptions => 'Subscribe to channels to see their latest uploads here.';
+
+	/// en: 'The server is still fetching your subscriptions. Pull to refresh in a moment.'
+	String get feedFetching => 'The server is still fetching your subscriptions. Pull to refresh in a moment.';
+
+	/// en: 'Nothing to show yet.'
+	String get emptyMessage => 'Nothing to show yet.';
+
+	/// en: 'Couldn't load YouTube: ${error}'
+	String loadFailed({required Object error}) => 'Couldn\'t load YouTube: ${error}';
+
+	/// en: 'Couldn't load this channel: ${error}'
+	String channelLoadFailed({required Object error}) => 'Couldn\'t load this channel: ${error}';
+
+	/// en: 'Couldn't load this video: ${error}'
+	String videoLoadFailed({required Object error}) => 'Couldn\'t load this video: ${error}';
+
+	/// en: 'Live streams aren't supported yet.'
+	String get liveUnsupported => 'Live streams aren\'t supported yet.';
+
+	/// en: 'No playable stream was found for this video.'
+	String get noPlayableStream => 'No playable stream was found for this video.';
+
+	/// en: '${count} views'
+	String views({required Object count}) => '${count} views';
+
+	/// en: '${count} subscribers'
+	String subscribers({required Object count}) => '${count} subscribers';
+
+	/// en: 'Signed in as ${username}'
+	String connectedAs({required Object username}) => 'Signed in as ${username}';
+}
+
 // Path: services
 class Translations$services$en {
 	Translations$services$en.internal(this._root);
@@ -6894,6 +7035,24 @@ class Translations$companionRemote$errors$en {
 	String get connectionLost => 'Connection lost';
 }
 
+// Path: yattee.rows
+class Translations$yattee$rows$en {
+	Translations$yattee$rows$en.internal(this._root);
+
+	final Translations _root; // ignore: unused_field
+
+	// Translations
+
+	/// en: 'Subscriptions'
+	String get subscriptions => 'Subscriptions';
+
+	/// en: 'Trending'
+	String get trending => 'Trending';
+
+	/// en: 'Popular'
+	String get popular => 'Popular';
+}
+
 // Path: services.names
 class Translations$services$names$en {
 	Translations$services$names$en.internal(this._root);
@@ -6916,6 +7075,9 @@ class Translations$services$names$en {
 
 	/// en: 'MDBList'
 	String get mdblist => 'MDBList';
+
+	/// en: 'Yattee Server'
+	String get yattee => 'Yattee Server';
 }
 
 // Path: services.deviceCode
@@ -8156,6 +8318,7 @@ extension on Translations {
 			'navigation.downloads' => 'Downloads',
 			'navigation.liveTv' => 'Live TV',
 			'navigation.explore' => 'Explore',
+			'navigation.youTube' => 'YouTube',
 			'explore.title' => 'Explore',
 			'explore.selectSource' => 'Select source',
 			'explore.rows.watchlist' => 'Watchlist',
@@ -8570,9 +8733,9 @@ extension on Translations {
 			'downloads.deleting' => 'Deleting...',
 			'downloads.deletingWithProgress' => ({required Object title, required Object current, required Object total}) => 'Deleting ${title}... (${current} of ${total})',
 			'downloads.queuedTooltip' => 'Queued',
-			'downloads.queuedFilesTooltip' => ({required Object files}) => 'Queued ${files}',
 			_ => null,
 		} ?? switch (path) {
+			'downloads.queuedFilesTooltip' => ({required Object files}) => 'Queued ${files}',
 			'downloads.downloadingTooltip' => 'Downloading...',
 			'downloads.downloadingFilesTooltip' => ({required Object files}) => 'Downloading ${files}',
 			'downloads.noDownloadsTree' => 'No downloads',
@@ -8968,6 +9131,51 @@ extension on Translations {
 			'seerr.sessionRejectedAfterReauth' => 'The session was rejected after signing in again',
 			'seerr.permissionDenied' => 'Seerr denied this action: your account no longer has the required permission',
 			'seerr.permissionRevoked' => 'You no longer have permission to request this',
+			'yattee.title' => 'YouTube',
+			'yattee.connectTitle' => 'Connect Yattee Server',
+			'yattee.serverUrl' => 'Server URL',
+			'yattee.serverUrlHelper' => 'The address of your Yattee Server instance',
+			'yattee.checkServer' => 'Continue',
+			'yattee.instance' => 'Instance',
+			'yattee.disconnectConfirm' => 'Disconnect Yattee Server?',
+			'yattee.disconnectConfirmBody' => 'Plezy will forget this Yattee Server and your YouTube subscriptions. Reconnect any time.',
+			'yattee.couldNotReach' => ({required Object url, required Object error}) => 'Could not reach ${url}: ${error}',
+			'yattee.noInstanceAtUrl' => ({required Object url}) => 'No Yattee Server at ${url}',
+			'yattee.behindAuthProxy' => 'An authenticating reverse proxy answered instead of Yattee Server. Use an address that reaches the server directly.',
+			'yattee.invalidUrl' => 'Enter a server address like https://yattee.example.com',
+			'yattee.tooManyAttempts' => 'Too many failed sign-in attempts. Wait a minute and try again.',
+			'yattee.quality' => 'Maximum quality',
+			'yattee.qualityDescription' => 'Caps the video stream Plezy picks. Audio always plays at the best available quality.',
+			'yattee.qualityBest' => 'Best available',
+			'yattee.quality2160' => '2160p (4K)',
+			'yattee.quality1440' => '1440p',
+			'yattee.quality1080' => '1080p',
+			'yattee.quality720' => '720p',
+			'yattee.quality480' => '480p',
+			'yattee.quality360' => '360p',
+			'yattee.rows.subscriptions' => 'Subscriptions',
+			'yattee.rows.trending' => 'Trending',
+			'yattee.rows.popular' => 'Popular',
+			'yattee.searchHint' => 'Search YouTube',
+			'yattee.searchPrompt' => 'Search YouTube for videos and channels',
+			'yattee.searchEmpty' => ({required Object query}) => 'No results for "${query}"',
+			'yattee.searchFailed' => 'Search failed. Try again.',
+			'yattee.subscribe' => 'Subscribe',
+			'yattee.unsubscribe' => 'Unsubscribe',
+			'yattee.subscribed' => ({required Object channel}) => 'Subscribed to ${channel}',
+			'yattee.unsubscribed' => ({required Object channel}) => 'Unsubscribed from ${channel}',
+			'yattee.goToChannel' => 'Go to channel',
+			'yattee.noSubscriptions' => 'Subscribe to channels to see their latest uploads here.',
+			'yattee.feedFetching' => 'The server is still fetching your subscriptions. Pull to refresh in a moment.',
+			'yattee.emptyMessage' => 'Nothing to show yet.',
+			'yattee.loadFailed' => ({required Object error}) => 'Couldn\'t load YouTube: ${error}',
+			'yattee.channelLoadFailed' => ({required Object error}) => 'Couldn\'t load this channel: ${error}',
+			'yattee.videoLoadFailed' => ({required Object error}) => 'Couldn\'t load this video: ${error}',
+			'yattee.liveUnsupported' => 'Live streams aren\'t supported yet.',
+			'yattee.noPlayableStream' => 'No playable stream was found for this video.',
+			'yattee.views' => ({required Object count}) => '${count} views',
+			'yattee.subscribers' => ({required Object count}) => '${count} subscribers',
+			'yattee.connectedAs' => ({required Object username}) => 'Signed in as ${username}',
 			'services.title' => 'Services',
 			'services.hubSubtitle' => 'Sync watch progress and request new titles.',
 			'services.integrations' => 'Integrations',
@@ -8983,6 +9191,7 @@ extension on Translations {
 			'services.names.simkl' => 'Simkl',
 			'services.names.seerr' => 'Seerr',
 			'services.names.mdblist' => 'MDBList',
+			'services.names.yattee' => 'Yattee Server',
 			'services.deviceCode.title' => ({required Object service}) => 'Activate Plezy on ${service}',
 			'services.deviceCode.instructions' => 'Scan the QR code, or visit the address below and enter this code:',
 			'services.deviceCode.openToActivate' => ({required Object service}) => 'Open ${service} to activate',
@@ -9038,6 +9247,8 @@ extension on Translations {
 			'addServer.authResponseNotJson' => 'The authentication response was not valid JSON',
 			'addServer.authResponseIncomplete' => 'The sign-in response from the server was incomplete',
 			'addServer.quickConnectRejected' => 'Quick Connect was rejected by the server',
+			_ => null,
+		} ?? switch (path) {
 			'addServer.quickConnectNotJson' => 'The Quick Connect response was not valid JSON',
 			'addServer.quickConnectMissingFields' => 'The Quick Connect response is missing a code or secret',
 			'addServer.quickConnectPollRejected' => 'Quick Connect polling was rejected by the server',

@@ -12,6 +12,7 @@ import '../focus/focus_theme.dart';
 import '../focus/input_mode_tracker.dart';
 import '../i18n/app_locale_utils.dart';
 import '../media/catalog_item_ref.dart';
+import '../models/yattee/youtube_media_item.dart';
 import '../media/media_item.dart';
 import '../media/media_item_types.dart';
 import '../media/media_kind.dart';
@@ -495,8 +496,11 @@ class MediaCardState extends State<MediaCard> with ContextMenuTapMixin<MediaCard
     // Catalog stand-ins (Explore tab) have no server-backed actions — every
     // entry in the context menu would break on serverId == null. Long-press
     // no-ops on them; taps route through the catalog branch in
-    // navigateToMediaItem.
-    if ((item is MediaItem && item.isCatalogItem) || widget.onLongPress != null) return cardWidget;
+    // navigateToMediaItem. YouTube stand-ins are serverless the same way and
+    // get their own long-press sheet from the surfaces that render them.
+    if ((item is MediaItem && (item.isCatalogItem || item.isYouTubeItem)) || widget.onLongPress != null) {
+      return cardWidget;
+    }
 
     // MediaContextMenu as a non-widget helper — only wrap with its key for
     // programmatic context menu access; gesture callbacks are on InkWell directly.

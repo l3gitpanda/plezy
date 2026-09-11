@@ -211,6 +211,7 @@ class PlayerAndroid extends PlayerBase {
         'autoPlay': play,
         'isLive': isLive,
         if (_contentFrameRate != null) 'contentFrameRate': _contentFrameRate,
+        if (media.audioUri case final audioUri? when audioUri.isNotEmpty) 'externalAudioUri': audioUri,
         if (externalSubtitles != null && externalSubtitles.isNotEmpty)
           'externalSubtitles': externalSubtitles
               .where((s) => s.uri?.isNotEmpty == true)

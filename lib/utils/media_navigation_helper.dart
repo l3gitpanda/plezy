@@ -6,6 +6,7 @@ import '../media/media_item.dart';
 import '../media/media_item_types.dart';
 import '../media/media_kind.dart';
 import '../media/media_playlist.dart';
+import '../models/yattee/youtube_media_item.dart';
 import '../screens/collection_detail_screen.dart';
 import '../screens/main_screen.dart';
 import '../screens/media_detail_screen.dart';
@@ -13,6 +14,7 @@ import '../screens/playlist/playlist_detail_screen.dart';
 import '../services/settings_service.dart';
 import '../utils/global_key_utils.dart';
 import 'catalog_navigation_helper.dart';
+import '../screens/yattee/youtube_video_actions.dart';
 import 'music_navigation.dart';
 import 'plex_library_section_utils.dart';
 import 'video_player_navigation.dart';
@@ -181,6 +183,12 @@ Future<MediaNavigationResult> navigateToMediaItem(
     await navigateToCatalogItem(context, catalogItem);
     return MediaNavigationResult.navigated;
   }
+  // YouTube stand-ins (YouTube tab, its search and View All) are serverless
+  // too: a video plays through the Yattee flow, a channel opens its page.
+  if (mi.isYouTubeItem) {
+    await activateYouTubeItem(context, mi);
+    return MediaNavigationResult.navigated;
+  }
   final settings = SettingsService.instanceOrNull;
   final continueWatchingAction = settings?.read(SettingsService.continueWatchingAction) ?? ContinueWatchingAction.play;
   final episodeAction = settings?.read(SettingsService.episodeAction) ?? EpisodeAction.play;
@@ -274,6 +282,10 @@ Future<MediaNavigationResult> navigateToMediaItemDetails(
     final catalogItem = mi.catalogItem;
     if (catalogItem == null) return MediaNavigationResult.unsupported;
     await navigateToCatalogItem(context, catalogItem);
+    return MediaNavigationResult.navigated;
+  }
+  if (mi.isYouTubeItem) {
+    await activateYouTubeItem(context, mi);
     return MediaNavigationResult.navigated;
   }
 

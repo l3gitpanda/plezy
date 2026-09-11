@@ -49,7 +49,7 @@ PageRouteBuilder<bool> buildVideoPlayerRoute({required WidgetBuilder builder}) {
   );
 }
 
-enum VideoPlayerRouteKind { vod, liveTv }
+enum VideoPlayerRouteKind { vod, liveTv, youTube }
 
 @immutable
 final class VideoPlayerLaunchIdentity {

@@ -484,7 +484,7 @@ extension _VideoPlayerReloadMethods on VideoPlayerScreenState {
         selectedMediaSourceId: selectedMediaSourceId,
         selectedQualityPreset: targetQualityPreset,
         isOffline: _offlineLibraryMode,
-        routeKind: VideoPlayerRouteKind.vod,
+        routeKind: widget.isYouTube ? VideoPlayerRouteKind.youTube : VideoPlayerRouteKind.vod,
       );
       final preservesRequestedSubtitleSource =
           !isItemChange &&
@@ -539,7 +539,8 @@ extension _VideoPlayerReloadMethods on VideoPlayerScreenState {
         final playbackResolver = PlaybackSourceResolver(serverManager: serverManager, database: database);
         await stoppedProgressFuture;
         if (!isCurrentReload()) return MediaReloadOutcome.superseded;
-        final playbackContext = await playbackResolver.resolve(
+        final playbackContext = await _resolvePlaybackSource(
+          playbackResolver,
           PlaybackInitializationOptions(
             metadata: metadata,
             selectedMediaIndex: targetMediaIndex,
