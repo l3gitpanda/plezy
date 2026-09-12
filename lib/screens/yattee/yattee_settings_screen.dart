@@ -46,9 +46,25 @@ class YatteeSettingsScreen extends StatelessWidget {
   /// empty or stale then — the server drops channels nothing has asked about
   /// for 14 days, so a later Yattee refresh can make new ones appear.
   Future<void> _importChannels(BuildContext context, YatteeAccountProvider account) async {
-    final added = await account.seedSubscriptionsFromServer();
+    final result = await account.seedSubscriptionsFromServer();
     if (!context.mounted) return;
-    showAppSnackBar(context, added == 0 ? t.yattee.importedNothing : t.yattee.importedChannels(n: added));
+    // Every unsuccessful outcome needs something different from the user, so
+    // each one says what rather than collapsing into "nothing to import".
+    final message = switch (result.outcome) {
+      YatteeSeedOutcome.imported => t.yattee.importedChannels(n: result.added),
+      YatteeSeedOutcome.alreadyKnown => t.yattee.importedNothing,
+      YatteeSeedOutcome.empty => t.yattee.seedEmpty,
+      YatteeSeedOutcome.notAdmin => t.yattee.seedNotAdmin,
+      YatteeSeedOutcome.unsupported => t.yattee.seedUnsupported,
+      YatteeSeedOutcome.failed => t.yattee.seedFailed(error: result.error ?? ''),
+    };
+    showAppSnackBar(
+      context,
+      message,
+      // The diagnostic messages are long and actionable; the default is not
+      // enough time to read one on a TV across the room.
+      duration: result.outcome == YatteeSeedOutcome.imported ? null : const Duration(seconds: 10),
+    );
   }
 
   Future<void> _disconnect(BuildContext context, YatteeAccountProvider account) async {
