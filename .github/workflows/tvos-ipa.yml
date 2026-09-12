@@ -1,0 +1,143 @@
+name: Build tvOS IPA
+
+# Sideload-ready Apple TV builds from a working branch.
+#
+# Deliberately separate from build.yml: that workflow is the release pipeline
+# and its validate-trusted-ref gate refuses any ref but refs/heads/main, so it
+# can never produce an artifact for a feature branch. This one has no release
+# side effects — it publishes one unsigned .ipa as an Actions artifact and
+# nothing else — so it is safe to run from an unmerged branch.
+#
+# The .ipa is UNSIGNED, exactly like the ios-ipa artifact build.yml produces.
+# Re-sign it with your own Apple ID before installing (Xcode's Devices window,
+# iOS App Signer, or Sideloadly), then deploy it to the Apple TV.
+
+on:
+  workflow_dispatch:
+    inputs:
+      configuration:
+        description: Xcode build configuration
+        default: Release
+        type: choice
+        options:
+          - Release
+          - Debug
+  # workflow_dispatch only appears in the Actions UI once the file is on the
+  # default branch, so a branch-scoped push trigger is what actually reaches an
+  # unmerged branch. Drop this block once the workflow lands on main.
+  push:
+    branches:
+      - "claude/**"
+
+permissions:
+  contents: read
+
+env:
+  FLUTTER_VERSION: "3.47.1"
+  TVOS_CACHE_VERSION: tvos-ipa-v1
+
+jobs:
+  build-tvos:
+    name: Build unsigned tvOS IPA
+    # Matches the runner the tvOS leg of ci.yml and the iOS release build use.
+    runs-on: macos-26
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          channel: "stable"
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+          cache-key: "${{ env.TVOS_CACHE_VERSION }}-flutter-:os:-:channel:-:version:-:arch:-:hash:"
+          pub-cache: false
+
+      - name: Cache Pub dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            ~/.pub-cache
+          key: ${{ env.TVOS_CACHE_VERSION }}-${{ runner.os }}-${{ runner.arch }}-pub-${{ hashFiles('pubspec.yaml', 'pubspec.lock') }}
+
+      # The engine tarball is large and immutable for a given version, so key
+      # the cache on the reviewed version/checksum pair fetch_engine.sh reads.
+      - name: Cache tvOS Flutter engine
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            ~/.cache/flutter-tvos-engine
+          key: ${{ env.TVOS_CACHE_VERSION }}-tvos-engine-${{ hashFiles('tvos/engine.version', 'tvos/engine.sha256') }}
+
+      - name: Cache CocoaPods
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            tvos/Pods
+            ~/Library/Caches/CocoaPods
+            ~/.cocoapods
+          key: ${{ env.TVOS_CACHE_VERSION }}-${{ runner.os }}-tvos-pods-${{ hashFiles('tvos/Podfile', 'pubspec.lock') }}
+
+      # tvos/Podfile reads .flutter-plugins-dependencies, so pub must resolve
+      # before pod install.
+      - name: Install locked Dart dependencies
+        shell: bash
+        run: flutter pub get --enforce-lockfile --no-example
+
+      # Downloads the pinned flutter-tvos engine, verifies it against
+      # tvos/engine.sha256, and writes tvos/Flutter/Generated.xcconfig with
+      # FLUTTER_LOCAL_ENGINE for the Xcode run-script phase.
+      - name: Prepare tvOS Flutter engine
+        shell: bash
+        run: tvos/scripts/fetch_engine.sh
+
+      - name: Install tvOS CocoaPods dependencies
+        shell: bash
+        run: tvos/scripts/pod_install.sh
+
+      # Unsigned device build. tvos/scripts/xcode_appletv.sh runs as a build
+      # phase and skips its codesign calls when CODE_SIGNING_ALLOWED=NO. SwiftPM
+      # resolution is left enabled on purpose: tvOS is not built through the
+      # Flutter tool, so Xcode is what fetches MPVKit (see
+      # scripts/refresh_apple_spm.sh).
+      - name: Build tvOS app (no codesign)
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -workspace tvos/Runner.xcworkspace \
+            -scheme Runner \
+            -configuration "${{ inputs.configuration || 'Release' }}" \
+            -destination 'generic/platform=tvOS' \
+            -derivedDataPath build/tvos \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: Create IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="$(find build/tvos/Build/Products -maxdepth 2 -type d -name 'Runner.app' -print -quit)"
+          if [[ -z "$app" ]]; then
+            echo "Runner.app was not produced by the build" >&2
+            exit 1
+          fi
+          echo "Packaging $app"
+          rm -rf Payload
+          mkdir -p Payload
+          cp -R "$app" Payload/
+          zip -qry plezy-tvos.ipa Payload
+          ls -lh plezy-tvos.ipa
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: tvos-ipa
+          path: plezy-tvos.ipa
+          if-no-files-found: error
