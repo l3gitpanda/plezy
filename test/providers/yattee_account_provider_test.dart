@@ -22,10 +22,28 @@ YatteeSession _session() => YatteeSession(
   createdAt: 1,
 );
 
-YatteeAccountProvider _provider() => YatteeAccountProvider(
+YatteeAccountProvider _provider({List<Map<String, Object?>>? watched, int status = 200}) => YatteeAccountProvider(
   store: const YatteeStore(),
-  authService: YatteeAuthService(httpClientFactory: () => MockClient((_) async => http.Response(jsonEncode([]), 200))),
+  authService: YatteeAuthService(
+    httpClientFactory: () => MockClient((request) async {
+      if (request.url.path == '/api/watched-channels') {
+        return http.Response(
+          jsonEncode(status == 200 ? (watched ?? const []) : {'detail': 'Admin access required'}),
+          status,
+          headers: {'content-type': 'application/json'},
+        );
+      }
+      return http.Response(jsonEncode([]), 200, headers: {'content-type': 'application/json'});
+    }),
+  ),
 );
+
+Map<String, Object?> _watched(String id, String name) => {
+  'channel_id': id,
+  'site': 'youtube',
+  'channel_name': name,
+  'avatar_url': null,
+};
 
 void main() {
   setUp(() {
@@ -105,6 +123,67 @@ void main() {
     expect(afterDisconnect.subscriptions, isEmpty);
     // The quality cap is a preference, not instance state, and survives.
     expect(afterDisconnect.quality, YatteeQuality.p1080);
+  });
+
+  group('server seeding', () {
+    test('adopting a session imports the server\'s channel set', () async {
+      final provider = _provider(watched: [_watched('UC1', 'One'), _watched('UC2', 'Two')]);
+      addTearDown(provider.dispose);
+      await provider.onActiveProfileChanged('user-1');
+      await provider.adoptSession(_session());
+      // adoptSession fires the seed without awaiting it.
+      await pumpEventQueue();
+      expect(provider.subscriptions.map((s) => s.channelId), ['UC1', 'UC2']);
+
+      // And it survives a reload, so the next launch does not re-import.
+      final reloaded = _provider();
+      addTearDown(reloaded.dispose);
+      await reloaded.onActiveProfileChanged('user-1');
+      expect(reloaded.subscriptions.map((s) => s.channelId), ['UC1', 'UC2']);
+    });
+
+    test('seeding merges rather than replacing, so local choices survive', () async {
+      final provider = _provider(watched: [_watched('UC1', 'One'), _watched('UCnew', 'New')]);
+      addTearDown(provider.dispose);
+      await provider.onActiveProfileChanged('user-1');
+      await provider.adoptSession(_session());
+      await pumpEventQueue();
+      await provider.subscribe(const YatteeSubscription(channelId: 'UClocal', name: 'Local only'));
+
+      final added = await provider.seedSubscriptionsFromServer();
+      // UC1 and UCnew are already known; nothing new, nothing lost.
+      expect(added, 0);
+      expect(provider.subscriptions.map((s) => s.channelId), containsAll(['UC1', 'UCnew', 'UClocal']));
+      expect(provider.isSubscribed('UClocal'), isTrue);
+    });
+
+    test('a non-admin 403 leaves the list untouched instead of failing', () async {
+      final provider = _provider(status: 403);
+      addTearDown(provider.dispose);
+      await provider.onActiveProfileChanged('user-1');
+      await provider.adoptSession(_session());
+      await pumpEventQueue();
+      expect(provider.subscriptions, isEmpty);
+      expect(provider.isConnected, isTrue);
+    });
+
+    test('a profile that already has subscriptions is not re-seeded', () async {
+      final seeded = _provider(watched: [_watched('UC1', 'One')]);
+      addTearDown(seeded.dispose);
+      await seeded.onActiveProfileChanged('user-1');
+      await seeded.adoptSession(_session());
+      await pumpEventQueue();
+      await seeded.unsubscribe('UC1');
+      await seeded.subscribe(const YatteeSubscription(channelId: 'UConly', name: 'Only'));
+
+      // Hydrating a non-empty stored list must not re-import, or the
+      // unsubscribe above would be undone on every launch.
+      final reloaded = _provider(watched: [_watched('UC1', 'One')]);
+      addTearDown(reloaded.dispose);
+      await reloaded.onActiveProfileChanged('user-1');
+      await pumpEventQueue();
+      expect(reloaded.subscriptions.map((s) => s.channelId), ['UConly']);
+    });
   });
 
   test('notifies listeners on subscription changes', () async {

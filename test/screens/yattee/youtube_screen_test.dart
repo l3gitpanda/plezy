@@ -41,12 +41,18 @@ Map<String, dynamic> _video(String id, String title) => {
 /// A Yattee Server with one trending, one popular and one feed video. Feed
 /// requests are recorded so the subscription list sent can be asserted.
 class _FakeServer {
+  _FakeServer({this.watchedChannels = const []});
+
+  /// Rows served by the admin watched-channels route the provider seeds from.
+  final List<Map<String, Object?>> watchedChannels;
   final feedBodies = <Map<String, dynamic>>[];
   final searchQueries = <String>[];
 
   http.Client client() => MockClient((request) async {
     expect(request.headers['Authorization'], 'Basic YWxpY2U6aHVudGVyMg==');
     switch (request.url.path) {
+      case '/api/watched-channels':
+        return _json(watchedChannels);
       case '/api/v1/trending':
         return _json([_video('trend1', 'Trending One')]);
       case '/api/v1/popular':
@@ -74,13 +80,19 @@ class _FakeServer {
   });
 }
 
-Future<(YatteeAccountProvider, _FakeServer)> _pumpYouTube(WidgetTester tester, {bool subscribed = false}) async {
+Future<(YatteeAccountProvider, _FakeServer)> _pumpYouTube(
+  WidgetTester tester, {
+  bool subscribed = false,
+  bool tv = false,
+  List<Map<String, Object?>> watchedChannels = const [],
+}) async {
+  if (tv) TvDetectionService.debugSetAppleTVOverride(true);
   tester.view.devicePixelRatio = 1;
   tester.view.physicalSize = const Size(1280, 720);
   addTearDown(tester.view.resetDevicePixelRatio);
   addTearDown(tester.view.resetPhysicalSize);
 
-  final server = _FakeServer();
+  final server = _FakeServer(watchedChannels: watchedChannels);
   final account = YatteeAccountProvider(
     store: const YatteeStore(),
     authService: YatteeAuthService(httpClientFactory: server.client),
@@ -105,6 +117,9 @@ Future<(YatteeAccountProvider, _FakeServer)> _pumpYouTube(WidgetTester tester, {
       ).encode(),
     );
     await account.onActiveProfileChanged('user-1');
+    // onActiveProfileChanged fires the server seed without awaiting it; let it
+    // land in real time before the fake clock takes over.
+    await Future<void>.delayed(const Duration(milliseconds: 200));
     if (subscribed) await account.subscribe(const YatteeSubscription(channelId: 'UCfeed', name: 'Feed Channel'));
   });
 
@@ -173,6 +188,33 @@ void main() {
     });
     await tester.pumpAndSettle();
     expect(server.feedBodies, hasLength(1));
+    expect(find.text(t.yattee.rows.subscriptions), findsOneWidget);
+    expect(find.text(t.yattee.noSubscriptions), findsNothing);
+  });
+
+  testWidgets('tvOS explains the missing Subscriptions row instead of hiding it silently', (tester) async {
+    // Regression: the TV layout rendered no hint at all, so a user with no
+    // subscriptions saw only Trending and Popular with nothing to explain it.
+    await _pumpYouTube(tester, tv: true);
+    expect(find.text(t.yattee.noSubscriptions), findsOneWidget);
+    expect(
+      find.text(t.yattee.subscribeHowTo),
+      findsNothing,
+      reason: 'rows loaded, so this is a hint, not the empty state',
+    );
+  });
+
+  testWidgets('seeds subscriptions from the server when the device has none stored', (tester) async {
+    final (account, server) = await _pumpYouTube(
+      tester,
+      watchedChannels: [
+        {'channel_id': 'UCseed', 'site': 'youtube', 'channel_name': 'Seeded', 'avatar_url': null},
+      ],
+    );
+    await tester.pumpAndSettle();
+    expect(account.subscriptions.map((s) => s.channelId), ['UCseed']);
+    // The seed lands as a real feed request, not just a stored list.
+    expect(server.feedBodies, isNotEmpty);
     expect(find.text(t.yattee.rows.subscriptions), findsOneWidget);
     expect(find.text(t.yattee.noSubscriptions), findsNothing);
   });

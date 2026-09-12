@@ -8,6 +8,7 @@ import '../../i18n/strings.g.dart';
 import '../../providers/yattee/yattee_account_provider.dart';
 import '../../services/yattee/yattee_stream_selector.dart';
 import '../../utils/dialogs.dart';
+import '../../utils/snackbar_helper.dart';
 import '../../widgets/app_icon.dart';
 import '../../widgets/focusable_list_tile.dart';
 import '../../widgets/settings_page.dart';
@@ -39,6 +40,15 @@ class YatteeSettingsScreen extends StatelessWidget {
     );
     if (picked == null) return;
     await account.setQuality(picked.value);
+  }
+
+  /// Manual re-run of the connect-time seed, for a user whose server list was
+  /// empty or stale then — the server drops channels nothing has asked about
+  /// for 14 days, so a later Yattee refresh can make new ones appear.
+  Future<void> _importChannels(BuildContext context, YatteeAccountProvider account) async {
+    final added = await account.seedSubscriptionsFromServer();
+    if (!context.mounted) return;
+    showAppSnackBar(context, added == 0 ? t.yattee.importedNothing : t.yattee.importedChannels(n: added));
   }
 
   Future<void> _disconnect(BuildContext context, YatteeAccountProvider account) async {
@@ -94,6 +104,12 @@ class YatteeSettingsScreen extends StatelessWidget {
                   title: Text(t.yattee.quality),
                   subtitle: Text('${qualityLabel(account.quality)} · ${t.yattee.qualityDescription}'),
                   onTap: () => unawaited(_pickQuality(context, account)),
+                ),
+                FocusableListTile(
+                  leading: const AppIcon(Symbols.cloud_download_rounded, fill: 1),
+                  title: Text(t.yattee.importChannels),
+                  subtitle: Text(t.yattee.importChannelsDescription),
+                  onTap: () => unawaited(_importChannels(context, account)),
                 ),
               ],
             ),

@@ -2223,9 +2223,18 @@
     "unsubscribe": "",
     "subscribed": "",
     "unsubscribed": "",
+    "importChannels": "",
+    "importChannelsDescription": "",
+    "importedChannels": {
+      "one": "",
+      "other": ""
+    },
+    "importedNothing": "",
     "goToChannel": "",
     "noSubscriptions": "",
+    "subscribeHowTo": "",
     "feedFetching": "",
+    "feedFailed": "",
     "emptyMessage": "",
     "loadFailed": "",
     "channelLoadFailed": "",

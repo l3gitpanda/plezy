@@ -5540,14 +5540,35 @@ class Translations$yattee$en {
 	/// en: 'Unsubscribed from ${channel}'
 	String unsubscribed({required Object channel}) => 'Unsubscribed from ${channel}';
 
+	/// en: 'Import channels from server'
+	String get importChannels => 'Import channels from server';
+
+	/// en: 'Adds channels your Yattee apps have asked this server to watch. Never removes any.'
+	String get importChannelsDescription => 'Adds channels your Yattee apps have asked this server to watch. Never removes any.';
+
+	/// en: '(one) {Imported ${n} channel} (other) {Imported ${n} channels}'
+	String importedChannels({required num n}) => (_root.$meta.cardinalResolver ?? PluralResolvers.cardinal('en'))(n,
+		one: 'Imported ${n} channel',
+		other: 'Imported ${n} channels',
+	);
+
+	/// en: 'No new channels to import'
+	String get importedNothing => 'No new channels to import';
+
 	/// en: 'Go to channel'
 	String get goToChannel => 'Go to channel';
 
 	/// en: 'Subscribe to channels to see their latest uploads here.'
 	String get noSubscriptions => 'Subscribe to channels to see their latest uploads here.';
 
+	/// en: 'Use Search to find a channel, then Subscribe on its page.'
+	String get subscribeHowTo => 'Use Search to find a channel, then Subscribe on its page.';
+
 	/// en: 'The server is still fetching your subscriptions. Pull to refresh in a moment.'
 	String get feedFetching => 'The server is still fetching your subscriptions. Pull to refresh in a moment.';
+
+	/// en: 'Couldn't load your subscriptions: ${error}'
+	String feedFailed({required Object error}) => 'Couldn\'t load your subscriptions: ${error}';
 
 	/// en: 'Nothing to show yet.'
 	String get emptyMessage => 'Nothing to show yet.';
@@ -9409,9 +9430,15 @@ extension on Translations {
 			'yattee.unsubscribe' => 'Unsubscribe',
 			'yattee.subscribed' => ({required Object channel}) => 'Subscribed to ${channel}',
 			'yattee.unsubscribed' => ({required Object channel}) => 'Unsubscribed from ${channel}',
+			'yattee.importChannels' => 'Import channels from server',
+			'yattee.importChannelsDescription' => 'Adds channels your Yattee apps have asked this server to watch. Never removes any.',
+			'yattee.importedChannels' => ({required num n}) => (_root.$meta.cardinalResolver ?? PluralResolvers.cardinal('en'))(n, one: 'Imported ${n} channel', other: 'Imported ${n} channels', ), 
+			'yattee.importedNothing' => 'No new channels to import',
 			'yattee.goToChannel' => 'Go to channel',
 			'yattee.noSubscriptions' => 'Subscribe to channels to see their latest uploads here.',
+			'yattee.subscribeHowTo' => 'Use Search to find a channel, then Subscribe on its page.',
 			'yattee.feedFetching' => 'The server is still fetching your subscriptions. Pull to refresh in a moment.',
+			'yattee.feedFailed' => ({required Object error}) => 'Couldn\'t load your subscriptions: ${error}',
 			'yattee.emptyMessage' => 'Nothing to show yet.',
 			'yattee.loadFailed' => ({required Object error}) => 'Couldn\'t load YouTube: ${error}',
 			'yattee.channelLoadFailed' => ({required Object error}) => 'Couldn\'t load this channel: ${error}',
@@ -9430,14 +9457,14 @@ extension on Translations {
 			'services.scrobbleDescription' => 'Update your list when you finish an episode or movie.',
 			'services.disconnectConfirm' => ({required Object service}) => 'Disconnect ${service}?',
 			'services.disconnectConfirmBody' => ({required Object service}) => 'Plezy will stop updating ${service}. Reconnect any time.',
+			_ => null,
+		} ?? switch (path) {
 			'services.connectFailed' => ({required Object service}) => 'Couldn\'t connect to ${service}. Try again.',
 			'services.names.mal' => 'MyAnimeList',
 			'services.names.anilist' => 'AniList',
 			'services.names.simkl' => 'Simkl',
 			'services.names.seerr' => 'Seerr',
 			'services.names.mdblist' => 'MDBList',
-			_ => null,
-		} ?? switch (path) {
 			'services.names.yattee' => 'Yattee Server',
 			'services.deviceCode.title' => ({required Object service}) => 'Activate Plezy on ${service}',
 			'services.deviceCode.instructions' => 'Scan the QR code, or visit the address below and enter this code:',

@@ -237,6 +237,48 @@ void main() {
       expect(page.continuation, isNull);
     });
 
+    test('watched channels seed maps rows, filters non-YouTube sites, and skips blanks', () async {
+      late Uri seen;
+      final client = YatteeClient(
+        _session(),
+        httpClient: MockClient((request) async {
+          seen = request.url;
+          expect(request.headers['Authorization'], _expectedAuthorization);
+          return _json([
+            {'channel_id': 'UC1', 'site': 'youtube', 'channel_name': 'One', 'avatar_url': 'https://a/1.jpg'},
+            // Name absent: the id stands in so the row is still usable.
+            {'channel_id': 'UC2', 'site': 'youtube', 'channel_name': null, 'avatar_url': null},
+            // Another extractor's channel must not become a YouTube subscription.
+            {'channel_id': 'S1', 'site': 'peertube', 'channel_name': 'Other'},
+            // Unusable rows are dropped rather than producing empty entries.
+            {'channel_id': '', 'site': 'youtube', 'channel_name': 'Blank'},
+            {'site': 'youtube', 'channel_name': 'No id'},
+          ]);
+        }),
+      );
+      final seeded = await client.fetchWatchedChannels();
+      // Root-mounted admin router: NOT under /api/v1.
+      expect(seen.path, '/api/watched-channels');
+      expect(seeded.map((s) => s.channelId), ['UC1', 'UC2']);
+      expect(seeded.first.name, 'One');
+      expect(seeded.first.avatarUrl, 'https://a/1.jpg');
+      expect(seeded.last.name, 'UC2');
+      expect(seeded.last.avatarUrl, isNull);
+    });
+
+    test('watched channels treats a non-admin 403 as simply having no seed', () async {
+      final client = YatteeClient(
+        _session(),
+        httpClient: MockClient((_) async => _json({'detail': 'Admin access required'}, status: 403)),
+      );
+      expect(await client.fetchWatchedChannels(), isEmpty);
+    });
+
+    test('watched channels tolerates an unexpected body shape', () async {
+      final client = YatteeClient(_session(), httpClient: MockClient((_) async => _json({'nope': true})));
+      expect(await client.fetchWatchedChannels(), isEmpty);
+    });
+
     test('video always asks the server to relay the streams', () async {
       final client = YatteeClient(
         _session(),
