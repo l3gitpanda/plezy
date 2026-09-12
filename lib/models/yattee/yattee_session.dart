@@ -66,6 +66,9 @@ class YatteeSession {
 class YatteeSubscription {
   final String channelId;
   final String name;
+
+  /// Channel avatar for display. Never sent back to the server — see the
+  /// feed request in [YatteeClient.fetchFeed] for why.
   final String? avatarUrl;
 
   const YatteeSubscription({required this.channelId, required this.name, this.avatarUrl});
