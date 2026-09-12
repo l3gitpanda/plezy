@@ -2158,6 +2158,10 @@
       "other": ""
     },
     "importedNothing": "",
+    "seedEmpty": "",
+    "seedNotAdmin": "",
+    "seedUnsupported": "",
+    "seedFailed": "",
     "goToChannel": "",
     "noSubscriptions": "",
     "subscribeHowTo": "",

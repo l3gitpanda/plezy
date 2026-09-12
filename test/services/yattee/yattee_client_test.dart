@@ -266,12 +266,17 @@ void main() {
       expect(seeded.last.avatarUrl, isNull);
     });
 
-    test('watched channels treats a non-admin 403 as simply having no seed', () async {
+    test('watched channels surfaces a non-admin 403 rather than looking empty', () async {
+      // The caller has to tell "you are not an admin" apart from "the server
+      // has no channels" — they need different things from the user.
       final client = YatteeClient(
         _session(),
-        httpClient: MockClient((_) async => _json({'detail': 'Admin access required'}, status: 403)),
+        httpClient: MockClient((_) async => _json({'detail': 'Admin privileges required'}, status: 403)),
       );
-      expect(await client.fetchWatchedChannels(), isEmpty);
+      await expectLater(
+        client.fetchWatchedChannels(),
+        throwsA(isA<YatteeAuthException>().having((e) => e.statusCode, 'status', 403)),
+      );
     });
 
     test('watched channels tolerates an unexpected body shape', () async {

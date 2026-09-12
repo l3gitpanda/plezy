@@ -5477,6 +5477,18 @@ class Translations$yattee$en {
 	/// en: 'No new channels to import'
 	String get importedNothing => 'No new channels to import';
 
+	/// en: 'This server has no channels recorded yet. Open Yattee on another device and refresh its subscriptions, then try again.'
+	String get seedEmpty => 'This server has no channels recorded yet. Open Yattee on another device and refresh its subscriptions, then try again.';
+
+	/// en: 'This account isn't an administrator of the Yattee Server, so Plezy can't read its channel list. Sign in with the admin account, or subscribe from Search.'
+	String get seedNotAdmin => 'This account isn\'t an administrator of the Yattee Server, so Plezy can\'t read its channel list. Sign in with the admin account, or subscribe from Search.';
+
+	/// en: 'This Yattee Server version doesn't expose its channel list. Subscribe from Search instead.'
+	String get seedUnsupported => 'This Yattee Server version doesn\'t expose its channel list. Subscribe from Search instead.';
+
+	/// en: 'Couldn't read the server's channel list: ${error}'
+	String seedFailed({required Object error}) => 'Couldn\'t read the server\'s channel list: ${error}';
+
 	/// en: 'Go to channel'
 	String get goToChannel => 'Go to channel';
 
@@ -9189,6 +9201,10 @@ extension on Translations {
 			'yattee.importChannelsDescription' => 'Adds channels your Yattee apps have asked this server to watch. Never removes any.',
 			'yattee.importedChannels' => ({required num n}) => (_root.$meta.cardinalResolver ?? PluralResolvers.cardinal('en'))(n, one: 'Imported ${n} channel', other: 'Imported ${n} channels', ), 
 			'yattee.importedNothing' => 'No new channels to import',
+			'yattee.seedEmpty' => 'This server has no channels recorded yet. Open Yattee on another device and refresh its subscriptions, then try again.',
+			'yattee.seedNotAdmin' => 'This account isn\'t an administrator of the Yattee Server, so Plezy can\'t read its channel list. Sign in with the admin account, or subscribe from Search.',
+			'yattee.seedUnsupported' => 'This Yattee Server version doesn\'t expose its channel list. Subscribe from Search instead.',
+			'yattee.seedFailed' => ({required Object error}) => 'Couldn\'t read the server\'s channel list: ${error}',
 			'yattee.goToChannel' => 'Go to channel',
 			'yattee.noSubscriptions' => 'Subscribe to channels to see their latest uploads here.',
 			'yattee.subscribeHowTo' => 'Use Search to find a channel, then Subscribe on its page.',
@@ -9264,12 +9280,12 @@ extension on Translations {
 			'addServer.addConnectionTitleScoped' => ({required Object name}) => 'Add to ${name}',
 			'addServer.signInWithPlexCard' => 'Sign in with Plex',
 			'addServer.signInWithPlexCardSubtitle' => 'Authorize this device. Shared servers are added.',
+			_ => null,
+		} ?? switch (path) {
 			'addServer.signInWithPlexCardSubtitleScoped' => 'Authorize a Plex account. Home users become profiles.',
 			'addServer.connectToMediaBrowserCard' => ({required Object product}) => 'Connect to ${product}',
 			'addServer.connectToMediaBrowserCardSubtitle' => 'Enter your server URL, username, and password.',
 			'addServer.connectToMediaBrowserCardSubtitleScoped' => ({required Object product, required Object name}) => 'Sign in to your ${product} server. Binds to ${name}.',
-			_ => null,
-		} ?? switch (path) {
 			'addServer.borrowFromAnotherProfile' => 'Borrow from another profile',
 			'addServer.borrowFromAnotherProfileSubtitle' => 'Reuse another profile\'s connection. PIN-protected profiles require a PIN.',
 			'addServer.invalidCredentials' => 'Invalid username or password',

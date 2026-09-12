@@ -2,7 +2,6 @@ import 'package:http/http.dart' as http;
 
 import '../../models/yattee/yattee_session.dart';
 import '../../models/yattee/yattee_video.dart';
-import '../../utils/app_logger.dart';
 import 'yattee_constants.dart';
 import 'yattee_exceptions.dart';
 import 'yattee_http_client.dart';
@@ -116,16 +115,12 @@ class YatteeClient {
   ///
   /// Lives at the root, not under [YatteeConstants.apiPath] — the admin
   /// router is mounted without the `/api/v1` prefix.
+  ///
+  /// Throws rather than swallowing: 403 ("Admin privileges required") and 404
+  /// (a server predating the route) mean very different things to the user,
+  /// so the caller classifies them instead of seeing one empty list.
   Future<List<YatteeSubscription>> fetchWatchedChannels() async {
-    final dynamic data;
-    try {
-      data = await _http.send('GET', '/api/watched-channels');
-    } on YatteeAuthException catch (e) {
-      // 403 for a non-admin account: no seed is available, which is an
-      // ordinary outcome here rather than a failure worth surfacing.
-      appLogger.d('Yattee: watched-channels unavailable (HTTP ${e.statusCode})');
-      return const [];
-    }
+    final data = await _http.send('GET', '/api/watched-channels');
     if (data is! List) return const [];
     final subscriptions = <YatteeSubscription>[];
     for (final entry in data) {

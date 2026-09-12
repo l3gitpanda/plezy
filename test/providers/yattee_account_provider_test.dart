@@ -28,7 +28,7 @@ YatteeAccountProvider _provider({List<Map<String, Object?>>? watched, int status
     httpClientFactory: () => MockClient((request) async {
       if (request.url.path == '/api/watched-channels') {
         return http.Response(
-          jsonEncode(status == 200 ? (watched ?? const []) : {'detail': 'Admin access required'}),
+          jsonEncode(status == 200 ? (watched ?? const []) : {'detail': 'HTTP \$status'}),
           status,
           headers: {'content-type': 'application/json'},
         );
@@ -150,14 +150,15 @@ void main() {
       await pumpEventQueue();
       await provider.subscribe(const YatteeSubscription(channelId: 'UClocal', name: 'Local only'));
 
-      final added = await provider.seedSubscriptionsFromServer();
+      final result = await provider.seedSubscriptionsFromServer();
       // UC1 and UCnew are already known; nothing new, nothing lost.
-      expect(added, 0);
+      expect(result.outcome, YatteeSeedOutcome.alreadyKnown);
+      expect(result.added, 0);
       expect(provider.subscriptions.map((s) => s.channelId), containsAll(['UC1', 'UCnew', 'UClocal']));
       expect(provider.isSubscribed('UClocal'), isTrue);
     });
 
-    test('a non-admin 403 leaves the list untouched instead of failing', () async {
+    test('a non-admin 403 leaves the list untouched and says why', () async {
       final provider = _provider(status: 403);
       addTearDown(provider.dispose);
       await provider.onActiveProfileChanged('user-1');
@@ -165,6 +166,29 @@ void main() {
       await pumpEventQueue();
       expect(provider.subscriptions, isEmpty);
       expect(provider.isConnected, isTrue);
+      final result = await provider.seedSubscriptionsFromServer();
+      expect(result.outcome, YatteeSeedOutcome.notAdmin);
+    });
+
+    test('a server without the channel list route reports unsupported', () async {
+      final provider = _provider(status: 404);
+      addTearDown(provider.dispose);
+      await provider.onActiveProfileChanged('user-1');
+      await provider.adoptSession(_session());
+      await pumpEventQueue();
+      final result = await provider.seedSubscriptionsFromServer();
+      expect(result.outcome, YatteeSeedOutcome.unsupported);
+    });
+
+    test('an empty channel list is reported as empty, not as a failure', () async {
+      final provider = _provider(watched: const []);
+      addTearDown(provider.dispose);
+      await provider.onActiveProfileChanged('user-1');
+      await provider.adoptSession(_session());
+      await pumpEventQueue();
+      final result = await provider.seedSubscriptionsFromServer();
+      expect(result.outcome, YatteeSeedOutcome.empty);
+      expect(result.error, isNull);
     });
 
     test('a profile that already has subscriptions is not re-seeded', () async {

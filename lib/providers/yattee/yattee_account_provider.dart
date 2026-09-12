@@ -6,9 +6,50 @@ import '../../mixins/disposable_change_notifier_mixin.dart';
 import '../../models/yattee/yattee_session.dart';
 import '../../services/yattee/yattee_auth_service.dart';
 import '../../services/yattee/yattee_client.dart';
+import '../../services/yattee/yattee_exceptions.dart';
 import '../../services/yattee/yattee_store.dart';
 import '../../services/yattee/yattee_stream_selector.dart';
 import '../../utils/app_logger.dart';
+
+/// Why a subscription seed produced what it did.
+///
+/// Yattee Server gates its channel list behind an admin account and prunes
+/// channels nothing has asked about for 14 days, so an empty result has
+/// several very different causes. Collapsing them into "nothing to import"
+/// leaves the user with no idea what to do next.
+enum YatteeSeedOutcome {
+  /// Channels were added to the local list.
+  imported,
+
+  /// The server listed channels, but every one was already subscribed here.
+  alreadyKnown,
+
+  /// The server's channel list is empty — nothing has posted a feed to it
+  /// recently, or its entries aged out.
+  empty,
+
+  /// HTTP 403: the signed-in account is not an administrator of the server.
+  notAdmin,
+
+  /// HTTP 404: this server predates the admin channel list.
+  unsupported,
+
+  /// Anything else — transport failure, unexpected status.
+  failed,
+}
+
+/// Outcome of [YatteeAccountProvider.seedSubscriptionsFromServer].
+class YatteeSeedResult {
+  final YatteeSeedOutcome outcome;
+
+  /// How many channels were added; zero for every non-[YatteeSeedOutcome.imported] outcome.
+  final int added;
+
+  /// Server-supplied detail for [YatteeSeedOutcome.failed].
+  final String? error;
+
+  const YatteeSeedResult(this.outcome, {this.added = 0, this.error});
+}
 
 /// Owns the active Yattee Server session for the currently-selected profile,
 /// mirroring [SeerrAccountProvider]'s rebind shape: `onActiveProfileChanged`
@@ -80,32 +121,48 @@ class YatteeAccountProvider extends ChangeNotifier with DisposableChangeNotifier
   /// [YatteeClient.fetchWatchedChannels]), so it may omit channels the user
   /// subscribed to here and include ones they never did. Replacing the local
   /// list with it would silently drop the user's own choices, so entries are
-  /// only ever added. Returns how many were new.
-  Future<int> seedSubscriptionsFromServer() async {
-    if (isDisposed) return 0;
+  /// only ever added. The [YatteeSeedResult] says why nothing arrived when
+  /// nothing does — the causes need different things from the user.
+  Future<YatteeSeedResult> seedSubscriptionsFromServer() async {
+    if (isDisposed) return const YatteeSeedResult(YatteeSeedOutcome.failed);
     final client = _client;
-    if (client == null) return 0;
+    if (client == null) return const YatteeSeedResult(YatteeSeedOutcome.failed);
     final userUuid = _activeUserUuid;
     final generation = _bindingGeneration;
     final List<YatteeSubscription> discovered;
     try {
       discovered = await client.fetchWatchedChannels();
+    } on YatteeAuthException catch (e) {
+      // 403 is the likely one: the channel list is admin-only, so a
+      // secondary account on a shared server can never read it.
+      appLogger.w('Yattee: the server refused its channel list (HTTP ${e.statusCode})');
+      return YatteeSeedResult(
+        e.statusCode == 403 ? YatteeSeedOutcome.notAdmin : YatteeSeedOutcome.failed,
+        error: e.message,
+      );
+    } on YatteeApiException catch (e) {
+      appLogger.w('Yattee: the server rejected the channel list request (HTTP ${e.statusCode})');
+      return YatteeSeedResult(
+        e.statusCode == 404 ? YatteeSeedOutcome.unsupported : YatteeSeedOutcome.failed,
+        error: e.message,
+      );
     } catch (e, stackTrace) {
       appLogger.w('Yattee: seeding subscriptions from the server failed', error: e, stackTrace: stackTrace);
-      return 0;
+      return YatteeSeedResult(YatteeSeedOutcome.failed, error: e.toString());
     }
-    if (!_isCurrentBinding(userUuid, generation)) return 0;
+    if (!_isCurrentBinding(userUuid, generation)) return const YatteeSeedResult(YatteeSeedOutcome.failed);
+    if (discovered.isEmpty) return const YatteeSeedResult(YatteeSeedOutcome.empty);
     final known = {for (final subscription in _subscriptions) subscription.channelId};
     final added = [
       for (final subscription in discovered)
         if (!known.contains(subscription.channelId)) subscription,
     ];
-    if (added.isEmpty) return 0;
+    if (added.isEmpty) return const YatteeSeedResult(YatteeSeedOutcome.alreadyKnown);
     _subscriptions = [..._subscriptions, ...added];
     safeNotifyListeners();
     await _persistSubscriptions();
     appLogger.i('Yattee: seeded ${added.length} subscription(s) from the server');
-    return added.length;
+    return YatteeSeedResult(YatteeSeedOutcome.imported, added: added.length);
   }
 
   /// Persist and bind a session the connect screen established.

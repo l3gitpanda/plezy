@@ -2170,6 +2170,10 @@
       "other": "Imported ${n} channels"
     },
     "importedNothing": "No new channels to import",
+    "seedEmpty": "This server has no channels recorded yet. Open Yattee on another device and refresh its subscriptions, then try again.",
+    "seedNotAdmin": "This account isn't an administrator of the Yattee Server, so Plezy can't read its channel list. Sign in with the admin account, or subscribe from Search.",
+    "seedUnsupported": "This Yattee Server version doesn't expose its channel list. Subscribe from Search instead.",
+    "seedFailed": "Couldn't read the server's channel list: ${error}",
     "goToChannel": "Go to channel",
     "noSubscriptions": "Subscribe to channels to see their latest uploads here.",
     "subscribeHowTo": "Use Search to find a channel, then Subscribe on its page.",
