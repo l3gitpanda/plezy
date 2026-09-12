@@ -554,9 +554,18 @@ class YouTubeScreenState extends State<YouTubeScreen>
               right: TvLayoutConstants.shelfHorizontalInset,
               // Clear of the toolbar overlay, above the browse rail.
               top: 96,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [for (final hint in _hints) _buildHint(hint)],
+              // Bounded like the spotlight copy it sits above: a long error
+              // stretched the full 4K width and read as a banner across the
+              // artwork rather than as a status line.
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: TvLayoutConstants.heroContentMaxWidth),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [for (final hint in _hints) _buildHint(hint)],
+                  ),
+                ),
               ),
             ),
           if (hubs.isNotEmpty)

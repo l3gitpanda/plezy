@@ -133,8 +133,12 @@ void main() {
       ], limit: 25);
       expect(body['limit'], 25);
       expect(body['offset'], 0);
+      // No avatar_url, even though the first subscription carries one: the
+      // server SSRF-checks received URLs and 403s the whole request when one
+      // resolves to a private address, which is exactly what its own
+      // synthesised avatars do on a LAN-hosted instance.
       expect(body['channels'], [
-        {'channel_id': 'UC1', 'site': 'youtube', 'channel_name': 'One', 'avatar_url': 'https://a/1.jpg'},
+        {'channel_id': 'UC1', 'site': 'youtube', 'channel_name': 'One'},
         {'channel_id': '@two', 'site': 'youtube', 'channel_name': 'Two'},
       ]);
       expect(page.status, 'ready');

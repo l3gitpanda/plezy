@@ -71,7 +71,14 @@ class YatteeClient {
                 'channel_id': subscription.channelId,
                 'site': YatteeConstants.site,
                 'channel_name': subscription.name,
-                if (subscription.avatarUrl != null) 'avatar_url': subscription.avatarUrl,
+                // Deliberately no `avatar_url`. The field is optional, and the
+                // server SSRF-validates every URL it receives, rejecting the
+                // WHOLE feed request with 403 when one resolves to a private
+                // address (routers/subscriptions.py). Its own watched-channels
+                // route synthesises avatars pointing at itself, so echoing one
+                // back breaks the feed outright on any LAN-hosted instance.
+                // It buys nothing either way: the server's avatar cache keys
+                // off channel_id alone and never reads this.
               },
           ],
           'limit': limit,
