@@ -2152,9 +2152,17 @@
     "unsubscribe": "",
     "subscribed": "",
     "unsubscribed": "",
+    "importChannels": "",
+    "importChannelsDescription": "",
+    "importedChannels": {
+      "other": ""
+    },
+    "importedNothing": "",
     "goToChannel": "",
     "noSubscriptions": "",
+    "subscribeHowTo": "",
     "feedFetching": "",
+    "feedFailed": "",
     "emptyMessage": "",
     "loadFailed": "",
     "channelLoadFailed": "",

@@ -5462,14 +5462,35 @@ class Translations$yattee$en {
 	/// en: 'Unsubscribed from ${channel}'
 	String unsubscribed({required Object channel}) => 'Unsubscribed from ${channel}';
 
+	/// en: 'Import channels from server'
+	String get importChannels => 'Import channels from server';
+
+	/// en: 'Adds channels your Yattee apps have asked this server to watch. Never removes any.'
+	String get importChannelsDescription => 'Adds channels your Yattee apps have asked this server to watch. Never removes any.';
+
+	/// en: '(one) {Imported ${n} channel} (other) {Imported ${n} channels}'
+	String importedChannels({required num n}) => (_root.$meta.cardinalResolver ?? PluralResolvers.cardinal('en'))(n,
+		one: 'Imported ${n} channel',
+		other: 'Imported ${n} channels',
+	);
+
+	/// en: 'No new channels to import'
+	String get importedNothing => 'No new channels to import';
+
 	/// en: 'Go to channel'
 	String get goToChannel => 'Go to channel';
 
 	/// en: 'Subscribe to channels to see their latest uploads here.'
 	String get noSubscriptions => 'Subscribe to channels to see their latest uploads here.';
 
+	/// en: 'Use Search to find a channel, then Subscribe on its page.'
+	String get subscribeHowTo => 'Use Search to find a channel, then Subscribe on its page.';
+
 	/// en: 'The server is still fetching your subscriptions. Pull to refresh in a moment.'
 	String get feedFetching => 'The server is still fetching your subscriptions. Pull to refresh in a moment.';
+
+	/// en: 'Couldn't load your subscriptions: ${error}'
+	String feedFailed({required Object error}) => 'Couldn\'t load your subscriptions: ${error}';
 
 	/// en: 'Nothing to show yet.'
 	String get emptyMessage => 'Nothing to show yet.';
@@ -9164,9 +9185,15 @@ extension on Translations {
 			'yattee.unsubscribe' => 'Unsubscribe',
 			'yattee.subscribed' => ({required Object channel}) => 'Subscribed to ${channel}',
 			'yattee.unsubscribed' => ({required Object channel}) => 'Unsubscribed from ${channel}',
+			'yattee.importChannels' => 'Import channels from server',
+			'yattee.importChannelsDescription' => 'Adds channels your Yattee apps have asked this server to watch. Never removes any.',
+			'yattee.importedChannels' => ({required num n}) => (_root.$meta.cardinalResolver ?? PluralResolvers.cardinal('en'))(n, one: 'Imported ${n} channel', other: 'Imported ${n} channels', ), 
+			'yattee.importedNothing' => 'No new channels to import',
 			'yattee.goToChannel' => 'Go to channel',
 			'yattee.noSubscriptions' => 'Subscribe to channels to see their latest uploads here.',
+			'yattee.subscribeHowTo' => 'Use Search to find a channel, then Subscribe on its page.',
 			'yattee.feedFetching' => 'The server is still fetching your subscriptions. Pull to refresh in a moment.',
+			'yattee.feedFailed' => ({required Object error}) => 'Couldn\'t load your subscriptions: ${error}',
 			'yattee.emptyMessage' => 'Nothing to show yet.',
 			'yattee.loadFailed' => ({required Object error}) => 'Couldn\'t load YouTube: ${error}',
 			'yattee.channelLoadFailed' => ({required Object error}) => 'Couldn\'t load this channel: ${error}',
@@ -9241,14 +9268,14 @@ extension on Translations {
 			'addServer.connectToMediaBrowserCard' => ({required Object product}) => 'Connect to ${product}',
 			'addServer.connectToMediaBrowserCardSubtitle' => 'Enter your server URL, username, and password.',
 			'addServer.connectToMediaBrowserCardSubtitleScoped' => ({required Object product, required Object name}) => 'Sign in to your ${product} server. Binds to ${name}.',
+			_ => null,
+		} ?? switch (path) {
 			'addServer.borrowFromAnotherProfile' => 'Borrow from another profile',
 			'addServer.borrowFromAnotherProfileSubtitle' => 'Reuse another profile\'s connection. PIN-protected profiles require a PIN.',
 			'addServer.invalidCredentials' => 'Invalid username or password',
 			'addServer.authResponseNotJson' => 'The authentication response was not valid JSON',
 			'addServer.authResponseIncomplete' => 'The sign-in response from the server was incomplete',
 			'addServer.quickConnectRejected' => 'Quick Connect was rejected by the server',
-			_ => null,
-		} ?? switch (path) {
 			'addServer.quickConnectNotJson' => 'The Quick Connect response was not valid JSON',
 			'addServer.quickConnectMissingFields' => 'The Quick Connect response is missing a code or secret',
 			'addServer.quickConnectPollRejected' => 'Quick Connect polling was rejected by the server',

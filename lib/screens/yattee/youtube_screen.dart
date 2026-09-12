@@ -20,6 +20,7 @@ import '../../providers/yattee/yattee_account_provider.dart';
 import '../../services/settings_service.dart';
 import '../../services/yattee/yattee_client.dart';
 import '../../utils/app_logger.dart';
+import '../../utils/layout_constants.dart';
 import '../../utils/platform_detector.dart';
 import '../../widgets/focusable_media_card.dart';
 import '../../widgets/desktop_app_bar.dart';
@@ -73,7 +74,14 @@ class YouTubeScreenState extends State<YouTubeScreen>
   String? _error;
   DateTime? _loadedAt;
   bool _feedFetching = false;
+  String? _feedError;
   int _generation = 0;
+
+  /// The subscriptions row reloads on its own whenever the list changes,
+  /// independently of a whole-tab load. It needs its own generation: sharing
+  /// [_generation] let a subscribe abort an in-flight [_load] and strand the
+  /// tab with `_loading` stuck true.
+  int _feedGeneration = 0;
   int _feedRetries = 0;
   Timer? _feedRetryTimer;
   int _subscriptionsSignature = 0;
@@ -127,7 +135,11 @@ class YouTubeScreenState extends State<YouTubeScreen>
     if (signature == _subscriptionsSignature) return;
     _subscriptionsSignature = signature;
     if (!mounted) return;
-    unawaited(_loadFeed(++_generation));
+    // A newly subscribed channel is usually uncrawled, so this reload needs a
+    // fresh retry budget rather than whatever the last one left behind.
+    _feedRetryTimer?.cancel();
+    _feedRetries = 0;
+    unawaited(_loadFeed(++_feedGeneration));
   }
 
   List<MediaHub> get _hubs => [
@@ -164,6 +176,7 @@ class YouTubeScreenState extends State<YouTubeScreen>
 
   Future<void> _load() async {
     final generation = ++_generation;
+    final feedGeneration = ++_feedGeneration;
     final client = _account.client;
     if (client == null) return;
     _feedRetryTimer?.cancel();
@@ -171,11 +184,13 @@ class YouTubeScreenState extends State<YouTubeScreen>
     setState(() {
       _loading = _rows.isEmpty;
       _error = null;
+      _feedFetching = false;
+      _feedError = null;
     });
     // Every row is independent: one failing endpoint must not blank the
     // others, and a whole-tab error only shows when nothing loaded.
     final results = await Future.wait<Object?>([
-      _loadFeed(generation, client: client),
+      _loadFeed(feedGeneration, client: client),
       _loadRow(generation, YouTubeRow.trending, client.fetchTrending),
       _loadRow(generation, YouTubeRow.popular, client.fetchPopular),
     ]);
@@ -201,31 +216,46 @@ class YouTubeScreenState extends State<YouTubeScreen>
     }
   }
 
-  Future<Object?> _loadFeed(int generation, {YatteeClient? client}) async {
+  Future<Object?> _loadFeed(int feedGeneration, {YatteeClient? client}) async {
     final feedClient = client ?? _account.client;
     if (feedClient == null) return null;
     final subscriptions = _account.subscriptions;
     if (subscriptions.isEmpty) {
-      if (mounted && generation == _generation) setState(() => _rows.remove(YouTubeRow.subscriptions));
+      if (mounted && feedGeneration == _feedGeneration) {
+        setState(() {
+          _rows.remove(YouTubeRow.subscriptions);
+          _feedFetching = false;
+          _feedError = null;
+        });
+      }
       return null;
     }
     try {
       final page = await feedClient.fetchFeed(subscriptions, limit: feedLimit);
-      if (!mounted || generation != _generation) return null;
+      if (!mounted || feedGeneration != _feedGeneration) return null;
       setState(() {
         _rows[YouTubeRow.subscriptions] = page.videos.map(YouTubeMediaItems.fromSummary).toList();
         _feedFetching = page.isFetching;
+        _feedError = null;
       });
       if (page.isFetching && _feedRetries < maxFeedRetries) {
         _feedRetries++;
         _feedRetryTimer?.cancel();
         _feedRetryTimer = Timer(Duration(seconds: (page.etaSeconds ?? 5).clamp(2, 30)), () {
-          if (mounted && generation == _generation) unawaited(_loadFeed(generation));
+          if (mounted && feedGeneration == _feedGeneration) unawaited(_loadFeed(feedGeneration));
         });
       }
       return null;
     } catch (e, stackTrace) {
       appLogger.w('YouTube: subscriptions feed failed to load', error: e, stackTrace: stackTrace);
+      // The other rows may well have loaded, so this never blanks the tab —
+      // it surfaces as a hint above them instead of failing silently.
+      if (mounted && feedGeneration == _feedGeneration) {
+        setState(() {
+          _feedFetching = false;
+          _feedError = e.toString();
+        });
+      }
       return e;
     }
   }
@@ -372,8 +402,7 @@ class YouTubeScreenState extends State<YouTubeScreen>
       ]);
     } else {
       content = scroll([
-        if (_account.subscriptions.isEmpty) _buildHint(t.yattee.noSubscriptions),
-        if (_feedFetching) _buildHint(t.yattee.feedFetching),
+        for (final hint in _hints) SliverToBoxAdapter(child: _buildHint(hint)),
         for (var i = 0; i < hubs.length; i++)
           SliverToBoxAdapter(
             child: HubSection(
@@ -397,13 +426,23 @@ class YouTubeScreenState extends State<YouTubeScreen>
     );
   }
 
+  /// Status lines shown above the rows, in priority order. Read by BOTH
+  /// layouts — the tvOS branch used to render none of these, so a user with
+  /// no subscriptions saw the row silently missing with no explanation.
+  List<String> get _hints => [
+    if (_feedError case final error?)
+      t.yattee.feedFailed(error: error)
+    else if (_account.subscriptions.isEmpty)
+      t.yattee.noSubscriptions
+    else if (_feedFetching)
+      t.yattee.feedFetching,
+  ];
+
   Widget _buildHint(String text) {
     final theme = Theme.of(context);
-    return SliverToBoxAdapter(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-        child: Text(text, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-      ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+      child: Text(text, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
     );
   }
 
@@ -503,7 +542,22 @@ class YouTubeScreenState extends State<YouTubeScreen>
             )
           else if (hubs.isEmpty)
             Center(
-              child: EmptyStateWidget(message: t.yattee.emptyMessage, icon: Symbols.smart_display_rounded),
+              child: EmptyStateWidget(
+                message: _hints.firstOrNull ?? t.yattee.emptyMessage,
+                subtitle: _account.subscriptions.isEmpty ? t.yattee.subscribeHowTo : null,
+                icon: Symbols.smart_display_rounded,
+              ),
+            ),
+          if (_hints.isNotEmpty)
+            Positioned(
+              left: TvLayoutConstants.shelfHorizontalInset,
+              right: TvLayoutConstants.shelfHorizontalInset,
+              // Clear of the toolbar overlay, above the browse rail.
+              top: 96,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [for (final hint in _hints) _buildHint(hint)],
+              ),
             ),
           if (hubs.isNotEmpty)
             Positioned(

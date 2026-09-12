@@ -2163,9 +2163,18 @@
     "unsubscribe": "Unsubscribe",
     "subscribed": "Subscribed to ${channel}",
     "unsubscribed": "Unsubscribed from ${channel}",
+    "importChannels": "Import channels from server",
+    "importChannelsDescription": "Adds channels your Yattee apps have asked this server to watch. Never removes any.",
+    "importedChannels": {
+      "one": "Imported ${n} channel",
+      "other": "Imported ${n} channels"
+    },
+    "importedNothing": "No new channels to import",
     "goToChannel": "Go to channel",
     "noSubscriptions": "Subscribe to channels to see their latest uploads here.",
+    "subscribeHowTo": "Use Search to find a channel, then Subscribe on its page.",
     "feedFetching": "The server is still fetching your subscriptions. Pull to refresh in a moment.",
+    "feedFailed": "Couldn't load your subscriptions: ${error}",
     "emptyMessage": "Nothing to show yet.",
     "loadFailed": "Couldn't load YouTube: ${error}",
     "channelLoadFailed": "Couldn't load this channel: ${error}",

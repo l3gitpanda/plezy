@@ -18,7 +18,9 @@ import '../../utils/app_logger.dart';
 /// The connect screen drives [YatteeAuthService] itself and hands the
 /// finished session to [adoptSession]. Subscriptions live here rather than
 /// on the server because Yattee Server's feed endpoint is stateless — it
-/// expects the full channel list on every call.
+/// expects the full channel list on every call — and the server keeps no
+/// per-user list to sync against. [seedSubscriptionsFromServer] borrows the
+/// server's global channel set once so a new device does not start empty.
 class YatteeAccountProvider extends ChangeNotifier with DisposableChangeNotifierMixin {
   YatteeAccountProvider({YatteeStore? store, YatteeAuthService? authService})
     : _store = store ?? const YatteeStore(),
@@ -57,14 +59,53 @@ class YatteeAccountProvider extends ChangeNotifier with DisposableChangeNotifier
     if (!_isCurrentBinding(userUuid, generation)) return;
     final loaded = await _store.loadSession(userUuid);
     if (!_isCurrentBinding(userUuid, generation)) return;
-    // Subscriptions and quality are only meaningful alongside a session, but
-    // they load regardless so a reconnect keeps the list.
+    // Quality is a preference and outlives a disconnect; the subscription
+    // list does not — `clearSession` drops it with the session it belonged to.
     final subscriptions = await _store.loadSubscriptions(userUuid);
     final quality = await _store.loadQuality(userUuid);
     if (!_isCurrentBinding(userUuid, generation)) return;
     _subscriptions = subscriptions;
     _quality = quality;
     _setSessionAndRebind(userUuid, generation, loaded);
+    // Nothing stored yet on this device: try the server's channel set so the
+    // Subscriptions row is populated without the user re-subscribing by hand.
+    if (loaded != null && subscriptions.isEmpty) {
+      unawaited(seedSubscriptionsFromServer());
+    }
+  }
+
+  /// Merge the server's watched-channel set into the local list.
+  ///
+  /// Additive by construction: the server's set is global and lossy (see
+  /// [YatteeClient.fetchWatchedChannels]), so it may omit channels the user
+  /// subscribed to here and include ones they never did. Replacing the local
+  /// list with it would silently drop the user's own choices, so entries are
+  /// only ever added. Returns how many were new.
+  Future<int> seedSubscriptionsFromServer() async {
+    if (isDisposed) return 0;
+    final client = _client;
+    if (client == null) return 0;
+    final userUuid = _activeUserUuid;
+    final generation = _bindingGeneration;
+    final List<YatteeSubscription> discovered;
+    try {
+      discovered = await client.fetchWatchedChannels();
+    } catch (e, stackTrace) {
+      appLogger.w('Yattee: seeding subscriptions from the server failed', error: e, stackTrace: stackTrace);
+      return 0;
+    }
+    if (!_isCurrentBinding(userUuid, generation)) return 0;
+    final known = {for (final subscription in _subscriptions) subscription.channelId};
+    final added = [
+      for (final subscription in discovered)
+        if (!known.contains(subscription.channelId)) subscription,
+    ];
+    if (added.isEmpty) return 0;
+    _subscriptions = [..._subscriptions, ...added];
+    safeNotifyListeners();
+    await _persistSubscriptions();
+    appLogger.i('Yattee: seeded ${added.length} subscription(s) from the server');
+    return added.length;
   }
 
   /// Persist and bind a session the connect screen established.
@@ -76,6 +117,9 @@ class YatteeAccountProvider extends ChangeNotifier with DisposableChangeNotifier
     if (!_isCurrentBinding(userUuid, generation)) return;
     await _store.saveSession(userUuid, session);
     _setSessionAndRebind(userUuid, generation, session);
+    // First connect on this device: pull whatever channels the server already
+    // knows about so the user's existing Yattee subscriptions carry over.
+    unawaited(seedSubscriptionsFromServer());
   }
 
   /// Forget the instance. Basic Auth has no server-side session to revoke.
@@ -108,17 +152,16 @@ class YatteeAccountProvider extends ChangeNotifier with DisposableChangeNotifier
     await _persistSubscriptions();
   }
 
+  /// Writes the in-memory list to this profile's key. The key is captured
+  /// before the await, so a profile switch mid-save still lands the old
+  /// profile's list under the old profile's key rather than the new one's.
   Future<void> _persistSubscriptions() async {
     final userUuid = _activeUserUuid;
-    final generation = _bindingGeneration;
     try {
       await _store.saveSubscriptions(userUuid, _subscriptions);
     } catch (e) {
       _logPersistenceFailure(e);
     }
-    // A profile switch mid-save must not leak the old list into the new
-    // profile; the store keys by profile, so only the in-memory copy matters.
-    if (!_isCurrentBinding(userUuid, generation)) return;
   }
 
   Future<void> setQuality(YatteeQuality quality) async {

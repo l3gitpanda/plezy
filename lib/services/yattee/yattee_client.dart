@@ -2,6 +2,7 @@ import 'package:http/http.dart' as http;
 
 import '../../models/yattee/yattee_session.dart';
 import '../../models/yattee/yattee_video.dart';
+import '../../utils/app_logger.dart';
 import 'yattee_constants.dart';
 import 'yattee_exceptions.dart';
 import 'yattee_http_client.dart';
@@ -96,6 +97,54 @@ class YatteeClient {
           .whereType<int>()
           .fold<int?>(null, (a, b) => a == null ? b : (a > b ? a : b)),
     );
+  }
+
+  /// Channels this server has been asked to watch, as a one-time seed for
+  /// the client-held subscription list.
+  ///
+  /// Yattee Server has no per-user subscription list: `watched_channels` is
+  /// keyed on `(channel_id, site)` with no user column, and `POST /feed` only
+  /// upserts whatever channels the caller sent. But every Yattee client posts
+  /// its *whole* subscription list on each feed refresh, so on a single-user
+  /// instance this set is that user's subscriptions.
+  ///
+  /// Three things make it a seed rather than a sync source, and callers must
+  /// treat it that way — merge, never replace:
+  ///   * it is global, so a multi-user server returns everyone's channels;
+  ///   * the server deletes rows untouched for 14 days;
+  ///   * it is admin-only, and a non-admin account simply gets nothing.
+  ///
+  /// Lives at the root, not under [YatteeConstants.apiPath] — the admin
+  /// router is mounted without the `/api/v1` prefix.
+  Future<List<YatteeSubscription>> fetchWatchedChannels() async {
+    final dynamic data;
+    try {
+      data = await _http.send('GET', '/api/watched-channels');
+    } on YatteeAuthException catch (e) {
+      // 403 for a non-admin account: no seed is available, which is an
+      // ordinary outcome here rather than a failure worth surfacing.
+      appLogger.d('Yattee: watched-channels unavailable (HTTP ${e.statusCode})');
+      return const [];
+    }
+    if (data is! List) return const [];
+    final subscriptions = <YatteeSubscription>[];
+    for (final entry in data) {
+      if (entry is! Map) continue;
+      final row = entry.cast<String, Object?>();
+      if (row['site'] != YatteeConstants.site) continue;
+      final channelId = row['channel_id']?.toString();
+      if (channelId == null || channelId.isEmpty) continue;
+      final name = row['channel_name']?.toString();
+      final avatarUrl = row['avatar_url']?.toString();
+      subscriptions.add(
+        YatteeSubscription(
+          channelId: channelId,
+          name: name == null || name.isEmpty ? channelId : name,
+          avatarUrl: avatarUrl == null || avatarUrl.isEmpty ? null : avatarUrl,
+        ),
+      );
+    }
+    return subscriptions;
   }
 
   Future<YatteeSearchResults> search(String query, {int page = 1, YatteeSearchType type = YatteeSearchType.all}) async {
