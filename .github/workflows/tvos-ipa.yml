@@ -105,6 +105,13 @@ jobs:
       # scripts/refresh_apple_spm.sh).
       - name: Build tvOS app (no codesign)
         shell: bash
+        # GIT_COMMIT reaches the Dart compile through tvos/scripts/xcode_appletv.sh
+        # (tvOS never runs `flutter build`, so the --dart-define the other
+        # platforms pass does not apply here). Settings > Logs prints it beside
+        # the version, which is how you tell one sideloaded build from the next:
+        # pubspec's version is the same on every build of a branch.
+        env:
+          GIT_COMMIT: ${{ github.sha }}
         run: |
           set -euo pipefail
           xcodebuild \
