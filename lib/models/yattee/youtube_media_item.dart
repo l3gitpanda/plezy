@@ -58,8 +58,15 @@ abstract final class YouTubeMediaItems {
 
   /// "1.2M views • 3 days ago", from whichever of the server's text/numeric
   /// fields is present. Live and upcoming rows carry no view count.
+  ///
+  /// A live or upcoming row leads with its state instead: neither reports a
+  /// length, so without it the card is indistinguishable from a short upload
+  /// whose duration the server happened to omit. Both labels are borrowed
+  /// from the live TV and explore surfaces rather than duplicated, so they
+  /// stay consistent and are already translated everywhere.
   static String? metadataLine(YatteeVideoSummary video) {
     final parts = <String>[
+      if (video.liveNow) t.liveTv.live else if (video.isUpcoming) t.explore.status.upcoming,
       if (video.viewCountText case final text? when text.isNotEmpty)
         text
       else if (video.viewCount case final count?)

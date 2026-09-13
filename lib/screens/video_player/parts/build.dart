@@ -335,7 +335,11 @@ extension _VideoPlayerBuildMethods on VideoPlayerScreenState {
                         // ignore: no-empty-block - state update triggers rebuild to reflect shader change
                         onShaderChanged: () => _setPlayerState(() {}),
                         thumbnailDataBuilder: _scrubPreviewSource?.isAvailable == true ? _getThumbnailData : null,
-                        isLive: widget.isLive,
+                        // Shows the LIVE badge and hides the scrubber. The live-TV
+                        // extras below stay inert for YouTube: it has no tuner
+                        // session, so `captureBuffer` is null and every
+                        // time-shift control is already gated on it.
+                        isLive: widget.isLive || _isYouTubeLive,
                         liveChannelName: _live.channelName,
                         captureBuffer: _live.captureBuffer,
                         isAtLiveEdge: _live.atLiveEdge,

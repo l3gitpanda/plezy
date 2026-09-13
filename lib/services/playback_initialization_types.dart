@@ -121,6 +121,15 @@ class PlaybackInitializationResult {
   /// `true` when [videoUrl] points at a backend transcoding stream.
   final bool isTranscoding;
 
+  /// `true` when [videoUrl] is a live HLS manifest — a sliding window with no
+  /// fixed duration — rather than a fixed-length file.
+  ///
+  /// Deliberately distinct from `VideoPlayerScreen.isLive`, which means a
+  /// Plex/Jellyfin tuner session and gates capture-buffer, channel-zapping
+  /// and timeline-heartbeat machinery that has no counterpart here. Only the
+  /// YouTube source sets this; every media-server resolver leaves it false.
+  final bool isLiveStream;
+
   /// Non-null when a non-original preset was requested but fallback kicked in.
   final TranscodeFallbackReason? fallbackReason;
 
@@ -166,6 +175,7 @@ class PlaybackInitializationResult {
     this.subtitleSidecars = const [],
     this.isOffline = false,
     this.isTranscoding = false,
+    this.isLiveStream = false,
     this.fallbackReason,
     this.activeAudioStreamId,
     this.playSessionId,

@@ -101,6 +101,7 @@ import 'video_player/live_stream_retry.dart';
 import 'video_player/live_timeline_report.dart';
 import 'video_player/wakelock_controller.dart';
 import 'video_player/playback_failure_action.dart';
+import 'video_player/playback_open_timing.dart';
 import 'video_player/playback_transition_gate.dart';
 import 'video_player/open_http_503_watchdog.dart';
 import 'video_player/live_tv_session_args.dart';
@@ -347,24 +348,6 @@ class _PlaybackAttempt {
   final Future<void> trackMutationDrain;
 
   bool get isCurrent => _owner._isCurrentPlaybackGeneration(generation, player);
-}
-
-class _PlaybackOpenTiming {
-  final Duration? mediaStart;
-  final Duration? timelineDuration;
-
-  const _PlaybackOpenTiming({this.mediaStart, this.timelineDuration});
-}
-
-_PlaybackOpenTiming _playbackOpenTiming({
-  required bool isTranscoding,
-  required Duration? resumePosition,
-  required int? durationMs,
-}) {
-  return _PlaybackOpenTiming(
-    mediaStart: resumePosition,
-    timelineDuration: isTranscoding && durationMs != null ? Duration(milliseconds: durationMs) : null,
-  );
 }
 
 /// Builds a [TrackPreferencePersister] that writes the per-episode stream
@@ -707,7 +690,9 @@ class VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindin
   // on an item change; user-initiated retries (play/seek) are always allowed
   // and never consume it.
   late final SpuriousEofRecovery _eofRecovery = SpuriousEofRecovery(
-    isLive: widget.isLive,
+    // A YouTube livestream EOFs for real when the broadcast ends; there is
+    // nothing to reload in place, so it opts out with live TV.
+    isLive: widget.isLive || _isYouTubeLive,
     isOffline: () => _isOfflinePlayback,
     transitionGate: _transitionGate,
     player: () => player,
@@ -797,7 +782,9 @@ class VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindin
     manager: () => _mediaControlsManager,
     player: () => player,
     isMounted: () => mounted && !_shuttingDown,
-    isLive: widget.isLive,
+    // Drops seek and speed from the OS media controls — a sliding window has
+    // nowhere to seek to and no rate to hold.
+    isLive: widget.isLive || _isYouTubeLive,
     shouldSkipForPip: () => _shouldSkipForPip,
     isPlayerInitialized: () => _isPlayerInitialized,
     metadata: () => _currentMetadata,
@@ -871,6 +858,16 @@ class VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindin
   // keep their historical names; live TV (no session) gets the defaults.
   PlaybackContext? get _playbackContext => _playbackSession?.context;
   bool get _isTranscoding => _playbackSession?.isTranscoding ?? false;
+
+  /// Whether this screen is playing a YouTube livestream.
+  ///
+  /// Read from the widget rather than the session so the live-aware branches
+  /// are correct on the very first build, before the session commits.
+  /// Deliberately separate from [widget.isLive], which additionally gates the
+  /// Plex/Jellyfin tuner machinery (channel zapping, EPG, session keepalive)
+  /// that a YouTube stream has no equivalent of: the two are OR-ed together
+  /// only at the sites that care purely about "no fixed duration".
+  bool get _isYouTubeLive => widget.youtube?.isLive ?? false;
   bool get _effectiveIsOffline => _playbackSession?.isOffline ?? false;
   String? get _playbackPlaySessionId => _playbackSession?.playSessionId;
   String? get _playbackPlayMethod => _playbackSession?.playMethod;
