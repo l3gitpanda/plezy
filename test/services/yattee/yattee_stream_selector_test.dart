@@ -239,6 +239,96 @@ void main() {
       expect(selection.audioUrl, contains('itag=140'));
     });
 
+    // Yattee Server leaves hlsUrl empty for YouTube live — it reads
+    // `manifest_url` from the top of yt-dlp's info dict, where yt-dlp never
+    // puts it — but the format converter still lists the manifest among
+    // formatStreams. Refusing there would reject a stream the server returned.
+    test('a live broadcast falls back to the HLS entry in formatStreams', () {
+      final video = YatteeVideo(
+        summary: _summary(liveNow: true, lengthSeconds: 0),
+        formatStreams: const [
+          YatteeFormatStream(
+            url: 'https://manifest.googlevideo.com/api/manifest/hls_playlist/master.m3u8',
+            itag: '96',
+            type: 'application/vnd.apple.mpegurl',
+            container: 'hls',
+            resolution: '1080p',
+            height: 1080,
+            httpHeaders: {'User-Agent': 'yt-dlp'},
+          ),
+        ],
+      );
+
+      final selection = YatteeStreamSelector.decide(video).selection!;
+
+      expect(selection.isLive, isTrue);
+      expect(selection.videoUrl, contains('master.m3u8'));
+      expect(selection.height, 1080);
+      // Direct to the origin, not the relay: the server does not proxy HLS
+      // entries, so the extractor's headers have to ride along.
+      expect(selection.headers, {'User-Agent': 'yt-dlp'});
+    });
+
+    test('the relayed hlsUrl wins over the formatStreams entry when both exist', () {
+      final video = YatteeVideo(
+        summary: _summary(liveNow: true, lengthSeconds: 0),
+        hlsUrl: 'https://yattee.example/proxy/relay?token=abc',
+        formatStreams: const [
+          YatteeFormatStream(
+            url: 'https://manifest.googlevideo.com/master.m3u8',
+            itag: '96',
+            type: 'application/vnd.apple.mpegurl',
+            container: 'hls',
+          ),
+        ],
+      );
+
+      final selection = YatteeStreamSelector.decide(video).selection!;
+
+      expect(selection.videoUrl, 'https://yattee.example/proxy/relay?token=abc');
+      expect(selection.headers, isNull);
+    });
+
+    // The isHls filter exists to keep IP-bound manifests out of ordinary
+    // playback; the live fallback must not become a back door into it.
+    test('an ordinary upload never falls back to an HLS entry', () {
+      final video = YatteeVideo(
+        summary: _summary(),
+        formatStreams: const [
+          YatteeFormatStream(
+            url: 'https://manifest.googlevideo.com/master.m3u8',
+            itag: '96',
+            type: 'application/vnd.apple.mpegurl',
+            container: 'hls',
+          ),
+        ],
+      );
+
+      expect(YatteeStreamSelector.decide(video).reason, YatteeUnplayableReason.noPlayableStream);
+    });
+
+    test('the cap applies when the manifests are per-rendition chunklists', () {
+      const streams = [
+        YatteeFormatStream(
+          url: 'https://x/1080.m3u8',
+          itag: '96',
+          type: 'application/vnd.apple.mpegurl',
+          container: 'hls',
+          height: 1080,
+        ),
+        YatteeFormatStream(
+          url: 'https://x/480.m3u8',
+          itag: '93',
+          type: 'application/vnd.apple.mpegurl',
+          container: 'hls',
+          height: 480,
+        ),
+      ];
+
+      expect(YatteeStreamSelector.pickLiveHls(streams)?.videoUrl, 'https://x/1080.m3u8');
+      expect(YatteeStreamSelector.pickLiveHls(streams, quality: YatteeQuality.p720)?.videoUrl, 'https://x/480.m3u8');
+    });
+
     test('a live broadcast the server has no manifest for is refused as unavailable', () {
       final video = YatteeVideo(summary: _summary(liveNow: true, lengthSeconds: 0));
 

@@ -70,20 +70,17 @@ class YatteeStreamSelection {
     this.isLive = false,
   });
 
-  /// The relay's live HLS manifest ([YatteeVideo.hlsUrl]).
+  /// A live HLS manifest, from either route in [YatteeStreamSelector.decide].
   ///
-  /// Carries no resolution, codec or audio URL: a live manifest advertises
-  /// its own renditions and the player picks among them, so there is nothing
-  /// for the quality cap to choose here. Headers stay null — the relay
-  /// authenticates by signed query parameter and supplies its own upstream
-  /// identity.
-  const YatteeStreamSelection.liveHls(String url)
+  /// No audio URL and no codecs: a manifest advertises its own renditions and
+  /// carries its own audio, so there is nothing to side-load and nothing for
+  /// the quality cap to choose between. [headers] is null for the relay route
+  /// (the relay authenticates by signed query parameter and supplies its own
+  /// upstream identity) and carries the extractor's headers for the direct
+  /// route, where the player talks to the origin itself.
+  const YatteeStreamSelection.liveHls(String url, {this.headers, this.height, this.width, this.fps})
     : videoUrl = url,
       audioUrl = null,
-      headers = null,
-      width = null,
-      height = null,
-      fps = null,
       videoCodec = null,
       audioCodec = null,
       isAdaptive = false,
@@ -155,9 +152,16 @@ abstract final class YatteeStreamSelector {
     }
     if (video.summary.liveNow) {
       final hlsUrl = video.hlsUrl;
-      return hlsUrl == null
+      if (hlsUrl != null) return YatteePlaybackDecision.play(YatteeStreamSelection.liveHls(hlsUrl));
+      // `hlsUrl` is empty for YouTube live on Yattee Server: it is read from
+      // the top of yt-dlp's info dict (converters/_ytdlp.py), but yt-dlp only
+      // sets `manifest_url` per format. The manifest is still there — the
+      // format converter puts the HLS variants in `formatStreams` — so fall
+      // back to those rather than refusing a stream the server did return.
+      final fromFormats = pickLiveHls(video.formatStreams, quality: quality);
+      return fromFormats == null
           ? const YatteePlaybackDecision.refuse(YatteeUnplayableReason.liveUnavailable)
-          : YatteePlaybackDecision.play(YatteeStreamSelection.liveHls(hlsUrl));
+          : YatteePlaybackDecision.play(fromFormats);
     }
     final selection = select(video, quality: quality);
     return selection == null
@@ -232,6 +236,40 @@ abstract final class YatteeStreamSelector {
       return (b.bitrate ?? 0).compareTo(a.bitrate ?? 0);
     });
     return pool.first;
+  }
+
+  /// The live manifest among [streams], or null when none is HLS.
+  ///
+  /// The mirror of [selectMuxed]'s `isHls` filter, which exists to keep these
+  /// manifests out of ordinary playback: here they are the only thing wanted.
+  ///
+  /// Yattee Server dedupes these by URL, so YouTube's renditions — which all
+  /// share one master playlist — normally collapse to a single entry whose
+  /// height is incidental. The cap is still applied for the case where they
+  /// do not: an extractor with no `manifest_url` falls back to a per-rendition
+  /// chunklist, and then the height is real and worth respecting.
+  ///
+  /// Unlike every other route these URLs point at the origin, not the relay —
+  /// the server does not proxy HLS entries — so the selection carries the
+  /// extractor's headers and playback needs a network path to the origin.
+  static YatteeStreamSelection? pickLiveHls(
+    List<YatteeFormatStream> streams, {
+    YatteeQuality quality = YatteeQuality.best,
+  }) {
+    final candidates = streams.where((s) => s.isHls && s.url.isNotEmpty).toList();
+    if (candidates.isEmpty) return null;
+    final cap = quality.maxHeight;
+    var capped = cap == null ? candidates : candidates.where((s) => (s.height ?? 0) <= cap).toList();
+    if (capped.isEmpty) capped = candidates;
+    capped.sort((a, b) => (b.height ?? 0).compareTo(a.height ?? 0));
+    final pick = capped.first;
+    return YatteeStreamSelection.liveHls(
+      pick.url,
+      headers: pick.httpHeaders,
+      height: pick.height,
+      width: pick.width,
+      fps: pick.fps,
+    );
   }
 
   /// Muxed progressive fallback: the tallest non-HLS stream within the cap.
