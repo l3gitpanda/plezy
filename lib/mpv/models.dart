@@ -180,7 +180,11 @@ sealed class PlayerLog with _$PlayerLog {
   String toString() => '[$prefix] ${level.name}: $text';
 }
 
+/// A source to open. [audioUri] is a separate audio-only stream to play in
+/// sync with a video-only [uri] (YouTube adaptive formats); [headers] apply to
+/// both. Backends attach it as a side-loaded audio track, never as a second
+/// playlist entry.
 @freezed
 sealed class Media with _$Media {
-  const factory Media(String uri, {Map<String, String>? headers, Duration? start}) = _Media;
+  const factory Media(String uri, {Map<String, String>? headers, Duration? start, String? audioUri}) = _Media;
 }

@@ -685,10 +685,12 @@ extension _VideoPlayerOpenMethods on VideoPlayerScreenState {
     required Player player,
     required SettingsService settingsService,
     required String videoUrl,
+    String? audioUrl,
     required bool isTranscoding,
     required bool isLocalMedia,
+    required bool isLive,
     required MediaVersion? selectedVersion,
-    required _PlaybackOpenTiming timing,
+    required PlaybackOpenTiming timing,
     required PlaybackOpenOutcome outcome,
     Map<String, String>? headers,
     required bool play,
@@ -706,7 +708,7 @@ extension _VideoPlayerOpenMethods on VideoPlayerScreenState {
     );
     if (!shouldContinue()) return const _MediaOpenResult(didOpen: false);
 
-    final media = Media(videoUrl, start: timing.mediaStart, headers: headers);
+    final media = Media(videoUrl, start: timing.mediaStart, headers: headers, audioUri: audioUrl);
     final sidecarOpenGuard = MpvSidecarOpenGuard.armIfNeeded(outcome: outcome, subtitles: externalSubtitlesAtOpen);
     // Both call sites check [shouldContinue] on the statement before, with no
     // await in between, so this closure does not re-check: a staleness signal
@@ -720,6 +722,14 @@ extension _VideoPlayerOpenMethods on VideoPlayerScreenState {
         // that starts driving in between has already spent its restriction pausing the outgoing
         // item. `DD-3` allows video no exemption, and the gated resume paths start it once parked.
         play: shouldPlay && automotivePlaybackAllowedNow(),
+        // Tells the backend the source is a sliding window, not a file: mpv
+        // suppresses its VOD start handling and ExoPlayer pins the HLS parser
+        // by MIME (the relay URL carries no `.m3u8` extension to sniff).
+        // `startLivePlaylistFromBeginning` stays off — that is live TV's
+        // server-positioned-playlist fix, and a YouTube manifest is not
+        // positioned for us, so starting at segment 0 would begin the stream
+        // hours behind the live edge.
+        isLive: isLive,
         externalSubtitles: externalSubtitles,
         timelineDuration: timing.timelineDuration,
       );
@@ -928,8 +938,9 @@ extension _VideoPlayerOpenMethods on VideoPlayerScreenState {
       // Backends that support at-open sidecars receive them with open()
       // so tracks are discovered in a single prepare/loadfile cycle. Any
       // backend that cannot do that still uses the post-open sub-add path.
-      final openTiming = _playbackOpenTiming(
+      final openTiming = playbackOpenTiming(
         isTranscoding: result.isTranscoding,
+        isLive: result.isLiveStream,
         resumePosition: resumePosition(),
         durationMs: metadata.durationMs,
       );
@@ -938,8 +949,10 @@ extension _VideoPlayerOpenMethods on VideoPlayerScreenState {
         player: currentPlayer,
         settingsService: settingsService,
         videoUrl: result.videoUrl!,
+        audioUrl: result.externalAudioUrl,
         isTranscoding: result.isTranscoding,
         isLocalMedia: isLocalMedia,
+        isLive: result.isLiveStream,
         selectedVersion: result.selectedVersion,
         timing: openTiming,
         outcome: outcome,

@@ -185,6 +185,15 @@ class PlayerNative extends PlayerBase {
     return 'sub-files=${_fixedLengthQuote(escapedUris.join(separator))}';
   }
 
+  /// `audio-files=` twin of [_externalSubtitlesLoadfileOption]: a separate
+  /// audio-only stream mpv demuxes and plays in sync with the video-only
+  /// main file. File-local so it cannot leak into the next open.
+  static String? _externalAudioLoadfileOption(String? audioUri) {
+    if (audioUri == null || audioUri.isEmpty) return null;
+    final separator = Platform.isWindows ? ';' : ':';
+    return 'audio-files=${_fixedLengthQuote(_escapePathListEntry(audioUri, separator))}';
+  }
+
   /// Per-entry `http-header-fields` options for a `loadfile ... append`
   /// options arg. Every header rides its own `-append` entry because mpv's
   /// string-LIST parser splits a plain `http-header-fields=a,b` value on
@@ -462,6 +471,7 @@ class PlayerNative extends PlayerBase {
     final loadfileArgs = ['loadfile', uri, 'replace'];
     final loadfileOptions = <String>[
       ?_externalSubtitlesLoadfileOption(externalSubtitles),
+      ?_externalAudioLoadfileOption(media.audioUri),
       // Suppress mpv's own default subtitle selection so it cannot race the
       // server-backed TrackManager decision. File-local, never a property
       // write: writing `sid` while the outgoing file is still loaded

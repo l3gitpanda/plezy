@@ -142,7 +142,8 @@ extension _VideoPlayerPlaybackStartMethods on VideoPlayerScreenState {
           serverManager: context.read<MultiServerProvider>().serverManager,
           database: context.read<AppDatabase>(),
         );
-        playbackContext = await playbackResolver.resolve(
+        playbackContext = await _resolvePlaybackSource(
+          playbackResolver,
           PlaybackInitializationOptions(
             metadata: _currentMetadata,
             selectedMediaIndex: _effectiveSelectedMediaIndex,

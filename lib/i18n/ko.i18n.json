@@ -1221,7 +1221,8 @@
     "libraries": "미디어 라이브러리",
     "downloads": "다운로드",
     "liveTv": "실시간 TV",
-    "explore": "탐색"
+    "explore": "탐색",
+    "youTube": ""
   },
   "explore": {
     "title": "탐색",
@@ -2115,6 +2116,68 @@
     "permissionDenied": "",
     "permissionRevoked": ""
   },
+  "yattee": {
+    "title": "",
+    "connectTitle": "",
+    "serverUrl": "",
+    "serverUrlHelper": "",
+    "checkServer": "",
+    "instance": "",
+    "disconnectConfirm": "",
+    "disconnectConfirmBody": "",
+    "couldNotReach": "",
+    "noInstanceAtUrl": "",
+    "behindAuthProxy": "",
+    "invalidUrl": "",
+    "tooManyAttempts": "",
+    "quality": "",
+    "qualityDescription": "",
+    "qualityBest": "",
+    "quality2160": "",
+    "quality1440": "",
+    "quality1080": "",
+    "quality720": "",
+    "quality480": "",
+    "quality360": "",
+    "rows": {
+      "subscriptions": "",
+      "trending": "",
+      "popular": ""
+    },
+    "searchHint": "",
+    "searchPrompt": "",
+    "searchEmpty": "",
+    "searchFailed": "",
+    "subscribe": "",
+    "unsubscribe": "",
+    "subscribed": "",
+    "unsubscribed": "",
+    "importChannels": "",
+    "importChannelsDescription": "",
+    "importedChannels": {
+      "other": ""
+    },
+    "importedNothing": "",
+    "seedEmpty": "",
+    "seedNotAdmin": "",
+    "seedUnsupported": "",
+    "seedFailed": "",
+    "goToChannel": "",
+    "noSubscriptions": "",
+    "subscribeHowTo": "",
+    "feedFetching": "",
+    "feedFailed": "",
+    "emptyMessage": "",
+    "loadFailed": "",
+    "channelLoadFailed": "",
+    "videoLoadFailed": "",
+    "liveUnavailable": "",
+    "premiereNotStarted": "",
+    "noPlayableStream": "",
+    "views": "",
+    "subscribers": "",
+    "connectedAs": ""
+  },
   "services": {
     "title": "서비스",
     "hubSubtitle": "시청 진행률을 동기화하고 새 작품을 요청하세요.",
@@ -2131,7 +2194,8 @@
       "anilist": "AniList",
       "simkl": "Simkl",
       "seerr": "Seerr",
-      "mdblist": "MDBList"
+      "mdblist": "MDBList",
+      "yattee": ""
     },
     "deviceCode": {
       "title": "${service}에서 Plezy 활성화",

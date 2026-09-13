@@ -559,6 +559,69 @@ void main() {
       );
     });
 
+    // YouTube livestreams open the relay's HLS manifest, whose URL carries a
+    // signed query string and no `.m3u8` extension — ExoPlayer's sniffer sees
+    // an unknown container and refuses it. The flag is what pins the HLS
+    // parser by MIME instead, so it has to survive the whole open path.
+    test('ExoPlayer is told when the source is live', () async {
+      final opens = <Map<Object?, Object?>>[];
+
+      await withMockPlayerChannels(
+        methodChannelName: 'com.plezy/exo_player',
+        eventChannelName: 'com.plezy/exo_player/events',
+        methodHandler: (call) {
+          if (call.method == 'open') opens.add(Map<Object?, Object?>.from(call.arguments as Map));
+          return Future.value(call.method == 'initialize' ? true : null);
+        },
+        testBody: () async {
+          final player = PlayerAndroid();
+          try {
+            await player.open(Media('https://yattee.example/proxy/relay?token=abc'), isLive: true);
+            await player.open(Media('https://example.test/movie.mkv'));
+
+            expect(opens, hasLength(2));
+            expect(opens.first['isLive'], isTrue);
+            expect(opens.last['isLive'], isFalse);
+          } finally {
+            await player.dispose();
+          }
+        },
+      );
+    });
+
+    // A YouTube manifest is not positioned for us the way a live TV
+    // time-shift playlist is, so the live open must NOT rewind to the
+    // playlist's first segment — that would start hours behind the edge.
+    test('MPV starts a live open at the live edge unless asked to rewind', () async {
+      final calls = <MethodCall>[];
+
+      await withMockPlayerChannels(
+        methodChannelName: 'com.plezy/mpv_player',
+        eventChannelName: 'com.plezy/mpv_player/events',
+        methodHandler: (call) {
+          calls.add(call);
+          return Future.value(call.method == 'initialize' ? true : null);
+        },
+        testBody: () async {
+          final player = PlayerNative();
+          try {
+            await player.open(Media('https://yattee.example/proxy/relay?token=abc'), isLive: true);
+            expect(_loadfileArgs(calls).last, isNot(contains('live_start_index=0')));
+
+            calls.clear();
+            await player.open(
+              Media('https://plex.example/livetv.m3u8'),
+              isLive: true,
+              startLivePlaylistFromBeginning: true,
+            );
+            expect(_loadfileArgs(calls).last, contains('live_start_index=0'));
+          } finally {
+            await player.dispose();
+          }
+        },
+      );
+    });
+
     test('MPV clears stale Dart track state before opening new media', () async {
       await withMockPlayerChannels(
         methodChannelName: 'com.plezy/mpv_player',

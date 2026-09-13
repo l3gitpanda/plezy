@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../i18n/strings.g.dart';
 import '../../models/catalog/catalog_item.dart';
 import '../../providers/seerr_account_provider.dart';
+import '../../providers/yattee/yattee_account_provider.dart';
 import '../../services/discord_rpc_service.dart';
 import '../../services/settings_service.dart';
 import '../../widgets/app_icon.dart';
@@ -15,11 +16,14 @@ import '../../widgets/setting_tile.dart';
 import '../../widgets/settings_section.dart';
 import 'seerr_connect_screen.dart';
 import 'seerr_settings_screen.dart';
+import '../yattee/yattee_connect_screen.dart';
+import '../yattee/yattee_settings_screen.dart';
 import 'tracker_service_info.dart';
 
 /// Unified hub for all connected services: the watch-progress trackers
-/// (Trakt, MyAnimeList, AniList, Simkl) and the Seerr request server. Each
-/// row opens its service-specific settings screen.
+/// (Trakt, MyAnimeList, AniList, Simkl), the Seerr request server and the
+/// Yattee Server behind the YouTube tab. Each row opens its
+/// service-specific settings screen.
 class ServicesSettingsScreen extends StatelessWidget {
   const ServicesSettingsScreen({super.key});
 
@@ -39,7 +43,9 @@ class ServicesSettingsScreen extends StatelessWidget {
                 ).textTheme.bodyMedium?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
               ),
             ),
-            SettingsGroup(children: [for (final info in TrackerServiceInfo.all) _TrackerHubRow(info), _seerr()]),
+            SettingsGroup(
+              children: [for (final info in TrackerServiceInfo.all) _TrackerHubRow(info), _seerr(), _yattee()],
+            ),
             if (DiscordRPCService.isAvailable)
               SettingsGroup(
                 title: t.services.integrations,
@@ -69,6 +75,22 @@ class ServicesSettingsScreen extends StatelessWidget {
           context,
           MaterialPageRoute(
             builder: (_) => account.isConnected ? const SeerrSettingsScreen() : const SeerrConnectScreen(),
+          ),
+        );
+      },
+    ),
+  );
+
+  Widget _yattee() => Consumer<YatteeAccountProvider>(
+    builder: (context, account, _) => _ServiceHubRow(
+      leading: const AppIcon(Symbols.smart_display_rounded, fill: 1, size: 24),
+      title: t.services.names.yattee,
+      username: account.isConnected ? account.displayName : null,
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => account.isConnected ? const YatteeSettingsScreen() : const YatteeConnectScreen(),
           ),
         );
       },

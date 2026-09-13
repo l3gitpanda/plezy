@@ -382,6 +382,10 @@ class ExoPlayerCore(private val activity: Activity) :
   private val externalSubtitles = mutableListOf<MediaItem.SubtitleConfiguration>()
   private val externalSubtitleUris = mutableListOf<String>()
   private val externalSubtitleContainerUris = mutableListOf<String>()
+
+  // Separate audio-only stream merged with a video-only primary source (YouTube adaptive
+  // formats). Null for every media-server item, which carries audio in the primary file.
+  private var externalAudioUri: String? = null
   private var playbackMediaSourceFactory: DefaultMediaSourceFactory? = null
   private var currentMediaUri: String? = null
   private var currentHeaders: Map<String, String>? = null
@@ -2763,9 +2767,16 @@ class ExoPlayerCore(private val activity: Activity) :
   private fun buildPlaybackMediaSource(uri: String): MediaSource? {
     val factory = playbackMediaSourceFactory ?: return null
     val primarySource = factory.createMediaSource(buildMediaItem(uri))
-    if (externalSubtitleContainerUris.isEmpty()) return primarySource
+    val audioUri = externalAudioUri
+    if (externalSubtitleContainerUris.isEmpty() && audioUri == null) return primarySource
 
     val sources = mutableListOf<MediaSource>(primarySource)
+    // The side-loaded audio rides the same merge as container subtitles: a progressive source
+    // filtered to its audio track, timeline-aligned with the video-only primary.
+    if (audioUri != null) {
+      val audioSource = factory.createMediaSource(MediaItem.fromUri(audioUri))
+      sources.add(FilteringMediaSource(audioSource, C.TRACK_TYPE_AUDIO))
+    }
     externalSubtitleContainerUris.forEach { containerUri ->
       val containerSource = factory.createMediaSource(MediaItem.fromUri(containerUri))
       sources.add(FilteringMediaSource(containerSource, C.TRACK_TYPE_TEXT))
@@ -3397,6 +3408,7 @@ class ExoPlayerCore(private val activity: Activity) :
     mediaGeneration: Int,
     isLive: Boolean = false,
     externalSubtitleList: List<Map<String, Any?>>? = null,
+    externalAudioUri: String? = null,
     contentFrameRate: Float = -1f
   ) {
     if (!isInitialized) return
@@ -3457,6 +3469,7 @@ class ExoPlayerCore(private val activity: Activity) :
     externalSubtitles.clear()
     externalSubtitleUris.clear()
     externalSubtitleContainerUris.clear()
+    this.externalAudioUri = externalAudioUri?.takeIf { it.isNotBlank() }
     lastSubtitleCues = emptyList()
     bitmapSubtitlePlaneAspect = null
     hadSelectedTextTrack = false

@@ -1221,7 +1221,8 @@
     "libraries": "媒体库",
     "downloads": "下载",
     "liveTv": "直播电视",
-    "explore": "探索"
+    "explore": "探索",
+    "youTube": ""
   },
   "explore": {
     "title": "探索",
@@ -2115,6 +2116,68 @@
     "permissionDenied": "",
     "permissionRevoked": ""
   },
+  "yattee": {
+    "title": "",
+    "connectTitle": "",
+    "serverUrl": "",
+    "serverUrlHelper": "",
+    "checkServer": "",
+    "instance": "",
+    "disconnectConfirm": "",
+    "disconnectConfirmBody": "",
+    "couldNotReach": "",
+    "noInstanceAtUrl": "",
+    "behindAuthProxy": "",
+    "invalidUrl": "",
+    "tooManyAttempts": "",
+    "quality": "",
+    "qualityDescription": "",
+    "qualityBest": "",
+    "quality2160": "",
+    "quality1440": "",
+    "quality1080": "",
+    "quality720": "",
+    "quality480": "",
+    "quality360": "",
+    "rows": {
+      "subscriptions": "",
+      "trending": "",
+      "popular": ""
+    },
+    "searchHint": "",
+    "searchPrompt": "",
+    "searchEmpty": "",
+    "searchFailed": "",
+    "subscribe": "",
+    "unsubscribe": "",
+    "subscribed": "",
+    "unsubscribed": "",
+    "importChannels": "",
+    "importChannelsDescription": "",
+    "importedChannels": {
+      "other": ""
+    },
+    "importedNothing": "",
+    "seedEmpty": "",
+    "seedNotAdmin": "",
+    "seedUnsupported": "",
+    "seedFailed": "",
+    "goToChannel": "",
+    "noSubscriptions": "",
+    "subscribeHowTo": "",
+    "feedFetching": "",
+    "feedFailed": "",
+    "emptyMessage": "",
+    "loadFailed": "",
+    "channelLoadFailed": "",
+    "videoLoadFailed": "",
+    "liveUnavailable": "",
+    "premiereNotStarted": "",
+    "noPlayableStream": "",
+    "views": "",
+    "subscribers": "",
+    "connectedAs": ""
+  },
   "services": {
     "title": "服务",
     "hubSubtitle": "同步观看进度并请求新内容。",
@@ -2131,7 +2194,8 @@
       "anilist": "AniList",
       "simkl": "Simkl",
       "seerr": "Seerr",
-      "mdblist": "MDBList"
+      "mdblist": "MDBList",
+      "yattee": ""
     },
     "deviceCode": {
       "title": "在 ${service} 上激活 Plezy",
