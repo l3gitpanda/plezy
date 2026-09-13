@@ -203,7 +203,76 @@ void main() {
       expect(YatteeStreamSelector.select(YatteeVideo(summary: _summary())), isNull);
     });
   });
+
+  group('YatteeStreamSelector.decide', () {
+    test('a live broadcast opens its HLS manifest, ignoring the quality cap', () {
+      final video = YatteeVideo(
+        summary: _summary(liveNow: true, lengthSeconds: 0),
+        hlsUrl: 'https://yattee.example/proxy/relay?token=abc',
+        adaptiveFormats: _ladder,
+      );
+
+      final decision = YatteeStreamSelector.decide(video, quality: YatteeQuality.p720);
+
+      expect(decision.reason, isNull);
+      final selection = decision.selection!;
+      expect(selection.isLive, isTrue);
+      expect(selection.videoUrl, 'https://yattee.example/proxy/relay?token=abc');
+      // A manifest advertises its own renditions and carries its own audio.
+      expect(selection.audioUrl, isNull);
+      expect(selection.height, isNull);
+      expect(selection.isAdaptive, isFalse);
+      expect(selection.qualityLabel, 'live HLS');
+    });
+
+    test('an ordinary upload ignores its hlsUrl and picks the stream pair', () {
+      final video = YatteeVideo(
+        summary: _summary(),
+        hlsUrl: 'https://yattee.example/proxy/relay?token=abc',
+        adaptiveFormats: _ladder,
+      );
+
+      final selection = YatteeStreamSelector.decide(video, quality: YatteeQuality.p1080).selection!;
+
+      expect(selection.isLive, isFalse);
+      expect(selection.videoUrl, contains('itag=299'));
+      expect(selection.audioUrl, contains('itag=140'));
+    });
+
+    test('a live broadcast the server has no manifest for is refused as unavailable', () {
+      final video = YatteeVideo(summary: _summary(liveNow: true, lengthSeconds: 0));
+
+      final decision = YatteeStreamSelector.decide(video);
+
+      expect(decision.selection, isNull);
+      expect(decision.reason, YatteeUnplayableReason.liveUnavailable);
+    });
+
+    test('a premiere is refused as not started even when it is flagged live', () {
+      final video = YatteeVideo(
+        summary: _summary(liveNow: true, isUpcoming: true, lengthSeconds: 0),
+        hlsUrl: 'https://yattee.example/proxy/relay?token=abc',
+      );
+
+      expect(YatteeStreamSelector.decide(video).reason, YatteeUnplayableReason.premiereNotStarted);
+    });
+
+    test('an upload with no usable stream is refused as unplayable', () {
+      expect(
+        YatteeStreamSelector.decide(YatteeVideo(summary: _summary())).reason,
+        YatteeUnplayableReason.noPlayableStream,
+      );
+    });
+  });
 }
 
-YatteeVideoSummary _summary() =>
-    const YatteeVideoSummary(videoId: 'dQw4w9WgXcQ', title: 't', author: 'a', authorId: 'UC', lengthSeconds: 1);
+YatteeVideoSummary _summary({bool liveNow = false, bool isUpcoming = false, int lengthSeconds = 1}) =>
+    YatteeVideoSummary(
+      videoId: 'dQw4w9WgXcQ',
+      title: 't',
+      author: 'a',
+      authorId: 'UC',
+      lengthSeconds: lengthSeconds,
+      liveNow: liveNow,
+      isUpcoming: isUpcoming,
+    );

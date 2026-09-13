@@ -25,6 +25,9 @@ class YouTubeSessionArgs {
 
   const YouTubeSessionArgs({required this.video, required this.selection});
 
+  /// Whether this session plays a live HLS manifest rather than a file.
+  bool get isLive => selection.isLive;
+
   /// The resolver output the player would otherwise have built: a direct
   /// remote source with no reporting client — there is no server to report
   /// progress to — plus the separate audio stream and the caption sidecars.
@@ -33,6 +36,7 @@ class YouTubeSessionArgs {
       availableVersions: const [],
       videoUrl: selection.videoUrl,
       externalAudioUrl: selection.audioUrl,
+      isLiveStream: selection.isLive,
       subtitleSidecars: captionSidecars(video.captions),
       playMethod: 'DirectPlay',
     );

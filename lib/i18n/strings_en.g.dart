@@ -5594,8 +5594,11 @@ class Translations$yattee$en {
 	/// en: 'Couldn't load this video: ${error}'
 	String videoLoadFailed({required Object error}) => 'Couldn\'t load this video: ${error}';
 
-	/// en: 'Live streams aren't supported yet.'
-	String get liveUnsupported => 'Live streams aren\'t supported yet.';
+	/// en: 'This live stream isn't available right now. It may have just ended.'
+	String get liveUnavailable => 'This live stream isn\'t available right now. It may have just ended.';
+
+	/// en: 'This premiere hasn't started yet.'
+	String get premiereNotStarted => 'This premiere hasn\'t started yet.';
 
 	/// en: 'No playable stream was found for this video.'
 	String get noPlayableStream => 'No playable stream was found for this video.';
@@ -9459,7 +9462,8 @@ extension on Translations {
 			'yattee.loadFailed' => ({required Object error}) => 'Couldn\'t load YouTube: ${error}',
 			'yattee.channelLoadFailed' => ({required Object error}) => 'Couldn\'t load this channel: ${error}',
 			'yattee.videoLoadFailed' => ({required Object error}) => 'Couldn\'t load this video: ${error}',
-			'yattee.liveUnsupported' => 'Live streams aren\'t supported yet.',
+			'yattee.liveUnavailable' => 'This live stream isn\'t available right now. It may have just ended.',
+			'yattee.premiereNotStarted' => 'This premiere hasn\'t started yet.',
 			'yattee.noPlayableStream' => 'No playable stream was found for this video.',
 			'yattee.views' => ({required Object count}) => '${count} views',
 			'yattee.subscribers' => ({required Object count}) => '${count} subscribers',
@@ -9468,9 +9472,9 @@ extension on Translations {
 			'services.hubSubtitle' => 'Sync watch progress and request new titles.',
 			'services.integrations' => 'Integrations',
 			'services.notConnected' => 'Not connected',
-			'services.connectedAs' => ({required Object username}) => 'Connected as @${username}',
 			_ => null,
 		} ?? switch (path) {
+			'services.connectedAs' => ({required Object username}) => 'Connected as @${username}',
 			'services.scrobble' => 'Track progress automatically',
 			'services.scrobbleDescription' => 'Update your list when you finish an episode or movie.',
 			'services.disconnectConfirm' => ({required Object service}) => 'Disconnect ${service}?',

@@ -42,22 +42,20 @@ Future<void> navigateToYouTubeVideo(
   try {
     final video = await client.fetchVideo(videoId);
     if (!context.mounted) return;
-    if (video.summary.liveNow || video.summary.isUpcoming) {
-      // Live playback needs an HLS open the shared VOD path does not
-      // expose; the muxed/adaptive lists are empty for a live video anyway.
+    final decision = YatteeStreamSelector.decide(video, quality: account.quality);
+    if (decision.reason case final reason?) {
       await loading.dismiss();
-      if (context.mounted) showErrorSnackBar(context, t.yattee.liveUnsupported);
+      if (context.mounted) showErrorSnackBar(context, _unplayableMessage(reason));
       return;
     }
-    final selection = YatteeStreamSelector.select(video, quality: account.quality);
-    if (selection == null) {
-      await loading.dismiss();
-      if (context.mounted) showErrorSnackBar(context, t.yattee.noPlayableStream);
-      return;
-    }
+    final selection = decision.selection!;
     appLogger.i(
       'YouTube: playing ${video.videoId} at ${selection.qualityLabel} '
-      '(${selection.isAdaptive ? 'adaptive ${selection.videoCodec}+${selection.audioCodec}' : 'muxed'})',
+      '(${selection.isLive
+          ? 'live'
+          : selection.isAdaptive
+          ? 'adaptive ${selection.videoCodec}+${selection.audioCodec}'
+          : 'muxed'})',
     );
     final metadata = YouTubeMediaItems.fromSummary(video.summary);
     final route = buildVideoPlayerRoute(
@@ -83,3 +81,9 @@ Future<void> navigateToYouTubeVideo(
     unawaited(loading.dismiss());
   }
 }
+
+String _unplayableMessage(YatteeUnplayableReason reason) => switch (reason) {
+  YatteeUnplayableReason.premiereNotStarted => t.yattee.premiereNotStarted,
+  YatteeUnplayableReason.liveUnavailable => t.yattee.liveUnavailable,
+  YatteeUnplayableReason.noPlayableStream => t.yattee.noPlayableStream,
+};

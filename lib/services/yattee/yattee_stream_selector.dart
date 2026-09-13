@@ -49,6 +49,14 @@ class YatteeStreamSelection {
   /// than a muxed progressive stream.
   final bool isAdaptive;
 
+  /// Whether [videoUrl] is a live HLS manifest rather than a file.
+  ///
+  /// A live stream is a sliding window with no fixed duration, so the player
+  /// pins its HLS parser on the URL and suppresses the VOD-only resume, seek
+  /// and end-of-stream behaviour. Distinct from a Plex/Jellyfin live channel,
+  /// which owns a tuner session this has no equivalent of.
+  final bool isLive;
+
   const YatteeStreamSelection({
     required this.videoUrl,
     this.audioUrl,
@@ -59,15 +67,62 @@ class YatteeStreamSelection {
     this.videoCodec,
     this.audioCodec,
     required this.isAdaptive,
+    this.isLive = false,
   });
+
+  /// The relay's live HLS manifest ([YatteeVideo.hlsUrl]).
+  ///
+  /// Carries no resolution, codec or audio URL: a live manifest advertises
+  /// its own renditions and the player picks among them, so there is nothing
+  /// for the quality cap to choose here. Headers stay null — the relay
+  /// authenticates by signed query parameter and supplies its own upstream
+  /// identity.
+  const YatteeStreamSelection.liveHls(String url)
+    : videoUrl = url,
+      audioUrl = null,
+      headers = null,
+      width = null,
+      height = null,
+      fps = null,
+      videoCodec = null,
+      audioCodec = null,
+      isAdaptive = false,
+      isLive = true;
 
   /// `2160p60`-style label for logs and the info sheet.
   String get qualityLabel {
+    if (isLive) return 'live HLS';
     final h = height;
     if (h == null) return isAdaptive ? 'adaptive' : 'muxed';
     final f = fps;
     return f != null && f > 30 ? '${h}p$f' : '${h}p';
   }
+}
+
+/// Why a fetched video has nothing to open.
+enum YatteeUnplayableReason {
+  /// A premiere whose countdown has not run out. YouTube lists it like any
+  /// other video and the server happily returns it, but no stream exists
+  /// until it starts.
+  premiereNotStarted,
+
+  /// Flagged live, yet the server returned no HLS manifest — the broadcast
+  /// ended between the listing and this fetch, or the extractor failed on it.
+  liveUnavailable,
+
+  /// An ordinary upload with no usable adaptive or progressive stream.
+  noPlayableStream,
+}
+
+/// The launch decision for one fetched video: a stream to open, or the reason
+/// there is none. Exactly one of [selection] and [reason] is non-null.
+class YatteePlaybackDecision {
+  final YatteeStreamSelection? selection;
+  final YatteeUnplayableReason? reason;
+
+  const YatteePlaybackDecision.play(YatteeStreamSelection this.selection) : reason = null;
+
+  const YatteePlaybackDecision.refuse(YatteeUnplayableReason this.reason) : selection = null;
 }
 
 /// Picks the streams to open for a [YatteeVideo] under a [YatteeQuality] cap.
@@ -83,6 +138,36 @@ abstract final class YatteeStreamSelector {
   static const List<String> videoCodecPreference = ['avc1', 'vp9', 'av01'];
   static const List<String> audioCodecPreference = ['mp4a', 'opus'];
 
+  /// What to open for [video], live broadcasts included.
+  ///
+  /// A live video carries no adaptive or progressive files at all: the whole
+  /// stream is the relay's HLS manifest, which [selectMuxed] deliberately
+  /// refuses (its `isHls` filter is what keeps IP-bound googlevideo playlists
+  /// out of ordinary playback). Hence the branch on the video's own live
+  /// flags rather than on [YatteeVideo.hlsUrl] — a finished upload carries
+  /// one of those too, and opening it would trade the picked rendition for
+  /// whatever the manifest defaults to.
+  static YatteePlaybackDecision decide(YatteeVideo video, {YatteeQuality quality = YatteeQuality.best}) {
+    // Checked before `liveNow`: an upcoming premiere can carry both flags,
+    // and "it hasn't started" is the more useful thing to say.
+    if (video.summary.isUpcoming) {
+      return const YatteePlaybackDecision.refuse(YatteeUnplayableReason.premiereNotStarted);
+    }
+    if (video.summary.liveNow) {
+      final hlsUrl = video.hlsUrl;
+      return hlsUrl == null
+          ? const YatteePlaybackDecision.refuse(YatteeUnplayableReason.liveUnavailable)
+          : YatteePlaybackDecision.play(YatteeStreamSelection.liveHls(hlsUrl));
+    }
+    final selection = select(video, quality: quality);
+    return selection == null
+        ? const YatteePlaybackDecision.refuse(YatteeUnplayableReason.noPlayableStream)
+        : YatteePlaybackDecision.play(selection);
+  }
+
+  /// The video+audio pair for an ordinary upload; null when neither the
+  /// adaptive nor the muxed route yields one. Live videos never reach here —
+  /// see [decide].
   static YatteeStreamSelection? select(YatteeVideo video, {YatteeQuality quality = YatteeQuality.best}) {
     final adaptive = selectAdaptive(video.adaptiveFormats, quality: quality);
     if (adaptive != null) return adaptive;
