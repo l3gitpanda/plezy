@@ -34,7 +34,14 @@ abstract final class YouTubeMediaItems {
       thumbPath: thumbnail?.url,
       artPath: thumbnail?.url,
       raw: {
-        rawKey: {'videoId': video.videoId, 'channelId': video.authorId, 'channel': video.author},
+        rawKey: {
+          'videoId': video.videoId,
+          'channelId': video.authorId,
+          'channel': video.author,
+          // Carried so the card can badge the poster without re-fetching.
+          if (video.liveNow) 'live': true,
+          if (video.isUpcoming) 'upcoming': true,
+        },
       },
     );
   }
@@ -111,4 +118,18 @@ extension YouTubeMediaItemX on MediaItem {
   String? get youTubeChannelId => _youTube?['channelId'] as String?;
 
   String? get youTubeChannelName => _youTube?['channel'] as String?;
+
+  /// Poster badge for a broadcast: LIVE, Upcoming, or none.
+  ///
+  /// A live or upcoming video reports no length, so without this it is
+  /// indistinguishable on the shelf from a short upload — and tapping one is
+  /// the only other way to find out. Reuses the live TV and explore strings
+  /// rather than adding YouTube copies of them.
+  String? get youTubeBroadcastBadge {
+    final data = _youTube;
+    if (data == null) return null;
+    if (data['live'] == true) return t.liveTv.live;
+    if (data['upcoming'] == true) return t.explore.status.upcoming;
+    return null;
+  }
 }

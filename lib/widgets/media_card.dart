@@ -530,7 +530,14 @@ class MediaCardState extends State<MediaCard> with ContextMenuTapMixin<MediaCard
   }) {
     final catalogItem = _catalogItem;
     final now = catalogItem?.nextEpisode == null ? null : DateTime.now();
-    final badgeLabels = _buildCatalogBadgeLabels(catalogItem, now);
+    // YouTube shares this overlay rather than growing its own: a broadcast
+    // reports no length, so the badge is the only thing on the poster that
+    // says it is live. The two sources never coexist — a catalog item is
+    // never a YouTube stand-in.
+    final badgeLabels = [
+      ..._buildCatalogBadgeLabels(catalogItem, now),
+      if (item is MediaItem) ?item.youTubeBroadcastBadge,
+    ];
     final Widget card;
     if (widget.fullBleedImage) {
       card = LayoutBuilder(
