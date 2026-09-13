@@ -840,7 +840,7 @@ extension _VideoPlayerOpenMethods on VideoPlayerScreenState {
   }) async {
     await _applyNetworkStreamTuning(
       player: player,
-      isNetworkVod: !isLocalMedia && !widget.isLive,
+      isNetworkVod: usesNetworkVodTuning(isLocalMedia: isLocalMedia, isTunerLive: widget.isLive, isLiveStream: isLive),
       isTranscoding: isTranscoding,
       selectedVersion: selectedVersion,
     );
