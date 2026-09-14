@@ -16,15 +16,30 @@
 enum YatteeSite {
   /// The server's `site` id is the lowercase extractor name, matching the
   /// ids in its admin site registry (`routers/admin/sites.py`).
-  youtube('youtube', supportsSearch: true),
-  twitch('twitch', supportsSearch: false);
+  youtube('youtube', supportsSearch: true, browsesByChannel: false),
+  twitch('twitch', supportsSearch: false, browsesByChannel: true);
 
-  const YatteeSite(this.id, {required this.supportsSearch});
+  const YatteeSite(this.id, {required this.supportsSearch, required this.browsesByChannel});
 
   final String id;
 
   /// Whether the Invidious-compatible catalog routes serve this site.
   final bool supportsSearch;
+
+  /// Whether this site's row is built by extracting each channel rather than
+  /// by asking the feed.
+  ///
+  /// The feed cannot answer "is this channel live". `FeedVideoResponse`
+  /// carries no live flag — the field is absent from the model, and
+  /// `cached_videos` has no column to hold one — and it serves whatever
+  /// thumbnail was stored when the channel was first crawled, so a live
+  /// preview freezes at the moment of subscribing.
+  ///
+  /// `/extract/channel` answers with `VideoListItem`, which yt-dlp does
+  /// populate with `liveNow`, and with a thumbnail from this moment. It costs
+  /// one extraction per channel, which is why only a site whose channels
+  /// *are* broadcasts pays it.
+  final bool browsesByChannel;
 
   /// The site this feed item or subscription belongs to.
   ///

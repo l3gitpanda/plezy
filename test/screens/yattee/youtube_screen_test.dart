@@ -47,6 +47,7 @@ class _FakeServer {
   /// Rows served by the admin watched-channels route the provider seeds from.
   final List<Map<String, Object?>> watchedChannels;
   final feedBodies = <Map<String, dynamic>>[];
+  final extractedChannels = <String>[];
   final searchQueries = <String>[];
 
   http.Client client() => MockClient((request) async {
@@ -58,6 +59,22 @@ class _FakeServer {
         return _json([_video('trend1', 'Trending One')]);
       case '/api/v1/popular':
         return _json([_video('pop1', 'Popular One')]);
+      case '/api/v1/extract/channel':
+        extractedChannels.add(request.url.queryParameters['url'] ?? '');
+        return _json({
+          'author': 'shroud',
+          'authorId': 'shroud',
+          'authorUrl': 'https://www.twitch.tv/shroud',
+          'extractor': 'twitch',
+          'videos': [
+            {
+              ..._video('tw1', 'Twitch One'),
+              'extractor': 'twitch',
+              'videoUrl': 'https://www.twitch.tv/shroud',
+              'liveNow': true,
+            },
+          ],
+        });
       case '/api/v1/feed':
         final body = jsonDecode(request.body) as Map<String, dynamic>;
         feedBodies.add(body);
@@ -180,7 +197,7 @@ void main() {
     expect(find.text('Feed One'), findsOneWidget);
   });
 
-  testWidgets('a Twitch subscription gets its own row and its own feed call', (tester) async {
+  testWidgets('a Twitch subscription gets its own row, read channel by channel', (tester) async {
     final (account, server) = await _pumpYouTube(tester);
     await tester.runAsync(() async {
       await account.subscribe(const YatteeSubscription(channelId: 'UCfeed', name: 'Feed Channel'));
@@ -196,11 +213,14 @@ void main() {
     });
     await tester.pumpAndSettle();
 
-    // One request per site: a single merged call could not be split back
-    // into rows, and a site the server rejects would fail the other's too.
+    // YouTube still goes through the feed.
     final bodies = server.feedBodies.map((b) => (b['channels'] as List).first as Map).toList();
     expect(bodies.any((c) => c['site'] == 'youtube' && !c.containsKey('channel_url')), isTrue);
-    expect(bodies.any((c) => c['site'] == 'twitch' && c['channel_url'] == 'https://www.twitch.tv/shroud'), isTrue);
+    expect(bodies.any((c) => c['site'] == 'twitch'), isFalse, reason: 'twitch does not use the feed');
+    // Twitch is read channel by channel instead: the feed reports no live
+    // status and serves the thumbnail it cached when the channel was crawled,
+    // so from it every streamer looks offline and frozen.
+    expect(server.extractedChannels, ['https://www.twitch.tv/shroud']);
 
     final rows = tester.widgetList<HubSection>(find.byType(HubSection)).map((hub) => hub.hub.title).toList();
     // Only built rows are visible to the finder — the shelf list is lazy and

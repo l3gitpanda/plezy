@@ -17,8 +17,37 @@ abstract final class YouTubeMediaItems {
   /// `raw` key under which the source [YatteeVideoSummary]'s identity lives.
   static const String rawKey = 'plezyYouTube';
 
-  static MediaItem fromSummary(YatteeVideoSummary video) {
+  /// How coarsely a live preview's cache-busting stamp advances.
+  ///
+  /// The image cache keys on the URL, so a stable URL is fetched once and
+  /// held forever. A stamp that changed every second would make a new cache
+  /// entry per rebuild; five minutes keeps a broadcast preview current enough
+  /// to be useful while bounding what the cache accumulates.
+  static const Duration livePreviewInterval = Duration(minutes: 5);
+
+  /// Cache-busted [url] for a live preview, or [url] unchanged.
+  ///
+  /// Twitch serves a broadcast's preview from a fixed path — the picture
+  /// behind `live_user_<name>-<w>x<h>.jpg` changes, the address does not — so
+  /// without this the thumbnail stays on whatever frame was showing the first
+  /// time it loaded. [now] is passed in rather than read here so the mapping
+  /// stays a pure function of its inputs.
+  static String livePreviewUrl(String url, DateTime now) {
+    final bucket = now.millisecondsSinceEpoch ~/ livePreviewInterval.inMilliseconds;
+    final parsed = Uri.tryParse(url);
+    if (parsed == null) return url;
+    return parsed.replace(queryParameters: {...parsed.queryParameters, 'plezy': '$bucket'}).toString();
+  }
+
+  static MediaItem fromSummary(YatteeVideoSummary video, {DateTime? now}) {
     final thumbnail = video.thumbnail;
+    // A live preview is a moving picture behind an unchanging URL; everything
+    // else is a still that never needs refetching.
+    final thumbnailUrl = thumbnail == null
+        ? null
+        : video.liveNow
+        ? livePreviewUrl(thumbnail.url, now ?? DateTime.now())
+        : thumbnail.url;
     return MediaItem(
       id: 'youtube:${video.videoId}',
       // A backend is mandatory on the union; Plex is the catalog convention
@@ -32,8 +61,8 @@ abstract final class YouTubeMediaItems {
       parentTitle: video.author,
       summary: metadataLine(video),
       durationMs: video.lengthSeconds > 0 ? video.lengthSeconds * 1000 : null,
-      thumbPath: thumbnail?.url,
-      artPath: thumbnail?.url,
+      thumbPath: thumbnailUrl,
+      artPath: thumbnailUrl,
       raw: {
         rawKey: {
           'videoId': video.videoId,

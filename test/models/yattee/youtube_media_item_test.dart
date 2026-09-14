@@ -14,6 +14,14 @@ YatteeVideoSummary _summary({bool liveNow = false, bool isUpcoming = false, int 
       isUpcoming: isUpcoming,
       viewCountText: '1.2M views',
       publishedText: '3 days ago',
+      thumbnails: const [
+        YatteeThumbnail(
+          quality: 'maxres',
+          url: 'https://static-cdn.jtvnw.net/previews-ttv/live_user_xqc-1280x720.jpg',
+          width: 1280,
+          height: 720,
+        ),
+      ],
     );
 
 void main() {
@@ -52,6 +60,34 @@ void main() {
     test('a broadcast shows no runtime', () {
       expect(YouTubeMediaItems.fromSummary(_summary(liveNow: true, lengthSeconds: 0)).youTubeDurationLabel, isNull);
       expect(YouTubeMediaItems.fromSummary(_summary(isUpcoming: true, lengthSeconds: 0)).youTubeDurationLabel, isNull);
+    });
+
+    // Twitch serves a broadcast's preview from a fixed path — the picture
+    // changes, the address does not — so the image cache, which keys on URL,
+    // would hold the first frame it ever fetched.
+    test('a live preview is cache-busted on a coarse interval', () {
+      final at = DateTime.utc(2026, 9, 14, 12, 0);
+      final item = YouTubeMediaItems.fromSummary(_summary(liveNow: true, lengthSeconds: 0), now: at);
+      final later = YouTubeMediaItems.fromSummary(
+        _summary(liveNow: true, lengthSeconds: 0),
+        now: at.add(const Duration(minutes: 6)),
+      );
+      final sameBucket = YouTubeMediaItems.fromSummary(
+        _summary(liveNow: true, lengthSeconds: 0),
+        now: at.add(const Duration(minutes: 1)),
+      );
+
+      expect(item.thumbPath, isNot(later.thumbPath), reason: 'a later interval refetches');
+      expect(item.thumbPath, sameBucket.thumbPath, reason: 'within one interval the cache is reused');
+    });
+
+    test('a finished upload keeps its URL untouched', () {
+      final item = YouTubeMediaItems.fromSummary(_summary(), now: DateTime.utc(2026, 9, 14));
+      expect(item.thumbPath, isNot(contains('plezy=')));
+    });
+
+    test('an unparseable thumbnail URL is left alone rather than mangled', () {
+      expect(YouTubeMediaItems.livePreviewUrl('::not a url::', DateTime.utc(2026)), '::not a url::');
     });
 
     test('a channel stand-in has no broadcast badge', () {
