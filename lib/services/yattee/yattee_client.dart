@@ -274,7 +274,18 @@ class YatteeClient {
         batch.map((target) async {
           try {
             final channel = await extractChannel(target.$2);
-            return channel.videos.take(perChannelLimit).toList();
+            // The site is stated, not inferred. A flat-playlist channel
+            // listing leaves `extractor` off its entries — it belongs to the
+            // parent — and an absent one reads as YouTube, which routes the
+            // item to the YouTube-only `/videos/{id}` and fails there. The
+            // subscription knows exactly where this came from.
+            //
+            // A live broadcast with no URL of its own also inherits the
+            // channel URL, which on a site like Twitch *is* the stream.
+            return [
+              for (final video in channel.videos.take(perChannelLimit))
+                video.withOrigin(site: target.$1.site, videoUrl: video.liveNow ? target.$2 : null),
+            ];
           } catch (e) {
             appLogger.w('Yattee: could not read ${target.$1.name} (${target.$1.site.id}): $e');
             return const <YatteeVideoSummary>[];
