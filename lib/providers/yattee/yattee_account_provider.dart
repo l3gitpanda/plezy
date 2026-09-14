@@ -4,7 +4,10 @@ import 'package:flutter/foundation.dart';
 
 import '../../mixins/disposable_change_notifier_mixin.dart';
 import '../../models/yattee/yattee_session.dart';
+import '../../media/media_item.dart';
 import '../../models/yattee/yattee_site.dart';
+import '../../models/yattee/yattee_video.dart';
+import '../../models/yattee/youtube_media_item.dart';
 import '../../services/yattee/yattee_auth_service.dart';
 import '../../services/yattee/yattee_client.dart';
 import '../../services/yattee/yattee_exceptions.dart';
@@ -75,6 +78,12 @@ class YatteeAccountProvider extends ChangeNotifier with DisposableChangeNotifier
   YatteeClient? _client;
   List<YatteeSubscription> _subscriptions = const [];
   YatteeQuality _quality = YatteeQuality.best;
+
+  /// Watched marks in order, most recent last. A list rather than a set so
+  /// the oldest can be dropped when the store trims (see
+  /// [YatteeStore.maxWatchedEntries]); membership is answered by [_watchedLookup].
+  List<String> _watched = const [];
+  Set<String> _watchedLookup = const {};
   String _activeUserUuid = '';
   int _bindingGeneration = 0;
 
@@ -104,6 +113,57 @@ class YatteeAccountProvider extends ChangeNotifier with DisposableChangeNotifier
 
   YatteeQuality get quality => _quality;
 
+  /// Key for one video's watched mark.
+  ///
+  /// Scoped by site because ids are only unique within one: a Twitch
+  /// broadcast id and a YouTube video id could otherwise collide.
+  static String watchedKeyFor(YatteeSite site, String videoId) => '${site.id}:$videoId';
+
+  bool isVideoWatched(YatteeSite site, String videoId) => _watchedLookup.contains(watchedKeyFor(site, videoId));
+
+  /// The card stand-in for [video], carrying this profile's watched mark.
+  ///
+  /// Every browse surface builds its items through here so the mark is never
+  /// applied in some rows and not others.
+  MediaItem toMediaItem(YatteeVideoSummary video) =>
+      YouTubeMediaItems.fromSummary(video).withWatchedFlag(isVideoWatched(video.site, video.videoId));
+
+  /// Re-apply the current marks to items already on screen.
+  ///
+  /// Marking one watched must not refetch a row; the flag is the only thing
+  /// that changed, and it is derivable from the item itself.
+  List<MediaItem> restampWatched(List<MediaItem> items) => [
+    for (final item in items)
+      if (item.youTubeVideoId case final videoId?)
+        item.withWatchedFlag(isVideoWatched(item.youTubeSite, videoId))
+      else
+        item,
+  ];
+
+  /// Mark (or unmark) one video.
+  ///
+  /// Local only. Yattee Server keeps no watch state — it has no history,
+  /// progress or mark-watched route — so there is nothing to report this to,
+  /// and nothing that could report it back.
+  Future<void> setVideoWatched(YatteeSite site, String videoId, bool watched) async {
+    if (isDisposed) return;
+    final key = watchedKeyFor(site, videoId);
+    if (_watchedLookup.contains(key) == watched) return;
+    _watched = [
+      for (final entry in _watched)
+        if (entry != key) entry,
+      if (watched) key,
+    ];
+    _watchedLookup = _watched.toSet();
+    safeNotifyListeners();
+    final userUuid = _activeUserUuid;
+    try {
+      await _store.saveWatched(userUuid, _watched);
+    } catch (e) {
+      _logPersistenceFailure(e);
+    }
+  }
+
   void _logPersistenceFailure(Object e) => appLogger.w('Yattee: persistence failed', error: e);
 
   /// Called whenever the active profile changes (or on initial load).
@@ -120,9 +180,12 @@ class YatteeAccountProvider extends ChangeNotifier with DisposableChangeNotifier
     // list does not — `clearSession` drops it with the session it belonged to.
     final subscriptions = await _store.loadSubscriptions(userUuid);
     final quality = await _store.loadQuality(userUuid);
+    final watched = await _store.loadWatched(userUuid);
     if (!_isCurrentBinding(userUuid, generation)) return;
     _subscriptions = subscriptions;
     _quality = quality;
+    _watched = watched;
+    _watchedLookup = watched.toSet();
     _setSessionAndRebind(userUuid, generation, loaded);
     // Nothing stored yet on this device: try the server's channel set so the
     // Subscriptions row is populated without the user re-subscribing by hand.

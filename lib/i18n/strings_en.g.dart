@@ -5456,6 +5456,18 @@ class Translations$yattee$en {
 	/// en: 'Unsubscribe'
 	String get unsubscribe => 'Unsubscribe';
 
+	/// en: 'Mark as watched'
+	String get markWatched => 'Mark as watched';
+
+	/// en: 'Mark as unwatched'
+	String get markUnwatched => 'Mark as unwatched';
+
+	/// en: 'Marked as watched'
+	String get markedWatched => 'Marked as watched';
+
+	/// en: 'Marked as unwatched'
+	String get markedUnwatched => 'Marked as unwatched';
+
 	/// en: 'Subscribed to ${channel}'
 	String subscribed({required Object channel}) => 'Subscribed to ${channel}';
 
@@ -9226,6 +9238,10 @@ extension on Translations {
 			'yattee.searchFailed' => 'Search failed. Try again.',
 			'yattee.subscribe' => 'Subscribe',
 			'yattee.unsubscribe' => 'Unsubscribe',
+			'yattee.markWatched' => 'Mark as watched',
+			'yattee.markUnwatched' => 'Mark as unwatched',
+			'yattee.markedWatched' => 'Marked as watched',
+			'yattee.markedUnwatched' => 'Marked as unwatched',
 			'yattee.subscribed' => ({required Object channel}) => 'Subscribed to ${channel}',
 			'yattee.unsubscribed' => ({required Object channel}) => 'Unsubscribed from ${channel}',
 			'yattee.importChannels' => 'Import channels from server',
@@ -9306,12 +9322,12 @@ extension on Translations {
 			'addServer.localMediaBrowserServers' => ({required Object product}) => 'Local ${product} servers',
 			'addServer.username' => 'Username',
 			'addServer.password' => 'Password',
+			_ => null,
+		} ?? switch (path) {
 			'addServer.signIn' => 'Sign in',
 			'addServer.change' => 'Change',
 			'addServer.required' => 'Required',
 			'addServer.couldNotReachServer' => ({required Object error}) => 'Could not reach the server: ${error}',
-			_ => null,
-		} ?? switch (path) {
 			'addServer.signInFailed' => ({required Object error}) => 'Sign-in failed: ${error}',
 			'addServer.quickConnectFailed' => ({required Object error}) => 'Quick Connect failed: ${error}',
 			'addServer.addPlexTitle' => 'Sign in with Plex',

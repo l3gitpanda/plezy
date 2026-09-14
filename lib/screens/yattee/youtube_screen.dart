@@ -14,7 +14,6 @@ import '../../mixins/debounced_media_search.dart';
 import '../../mixins/refreshable.dart';
 import '../../mixins/tab_visibility_aware.dart';
 import '../../models/yattee/yattee_site.dart';
-import '../../models/yattee/youtube_media_item.dart';
 import '../../models/yattee/yattee_video.dart';
 import '../../navigation/main_screen_scope.dart';
 import '../../providers/yattee/yattee_account_provider.dart';
@@ -165,6 +164,16 @@ class YouTubeScreenState extends State<YouTubeScreen>
   /// row; trending and popular are unaffected.
   void _onAccountChanged() {
     final signature = _signatureOf(_account);
+    // A watched mark changes only the flag on items already on screen, so it
+    // is applied in place; refetching a row to learn something the client
+    // already knows would be a network round trip for nothing.
+    if (_rows.isNotEmpty) {
+      setState(() {
+        for (final row in _rows.keys.toList()) {
+          _rows[row] = _account.restampWatched(_rows[row]!);
+        }
+      });
+    }
     if (signature == _subscriptionsSignature) return;
     _subscriptionsSignature = signature;
     if (!mounted) return;
@@ -258,7 +267,7 @@ class YouTubeScreenState extends State<YouTubeScreen>
     try {
       final videos = await fetch();
       if (!mounted || generation != _generation) return null;
-      setState(() => _rows[row] = videos.map(YouTubeMediaItems.fromSummary).toList());
+      setState(() => _rows[row] = videos.map(_account.toMediaItem).toList());
       return null;
     } catch (e, stackTrace) {
       appLogger.w('YouTube: ${row.name} row failed to load', error: e, stackTrace: stackTrace);
@@ -297,7 +306,7 @@ class YouTubeScreenState extends State<YouTubeScreen>
         final videos = await feedClient.fetchChannelStates(subscriptions);
         if (!mounted || feedGeneration != _feedGeneration) return null;
         setState(() {
-          _rows[row] = videos.map(YouTubeMediaItems.fromSummary).toList();
+          _rows[row] = videos.map(_account.toMediaItem).toList();
           _feedFetching.remove(row);
           _feedError.remove(row);
         });
@@ -306,7 +315,7 @@ class YouTubeScreenState extends State<YouTubeScreen>
       final page = await feedClient.fetchFeed(subscriptions, limit: feedLimit);
       if (!mounted || feedGeneration != _feedGeneration) return null;
       setState(() {
-        _rows[row] = page.videos.map(YouTubeMediaItems.fromSummary).toList();
+        _rows[row] = page.videos.map(_account.toMediaItem).toList();
         _feedFetching[row] = page.isFetching;
         _feedError.remove(row);
       });
@@ -351,10 +360,10 @@ class YouTubeScreenState extends State<YouTubeScreen>
         // Deeper per channel than the shelf takes, but still one extraction
         // each — the cost scales with channels followed, not with the page.
         final videos = await client.fetchChannelStates(subscriptions, perChannelLimit: 20);
-        return videos.map(YouTubeMediaItems.fromSummary).toList();
+        return videos.map(_account.toMediaItem).toList();
       }
       final page = await client.fetchFeed(subscriptions, limit: gridFeedLimit);
-      return page.videos.map(YouTubeMediaItems.fromSummary).toList();
+      return page.videos.map(_account.toMediaItem).toList();
     }
     final videos = switch (row) {
       YouTubeRow.trending => await client.fetchTrending(),
@@ -362,7 +371,7 @@ class YouTubeScreenState extends State<YouTubeScreen>
       // Unreachable: every non-feed row is one of the two above.
       _ => const <YatteeVideoSummary>[],
     };
-    return videos.map(YouTubeMediaItems.fromSummary).toList();
+    return videos.map(_account.toMediaItem).toList();
   }
 
   /// Open the browsable grid for one row, chosen from a sheet.

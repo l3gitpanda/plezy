@@ -16,6 +16,7 @@ import 'package:plezy/screens/hub_detail_screen.dart';
 import 'package:plezy/services/multi_server_manager.dart';
 import 'package:plezy/services/settings_service.dart';
 import 'package:plezy/utils/platform_detector.dart';
+import 'package:plezy/widgets/app_bar_back_button.dart';
 import 'package:plezy/theme/mono_theme.dart';
 import 'package:plezy/utils/media_server_http_client.dart';
 import 'package:plezy/utils/grid_size_calculator.dart';
@@ -69,6 +70,9 @@ void main() {
       await pumpGrid(tester, tv: true);
       expect(find.byTooltip(t.common.back), findsOneWidget);
       expect(find.byTooltip(t.libraries.sort), findsOneWidget);
+      // Exactly one back affordance: the chevron is replaced, not joined, or
+      // the screen shows two arrows and only one of them can be picked.
+      expect(find.byType(AppBarBackButton), findsNothing);
     });
 
     testWidgets('and adds none off TV, where the chevron is reachable', (tester) async {
