@@ -81,16 +81,37 @@ Future<void> navigateToYouTubeVideo(
     appLogger.w('YouTube: failed to resolve $videoId', error: e, stackTrace: stackTrace);
     await loading.dismiss();
     if (!context.mounted) return;
-    final message = switch (e) {
-      YatteeAuthException(:final display) => display ?? t.addServer.invalidCredentials,
-      YatteeApiException(:final message) => message,
-      _ => e.toString(),
-    };
-    showErrorSnackBar(context, t.yattee.videoLoadFailed(error: message));
+    showErrorSnackBar(context, _launchFailureMessage(e));
   } finally {
     _launchInFlight = false;
     unawaited(loading.dismiss());
   }
+}
+
+/// What to tell the user when resolving a video threw.
+///
+/// The extractor's own failures reach us as HTTP 422 with yt-dlp's message
+/// wrapped in "Could not extract video: …" (routers/videos.py). That text is
+/// written for a terminal, not a television, so the two cases worth naming
+/// get a sentence of their own and everything else is summarised rather than
+/// dumped.
+String _launchFailureMessage(Object error) {
+  if (error case YatteeApiException(:final statusCode, :final message) when statusCode == 422) {
+    final detail = message.toLowerCase();
+    // yt-dlp reports an offline Twitch channel as "<name> is offline"; there
+    // is no status code or field that distinguishes it, so the text is all
+    // there is to go on.
+    if (detail.contains('offline')) return t.yattee.channelOffline;
+    return t.yattee.videoUnavailable;
+  }
+  final message = switch (error) {
+    // Only a genuine credential refusal reaches here now — a policy 403 is an
+    // API exception and carries its own reason.
+    YatteeAuthException(:final display) => display ?? t.addServer.invalidCredentials,
+    YatteeApiException(:final message) => message,
+    _ => error.toString(),
+  };
+  return t.yattee.videoLoadFailed(error: message);
 }
 
 String _unplayableMessage(YatteeUnplayableReason reason) => switch (reason) {

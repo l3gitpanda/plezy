@@ -5543,6 +5543,12 @@ class Translations$yattee$en {
 	/// en: 'No playable stream was found for this video.'
 	String get noPlayableStream => 'No playable stream was found for this video.';
 
+	/// en: 'This channel is offline right now. Its past broadcasts are still here.'
+	String get channelOffline => 'This channel is offline right now. Its past broadcasts are still here.';
+
+	/// en: 'This stream has ended and is no longer available.'
+	String get videoUnavailable => 'This stream has ended and is no longer available.';
+
 	/// en: '${count} views'
 	String views({required Object count}) => '${count} views';
 
@@ -9248,6 +9254,8 @@ extension on Translations {
 			'yattee.liveUnavailable' => 'This live stream isn\'t available right now. It may have just ended.',
 			'yattee.premiereNotStarted' => 'This premiere hasn\'t started yet.',
 			'yattee.noPlayableStream' => 'No playable stream was found for this video.',
+			'yattee.channelOffline' => 'This channel is offline right now. Its past broadcasts are still here.',
+			'yattee.videoUnavailable' => 'This stream has ended and is no longer available.',
 			'yattee.views' => ({required Object count}) => '${count} views',
 			'yattee.subscribers' => ({required Object count}) => '${count} subscribers',
 			'yattee.connectedAs' => ({required Object username}) => 'Signed in as ${username}',
@@ -9302,10 +9310,10 @@ extension on Translations {
 			'addServer.change' => 'Change',
 			'addServer.required' => 'Required',
 			'addServer.couldNotReachServer' => ({required Object error}) => 'Could not reach the server: ${error}',
-			'addServer.signInFailed' => ({required Object error}) => 'Sign-in failed: ${error}',
-			'addServer.quickConnectFailed' => ({required Object error}) => 'Quick Connect failed: ${error}',
 			_ => null,
 		} ?? switch (path) {
+			'addServer.signInFailed' => ({required Object error}) => 'Sign-in failed: ${error}',
+			'addServer.quickConnectFailed' => ({required Object error}) => 'Quick Connect failed: ${error}',
 			'addServer.addPlexTitle' => 'Sign in with Plex',
 			'addServer.pinExpired' => 'PIN expired before sign-in. Please try again.',
 			'addServer.failedToRegisterAccount' => ({required Object error}) => 'Failed to register account: ${error}',

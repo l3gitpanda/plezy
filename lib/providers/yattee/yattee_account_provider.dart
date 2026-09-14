@@ -149,19 +149,20 @@ class YatteeAccountProvider extends ChangeNotifier with DisposableChangeNotifier
     try {
       discovered = await client.fetchWatchedChannels();
     } on YatteeAuthException catch (e) {
-      // 403 is the likely one: the channel list is admin-only, so a
-      // secondary account on a shared server can never read it.
-      appLogger.w('Yattee: the server refused its channel list (HTTP ${e.statusCode})');
-      return YatteeSeedResult(
-        e.statusCode == 403 ? YatteeSeedOutcome.notAdmin : YatteeSeedOutcome.failed,
-        error: e.message,
-      );
+      // 401 only: the credentials themselves were refused.
+      appLogger.w('Yattee: the server refused the credentials (HTTP ${e.statusCode})');
+      return YatteeSeedResult(YatteeSeedOutcome.failed, error: e.message);
     } on YatteeApiException catch (e) {
       appLogger.w('Yattee: the server rejected the channel list request (HTTP ${e.statusCode})');
-      return YatteeSeedResult(
-        e.statusCode == 404 ? YatteeSeedOutcome.unsupported : YatteeSeedOutcome.failed,
-        error: e.message,
-      );
+      // 403 is "Admin privileges required" — the channel list is admin-only,
+      // so a secondary account on a shared server can never read it. It
+      // arrives here rather than as an auth failure because the account is
+      // fine; it simply lacks the role.
+      return YatteeSeedResult(switch (e.statusCode) {
+        403 => YatteeSeedOutcome.notAdmin,
+        404 => YatteeSeedOutcome.unsupported,
+        _ => YatteeSeedOutcome.failed,
+      }, error: e.message);
     } catch (e, stackTrace) {
       appLogger.w('Yattee: seeding subscriptions from the server failed', error: e, stackTrace: stackTrace);
       return YatteeSeedResult(YatteeSeedOutcome.failed, error: e.toString());

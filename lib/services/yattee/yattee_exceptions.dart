@@ -17,8 +17,11 @@ class YatteeUrlException implements Exception {
   String toString() => 'YatteeUrlException: $message';
 }
 
-/// The server rejected the Basic Auth credentials (401/403), or throttled
+/// The server rejected the Basic Auth credentials (401), or throttled
 /// repeated failures (429).
+///
+/// Not 403 — see [YatteeHttpClient.send] for why that one is a policy answer
+/// rather than a credential one.
 class YatteeAuthException implements Exception {
   final String message;
   final String? display;

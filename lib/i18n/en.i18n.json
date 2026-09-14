@@ -2193,6 +2193,8 @@
     "liveUnavailable": "This live stream isn't available right now. It may have just ended.",
     "premiereNotStarted": "This premiere hasn't started yet.",
     "noPlayableStream": "No playable stream was found for this video.",
+    "channelOffline": "This channel is offline right now. Its past broadcasts are still here.",
+    "videoUnavailable": "This stream has ended and is no longer available.",
     "views": "${count} views",
     "subscribers": "${count} subscribers",
     "connectedAs": "Signed in as ${username}"
