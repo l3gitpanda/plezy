@@ -242,6 +242,82 @@ void main() {
       expect(states.map((v) => v.videoId), isNot(contains('broken')));
     });
 
+    // Regression, three failed fixes deep: the entries of a flat-playlist
+    // channel listing carry neither `extractor` nor `videoUrl` — both belong
+    // to the parent — so the site was read as YouTube by default and the item
+    // went to the YouTube-only /videos/{id}: "Invalid video ID format:
+    // 317451146103". The subscription knows the site; state it.
+    test('channel states state the site even when the entries omit it', () async {
+      final client = YatteeClient(
+        _session(),
+        httpClient: MockClient(
+          (_) async => _json({
+            'author': 'shroud',
+            'authorId': 'shroud',
+            'authorUrl': 'https://www.twitch.tv/shroud',
+            'extractor': 'twitch:stream',
+            'videos': [
+              // Exactly what a flat-playlist entry looks like: an id and a
+              // title, no extractor, no videoUrl.
+              {
+                'type': 'video',
+                'videoId': '317451146103',
+                'title': 'shroud (live)',
+                'author': 'shroud',
+                'authorId': 'shroud',
+                'lengthSeconds': 0,
+                'liveNow': true,
+              },
+            ],
+          }),
+        ),
+      );
+
+      final states = await client.fetchChannelStates(const [
+        YatteeSubscription(
+          channelId: 'shroud',
+          name: 'shroud',
+          site: YatteeSite.twitch,
+          channelUrl: 'https://www.twitch.tv/shroud',
+        ),
+      ]);
+
+      expect(states.single.site, YatteeSite.twitch, reason: 'never defaults to YouTube');
+      // A live broadcast is reachable at the channel URL, so it inherits one.
+      expect(states.single.videoUrl, 'https://www.twitch.tv/shroud');
+    });
+
+    test('an entry that states its own URL keeps it', () async {
+      final client = YatteeClient(
+        _session(),
+        httpClient: MockClient(
+          (_) async => _json({
+            'author': 'shroud',
+            'authorId': 'shroud',
+            'authorUrl': 'https://www.twitch.tv/shroud',
+            'extractor': 'twitch',
+            'videos': [
+              {..._video('v1'), 'liveNow': false, 'videoUrl': 'https://www.twitch.tv/videos/123'},
+            ],
+          }),
+        ),
+      );
+
+      final states = await client.fetchChannelStates(const [
+        YatteeSubscription(
+          channelId: 'shroud',
+          name: 'shroud',
+          site: YatteeSite.twitch,
+          channelUrl: 'https://www.twitch.tv/shroud',
+        ),
+      ]);
+
+      expect(states.single.site, YatteeSite.twitch);
+      // A past broadcast must NOT inherit the channel URL — that points at
+      // whatever is on air now.
+      expect(states.single.videoUrl, 'https://www.twitch.tv/videos/123');
+    });
+
     test('channel states skip a subscription with no channel URL', () async {
       final client = YatteeClient(_session(), httpClient: MockClient((_) async => fail('no request expected')));
       final states = await client.fetchChannelStates(const [

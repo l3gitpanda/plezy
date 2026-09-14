@@ -105,6 +105,33 @@ class YatteeVideoSummary {
   static List<YatteeVideoSummary> listFromJson(Object? value) =>
       parseFlexibleJsonList(value, YatteeVideoSummary.fromJson).where((v) => v.videoId.isNotEmpty).toList();
 
+  /// This video with its origin stated rather than inferred.
+  ///
+  /// `extractor` and `videoUrl` are per-item fields the server fills from
+  /// each yt-dlp entry, and a flat-playlist channel listing does not put them
+  /// on its entries — they belong to the parent. An absent extractor reads as
+  /// YouTube, which then sends the item to the YouTube-only `/videos/{id}`.
+  /// A caller that already knows where the video came from says so here
+  /// instead of leaving it to a field that may not be there.
+  YatteeVideoSummary withOrigin({required YatteeSite site, String? videoUrl}) => YatteeVideoSummary(
+    videoId: videoId,
+    title: title,
+    description: description,
+    author: author,
+    authorId: authorId,
+    lengthSeconds: lengthSeconds,
+    published: published,
+    publishedText: publishedText,
+    viewCount: viewCount,
+    viewCountText: viewCountText,
+    thumbnails: thumbnails,
+    liveNow: liveNow,
+    isUpcoming: isUpcoming,
+    isShort: isShort,
+    site: site,
+    videoUrl: this.videoUrl ?? videoUrl,
+  );
+
   YatteeThumbnail? get thumbnail => YatteeThumbnail.best(thumbnails);
 }
 
