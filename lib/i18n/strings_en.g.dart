@@ -5468,6 +5468,24 @@ class Translations$yattee$en {
 	/// en: 'Adds channels your Yattee apps have asked this server to watch. Never removes any.'
 	String get importChannelsDescription => 'Adds channels your Yattee apps have asked this server to watch. Never removes any.';
 
+	/// en: 'Add a Twitch channel'
+	String get addTwitchChannel => 'Add a Twitch channel';
+
+	/// en: 'Follow a Twitch channel by name. Its streams appear in the Twitch row.'
+	String get addTwitchChannelDescription => 'Follow a Twitch channel by name. Its streams appear in the Twitch row.';
+
+	/// en: 'Channel name'
+	String get twitchChannelLabel => 'Channel name';
+
+	/// en: 'shroud, or a twitch.tv link'
+	String get twitchChannelHint => 'shroud, or a twitch.tv link';
+
+	/// en: 'Enter a channel name like shroud, or a full twitch.tv link'
+	String get twitchChannelInvalid => 'Enter a channel name like shroud, or a full twitch.tv link';
+
+	/// en: 'Couldn't find that channel: ${error}'
+	String twitchChannelFailed({required Object error}) => 'Couldn\'t find that channel: ${error}';
+
 	/// en: '(one) {Imported ${n} channel} (other) {Imported ${n} channels}'
 	String importedChannels({required num n}) => (_root.$meta.cardinalResolver ?? PluralResolvers.cardinal('en'))(n,
 		one: 'Imported ${n} channel',
@@ -7081,6 +7099,9 @@ class Translations$yattee$rows$en {
 
 	/// en: 'Subscriptions'
 	String get subscriptions => 'Subscriptions';
+
+	/// en: 'Twitch'
+	String get twitch => 'Twitch';
 
 	/// en: 'Trending'
 	String get trending => 'Trending';
@@ -9190,6 +9211,7 @@ extension on Translations {
 			'yattee.quality480' => '480p',
 			'yattee.quality360' => '360p',
 			'yattee.rows.subscriptions' => 'Subscriptions',
+			'yattee.rows.twitch' => 'Twitch',
 			'yattee.rows.trending' => 'Trending',
 			'yattee.rows.popular' => 'Popular',
 			'yattee.searchHint' => 'Search YouTube',
@@ -9202,6 +9224,12 @@ extension on Translations {
 			'yattee.unsubscribed' => ({required Object channel}) => 'Unsubscribed from ${channel}',
 			'yattee.importChannels' => 'Import channels from server',
 			'yattee.importChannelsDescription' => 'Adds channels your Yattee apps have asked this server to watch. Never removes any.',
+			'yattee.addTwitchChannel' => 'Add a Twitch channel',
+			'yattee.addTwitchChannelDescription' => 'Follow a Twitch channel by name. Its streams appear in the Twitch row.',
+			'yattee.twitchChannelLabel' => 'Channel name',
+			'yattee.twitchChannelHint' => 'shroud, or a twitch.tv link',
+			'yattee.twitchChannelInvalid' => 'Enter a channel name like shroud, or a full twitch.tv link',
+			'yattee.twitchChannelFailed' => ({required Object error}) => 'Couldn\'t find that channel: ${error}',
 			'yattee.importedChannels' => ({required num n}) => (_root.$meta.cardinalResolver ?? PluralResolvers.cardinal('en'))(n, one: 'Imported ${n} channel', other: 'Imported ${n} channels', ), 
 			'yattee.importedNothing' => 'No new channels to import',
 			'yattee.seedEmpty' => 'This server has no channels recorded yet. Open Yattee on another device and refresh its subscriptions, then try again.',
@@ -9276,6 +9304,8 @@ extension on Translations {
 			'addServer.couldNotReachServer' => ({required Object error}) => 'Could not reach the server: ${error}',
 			'addServer.signInFailed' => ({required Object error}) => 'Sign-in failed: ${error}',
 			'addServer.quickConnectFailed' => ({required Object error}) => 'Quick Connect failed: ${error}',
+			_ => null,
+		} ?? switch (path) {
 			'addServer.addPlexTitle' => 'Sign in with Plex',
 			'addServer.pinExpired' => 'PIN expired before sign-in. Please try again.',
 			'addServer.failedToRegisterAccount' => ({required Object error}) => 'Failed to register account: ${error}',
@@ -9283,8 +9313,6 @@ extension on Translations {
 			'addServer.addConnectionTitle' => 'Add connection',
 			'addServer.addConnectionTitleScoped' => ({required Object name}) => 'Add to ${name}',
 			'addServer.signInWithPlexCard' => 'Sign in with Plex',
-			_ => null,
-		} ?? switch (path) {
 			'addServer.signInWithPlexCardSubtitle' => 'Authorize this device. Shared servers are added.',
 			'addServer.signInWithPlexCardSubtitleScoped' => 'Authorize a Plex account. Home users become profiles.',
 			'addServer.connectToMediaBrowserCard' => ({required Object product}) => 'Connect to ${product}',

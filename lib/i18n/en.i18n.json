@@ -2152,6 +2152,7 @@
     "quality360": "360p",
     "rows": {
       "subscriptions": "Subscriptions",
+      "twitch": "Twitch",
       "trending": "Trending",
       "popular": "Popular"
     },
@@ -2165,6 +2166,12 @@
     "unsubscribed": "Unsubscribed from ${channel}",
     "importChannels": "Import channels from server",
     "importChannelsDescription": "Adds channels your Yattee apps have asked this server to watch. Never removes any.",
+    "addTwitchChannel": "Add a Twitch channel",
+    "addTwitchChannelDescription": "Follow a Twitch channel by name. Its streams appear in the Twitch row.",
+    "twitchChannelLabel": "Channel name",
+    "twitchChannelHint": "shroud, or a twitch.tv link",
+    "twitchChannelInvalid": "Enter a channel name like shroud, or a full twitch.tv link",
+    "twitchChannelFailed": "Couldn't find that channel: ${error}",
     "importedChannels": {
       "one": "Imported ${n} channel",
       "other": "Imported ${n} channels"
