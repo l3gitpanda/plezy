@@ -5,8 +5,12 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:provider/provider.dart';
 
 import '../../i18n/strings.g.dart';
+import '../../models/yattee/yattee_session.dart';
+import '../../models/yattee/yattee_site.dart';
 import '../../providers/yattee/yattee_account_provider.dart';
+import '../../services/yattee/yattee_exceptions.dart';
 import '../../services/yattee/yattee_stream_selector.dart';
+import '../../utils/app_logger.dart';
 import '../../utils/dialogs.dart';
 import '../../utils/snackbar_helper.dart';
 import '../../widgets/app_icon.dart';
@@ -65,6 +69,65 @@ class YatteeSettingsScreen extends StatelessWidget {
       // enough time to read one on a TV across the room.
       duration: result.outcome == YatteeSeedOutcome.imported ? null : const Duration(seconds: 10),
     );
+  }
+
+  /// Subscribe to a Twitch channel by name.
+  ///
+  /// Typing a name is the only way in: `/search` serves YouTube alone (it
+  /// takes no site parameter at all), so there is nothing to browse. The name
+  /// is resolved through `/extract/channel` before it is stored, which both
+  /// confirms the channel exists and yields the canonical id and URL — the
+  /// feed needs a real `channel_url` for every non-YouTube channel and cannot
+  /// synthesise one.
+  Future<void> _addTwitchChannel(BuildContext context, YatteeAccountProvider account) async {
+    final client = account.client;
+    if (client == null) return;
+    final entered = await showTextInputDialog(
+      context,
+      title: t.yattee.addTwitchChannel,
+      labelText: t.yattee.twitchChannelLabel,
+      hintText: t.yattee.twitchChannelHint,
+      validator: (value) =>
+          YatteeSite.channelUrlFor(YatteeSite.twitch, value) == null ? t.yattee.twitchChannelInvalid : null,
+    );
+    if (entered == null || !context.mounted) return;
+    final url = YatteeSite.channelUrlFor(YatteeSite.twitch, entered);
+    if (url == null) return;
+
+    final loading = ScopedLoadingDialogController()
+      ..show(
+        context,
+        builder: (_) => const PopScope(canPop: false, child: Center(child: CircularProgressIndicator())),
+      );
+    try {
+      final channel = await client.extractChannel(url);
+      await loading.dismiss();
+      if (!context.mounted) return;
+      final name = channel.author.isNotEmpty ? channel.author : entered.trim();
+      // yt-dlp does not always report an id; the URL is what the feed
+      // actually uses, so the name stands in as a stable-enough key.
+      final channelId = channel.authorId.isNotEmpty ? channel.authorId : name;
+      await account.subscribe(
+        YatteeSubscription(
+          channelId: channelId,
+          name: name,
+          site: YatteeSite.twitch,
+          channelUrl: channel.authorUrl.isNotEmpty ? channel.authorUrl : url,
+        ),
+      );
+      if (context.mounted) showAppSnackBar(context, t.yattee.subscribed(channel: name));
+    } catch (e, stackTrace) {
+      appLogger.w('Yattee: could not resolve the Twitch channel', error: e, stackTrace: stackTrace);
+      await loading.dismiss();
+      if (!context.mounted) return;
+      final message = switch (e) {
+        YatteeApiException(:final message) => message,
+        _ => e.toString(),
+      };
+      showErrorSnackBar(context, t.yattee.twitchChannelFailed(error: message));
+    } finally {
+      unawaited(loading.dismiss());
+    }
   }
 
   Future<void> _disconnect(BuildContext context, YatteeAccountProvider account) async {
@@ -126,6 +189,12 @@ class YatteeSettingsScreen extends StatelessWidget {
                   title: Text(t.yattee.importChannels),
                   subtitle: Text(t.yattee.importChannelsDescription),
                   onTap: () => unawaited(_importChannels(context, account)),
+                ),
+                FocusableListTile(
+                  leading: const AppIcon(Symbols.sensors_rounded, fill: 1),
+                  title: Text(t.yattee.addTwitchChannel),
+                  subtitle: Text(t.yattee.addTwitchChannelDescription),
+                  onTap: () => unawaited(_addTwitchChannel(context, account)),
                 ),
               ],
             ),

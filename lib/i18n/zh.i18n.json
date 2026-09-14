@@ -2201,6 +2201,7 @@
     "quality360": "",
     "rows": {
       "subscriptions": "",
+      "twitch": "",
       "trending": "",
       "popular": ""
     },
@@ -2214,6 +2215,12 @@
     "unsubscribed": "",
     "importChannels": "",
     "importChannelsDescription": "",
+    "addTwitchChannel": "",
+    "addTwitchChannelDescription": "",
+    "twitchChannelLabel": "",
+    "twitchChannelHint": "",
+    "twitchChannelInvalid": "",
+    "twitchChannelFailed": "",
     "importedChannels": {
       "other": ""
     },

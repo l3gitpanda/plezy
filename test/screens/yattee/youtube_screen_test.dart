@@ -7,6 +7,7 @@ import 'package:http/testing.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:plezy/i18n/strings.g.dart';
 import 'package:plezy/models/yattee/yattee_session.dart';
+import 'package:plezy/models/yattee/yattee_site.dart';
 import 'package:plezy/providers/yattee/yattee_account_provider.dart';
 import 'package:plezy/screens/yattee/youtube_screen.dart';
 import 'package:plezy/services/base_shared_preferences_service.dart';
@@ -58,10 +59,13 @@ class _FakeServer {
       case '/api/v1/popular':
         return _json([_video('pop1', 'Popular One')]);
       case '/api/v1/feed':
-        feedBodies.add(jsonDecode(request.body) as Map<String, dynamic>);
+        final body = jsonDecode(request.body) as Map<String, dynamic>;
+        feedBodies.add(body);
+        // One call per site, so answer with that site's own video.
+        final site = ((body['channels'] as List).first as Map)['site'] as String;
         return _json({
           'status': 'ready',
-          'videos': [_video('feed1', 'Feed One')],
+          'videos': [site == 'twitch' ? _video('tw1', 'Twitch One') : _video('feed1', 'Feed One')],
           'total': 1,
           'has_more': false,
           'ready_count': 1,
@@ -174,6 +178,43 @@ void main() {
     final rows = tester.widgetList<HubSection>(find.byType(HubSection)).map((hub) => hub.hub.title).toList();
     expect(rows, [t.yattee.rows.subscriptions, t.yattee.rows.trending, t.yattee.rows.popular]);
     expect(find.text('Feed One'), findsOneWidget);
+  });
+
+  testWidgets('a Twitch subscription gets its own row and its own feed call', (tester) async {
+    final (account, server) = await _pumpYouTube(tester);
+    await tester.runAsync(() async {
+      await account.subscribe(const YatteeSubscription(channelId: 'UCfeed', name: 'Feed Channel'));
+      await account.subscribe(
+        const YatteeSubscription(
+          channelId: 'shroud',
+          name: 'shroud',
+          site: YatteeSite.twitch,
+          channelUrl: 'https://www.twitch.tv/shroud',
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    });
+    await tester.pumpAndSettle();
+
+    // One request per site: a single merged call could not be split back
+    // into rows, and a site the server rejects would fail the other's too.
+    final bodies = server.feedBodies.map((b) => (b['channels'] as List).first as Map).toList();
+    expect(bodies.any((c) => c['site'] == 'youtube' && !c.containsKey('channel_url')), isTrue);
+    expect(bodies.any((c) => c['site'] == 'twitch' && c['channel_url'] == 'https://www.twitch.tv/shroud'), isTrue);
+
+    final rows = tester.widgetList<HubSection>(find.byType(HubSection)).map((hub) => hub.hub.title).toList();
+    // Only built rows are visible to the finder — the shelf list is lazy and
+    // the test viewport does not reach the fourth — so this asserts where
+    // Twitch lands in the order, not how many rows exist.
+    expect(rows.take(3), [t.yattee.rows.subscriptions, t.yattee.rows.twitch, t.yattee.rows.trending]);
+    expect(find.text('Twitch One'), findsOneWidget);
+    expect(find.text('Feed One'), findsOneWidget);
+  });
+
+  testWidgets('no Twitch subscriptions means no Twitch row', (tester) async {
+    await _pumpYouTube(tester, subscribed: true);
+    expect(find.text(t.yattee.rows.subscriptions), findsOneWidget);
+    expect(find.text(t.yattee.rows.twitch), findsNothing);
   });
 
   testWidgets('a new subscription reloads only the feed row', (tester) async {

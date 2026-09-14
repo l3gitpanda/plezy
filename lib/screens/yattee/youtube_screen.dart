@@ -13,6 +13,7 @@ import '../../media/media_item.dart';
 import '../../mixins/debounced_media_search.dart';
 import '../../mixins/refreshable.dart';
 import '../../mixins/tab_visibility_aware.dart';
+import '../../models/yattee/yattee_site.dart';
 import '../../models/yattee/youtube_media_item.dart';
 import '../../models/yattee/yattee_video.dart';
 import '../../navigation/main_screen_scope.dart';
@@ -36,7 +37,23 @@ import 'youtube_search_screen.dart';
 import 'youtube_video_actions.dart';
 
 /// The three shelves of the YouTube tab, in display order.
-enum YouTubeRow { subscriptions, trending, popular }
+/// Rows in display order. [subscriptions] and [twitch] are both subscription
+/// feeds — one per site, because a site is its own category — while
+/// [trending] and [popular] are YouTube-only catalog routes with no
+/// equivalent anywhere else.
+enum YouTubeRow {
+  subscriptions(YatteeSite.youtube),
+  twitch(YatteeSite.twitch),
+  trending(null),
+  popular(null);
+
+  const YouTubeRow(this.feedSite);
+
+  /// The site whose subscription feed fills this row; null for catalog rows.
+  final YatteeSite? feedSite;
+
+  static Iterable<YouTubeRow> get feedRows => values.where((row) => row.feedSite != null);
+}
 
 /// The YouTube tab: subscriptions, trending and popular rows from the
 /// connected Yattee Server. Only mounted while a server is connected (the
@@ -73,8 +90,12 @@ class YouTubeScreenState extends State<YouTubeScreen>
   bool _loading = true;
   String? _error;
   DateTime? _loadedAt;
-  bool _feedFetching = false;
-  String? _feedError;
+
+  /// Keyed by row: each site's feed succeeds, fails and finishes crawling
+  /// independently, so one Twitch channel the server cannot reach must not
+  /// put an error over the YouTube row.
+  final Map<YouTubeRow, bool> _feedFetching = {};
+  final Map<YouTubeRow, String> _feedError = {};
   int _generation = 0;
 
   /// The subscriptions row reloads on its own whenever the list changes,
@@ -82,8 +103,8 @@ class YouTubeScreenState extends State<YouTubeScreen>
   /// [_generation] let a subscribe abort an in-flight [_load] and strand the
   /// tab with `_loading` stuck true.
   int _feedGeneration = 0;
-  int _feedRetries = 0;
-  Timer? _feedRetryTimer;
+  final Map<YouTubeRow, int> _feedRetries = {};
+  final Map<YouTubeRow, Timer> _feedRetryTimer = {};
   int _subscriptionsSignature = 0;
 
   /// Per-row focus keys so focus memory survives reloads.
@@ -120,13 +141,13 @@ class YouTubeScreenState extends State<YouTubeScreen>
   @override
   void dispose() {
     _account.removeListener(_onAccountChanged);
-    _feedRetryTimer?.cancel();
+    _cancelFeedRetries();
     _spotlight.dispose();
     super.dispose();
   }
 
   static int _signatureOf(YatteeAccountProvider account) =>
-      Object.hashAll([account.session?.baseUrl, ...account.subscriptions.map((s) => s.channelId)]);
+      Object.hashAll([account.session?.baseUrl, ...account.subscriptions.map((s) => '${s.site.id}:${s.channelId}')]);
 
   /// A subscribe/unsubscribe (or a reconnect) only invalidates the feed
   /// row; trending and popular are unaffected.
@@ -137,9 +158,12 @@ class YouTubeScreenState extends State<YouTubeScreen>
     if (!mounted) return;
     // A newly subscribed channel is usually uncrawled, so this reload needs a
     // fresh retry budget rather than whatever the last one left behind.
-    _feedRetryTimer?.cancel();
-    _feedRetries = 0;
-    unawaited(_loadFeed(++_feedGeneration));
+    _cancelFeedRetries();
+    _feedRetries.clear();
+    final feedGeneration = ++_feedGeneration;
+    for (final row in YouTubeRow.feedRows) {
+      unawaited(_loadFeed(feedGeneration, row));
+    }
   }
 
   List<MediaHub> get _hubs => [
@@ -155,14 +179,23 @@ class YouTubeScreenState extends State<YouTubeScreen>
         ),
   ];
 
+  void _cancelFeedRetries() {
+    for (final timer in _feedRetryTimer.values) {
+      timer.cancel();
+    }
+    _feedRetryTimer.clear();
+  }
+
   static String _rowTitle(YouTubeRow row) => switch (row) {
     YouTubeRow.subscriptions => t.yattee.rows.subscriptions,
+    YouTubeRow.twitch => t.yattee.rows.twitch,
     YouTubeRow.trending => t.yattee.rows.trending,
     YouTubeRow.popular => t.yattee.rows.popular,
   };
 
   static IconData _rowIcon(YouTubeRow row) => switch (row) {
     YouTubeRow.subscriptions => Symbols.subscriptions_rounded,
+    YouTubeRow.twitch => Symbols.sensors_rounded,
     YouTubeRow.trending => Symbols.trending_up_rounded,
     YouTubeRow.popular => Symbols.whatshot_rounded,
   };
@@ -179,18 +212,18 @@ class YouTubeScreenState extends State<YouTubeScreen>
     final feedGeneration = ++_feedGeneration;
     final client = _account.client;
     if (client == null) return;
-    _feedRetryTimer?.cancel();
-    _feedRetries = 0;
+    _cancelFeedRetries();
+    _feedRetries.clear();
     setState(() {
       _loading = _rows.isEmpty;
       _error = null;
-      _feedFetching = false;
-      _feedError = null;
+      _feedFetching.clear();
+      _feedError.clear();
     });
     // Every row is independent: one failing endpoint must not blank the
     // others, and a whole-tab error only shows when nothing loaded.
     final results = await Future.wait<Object?>([
-      _loadFeed(feedGeneration, client: client),
+      for (final row in YouTubeRow.feedRows) _loadFeed(feedGeneration, row, client: client),
       _loadRow(generation, YouTubeRow.trending, client.fetchTrending),
       _loadRow(generation, YouTubeRow.popular, client.fetchPopular),
     ]);
@@ -216,16 +249,24 @@ class YouTubeScreenState extends State<YouTubeScreen>
     }
   }
 
-  Future<Object?> _loadFeed(int feedGeneration, {YatteeClient? client}) async {
+  /// Load one site's subscription feed into its row.
+  ///
+  /// One call per site rather than one merged call: `POST /feed` folds every
+  /// channel it is given into a single list, so a shared call could not be
+  /// split back into rows — and a site the server has disabled fails the
+  /// whole request rather than just its own channels.
+  Future<Object?> _loadFeed(int feedGeneration, YouTubeRow row, {YatteeClient? client}) async {
+    final site = row.feedSite;
+    if (site == null) return null;
     final feedClient = client ?? _account.client;
     if (feedClient == null) return null;
-    final subscriptions = _account.subscriptions;
+    final subscriptions = _account.subscriptionsFor(site);
     if (subscriptions.isEmpty) {
       if (mounted && feedGeneration == _feedGeneration) {
         setState(() {
-          _rows.remove(YouTubeRow.subscriptions);
-          _feedFetching = false;
-          _feedError = null;
+          _rows.remove(row);
+          _feedFetching.remove(row);
+          _feedError.remove(row);
         });
       }
       return null;
@@ -234,26 +275,26 @@ class YouTubeScreenState extends State<YouTubeScreen>
       final page = await feedClient.fetchFeed(subscriptions, limit: feedLimit);
       if (!mounted || feedGeneration != _feedGeneration) return null;
       setState(() {
-        _rows[YouTubeRow.subscriptions] = page.videos.map(YouTubeMediaItems.fromSummary).toList();
-        _feedFetching = page.isFetching;
-        _feedError = null;
+        _rows[row] = page.videos.map(YouTubeMediaItems.fromSummary).toList();
+        _feedFetching[row] = page.isFetching;
+        _feedError.remove(row);
       });
-      if (page.isFetching && _feedRetries < maxFeedRetries) {
-        _feedRetries++;
-        _feedRetryTimer?.cancel();
-        _feedRetryTimer = Timer(Duration(seconds: (page.etaSeconds ?? 5).clamp(2, 30)), () {
-          if (mounted && feedGeneration == _feedGeneration) unawaited(_loadFeed(feedGeneration));
+      if (page.isFetching && (_feedRetries[row] ?? 0) < maxFeedRetries) {
+        _feedRetries[row] = (_feedRetries[row] ?? 0) + 1;
+        _feedRetryTimer.remove(row)?.cancel();
+        _feedRetryTimer[row] = Timer(Duration(seconds: (page.etaSeconds ?? 5).clamp(2, 30)), () {
+          if (mounted && feedGeneration == _feedGeneration) unawaited(_loadFeed(feedGeneration, row));
         });
       }
       return null;
     } catch (e, stackTrace) {
-      appLogger.w('YouTube: subscriptions feed failed to load', error: e, stackTrace: stackTrace);
+      appLogger.w('YouTube: ${site.id} feed failed to load', error: e, stackTrace: stackTrace);
       // The other rows may well have loaded, so this never blanks the tab —
       // it surfaces as a hint above them instead of failing silently.
       if (mounted && feedGeneration == _feedGeneration) {
         setState(() {
-          _feedFetching = false;
-          _feedError = e.toString();
+          _feedFetching.remove(row);
+          _feedError[row] = e.toString();
         });
       }
       return e;
@@ -430,11 +471,14 @@ class YouTubeScreenState extends State<YouTubeScreen>
   /// layouts — the tvOS branch used to render none of these, so a user with
   /// no subscriptions saw the row silently missing with no explanation.
   List<String> get _hints => [
-    if (_feedError case final error?)
-      t.yattee.feedFailed(error: error)
-    else if (_account.subscriptions.isEmpty)
+    // One line per failing site rather than one for the tab: "Twitch is
+    // unreachable" and "your YouTube feed is still crawling" are different
+    // problems and can be true at once.
+    for (final row in YouTubeRow.feedRows)
+      if (_feedError[row] case final error?) t.yattee.feedFailed(error: error),
+    if (_account.subscriptions.isEmpty)
       t.yattee.noSubscriptions
-    else if (_feedFetching)
+    else if (_feedFetching.values.any((fetching) => fetching))
       t.yattee.feedFetching,
   ];
 

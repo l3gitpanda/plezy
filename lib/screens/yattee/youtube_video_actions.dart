@@ -57,12 +57,18 @@ Future<void> openYouTubeChannel(BuildContext context, {required String channelId
 Future<void> showYouTubeVideoActions(BuildContext context, MediaItem item) async {
   final videoId = item.youTubeVideoId;
   final site = item.youTubeSite;
-  // Channel actions are YouTube-only (see [activateYouTubeItem]); on another
-  // site the sheet offers Play alone.
-  final channelId = site == YatteeSite.youtube ? item.youTubeChannelId : null;
-  if (videoId == null && channelId == null) return;
+  final channelId = item.youTubeChannelId;
   final account = context.read<YatteeAccountProvider>();
   final subscribed = channelId != null && account.isSubscribed(channelId, site: site);
+  // A channel page exists only on YouTube: `/channels/{id}` is one of the
+  // Invidious-compatible routes and serves nothing else.
+  final canOpenChannel = channelId != null && site == YatteeSite.youtube;
+  // Unsubscribing needs nothing but the id and site, so it works anywhere.
+  // Subscribing does not: every non-YouTube channel needs a `channel_url`
+  // the feed cannot synthesise, and a video row does not carry one — those
+  // are added by name in the Yattee settings instead.
+  final canToggleSubscription = channelId != null && (subscribed || site == YatteeSite.youtube);
+  if (videoId == null && !canOpenChannel && !canToggleSubscription) return;
   final action = await OverlaySheetController.showAdaptive<_YouTubeVideoAction>(
     context,
     builder: (sheetContext) => BottomSheetPageScaffold(
@@ -78,7 +84,7 @@ Future<void> showYouTubeVideoActions(BuildContext context, MediaItem item) async
               title: Text(t.common.play),
               onTap: () => OverlaySheetController.closeAdaptive(sheetContext, _YouTubeVideoAction.play),
             ),
-          if (channelId != null) ...[
+          if (canOpenChannel)
             FocusableListTile(
               autofocus: videoId == null,
               leading: const AppIcon(Symbols.account_circle_rounded, fill: 1),
@@ -86,12 +92,13 @@ Future<void> showYouTubeVideoActions(BuildContext context, MediaItem item) async
               subtitle: item.youTubeChannelName == null ? null : Text(item.youTubeChannelName!),
               onTap: () => OverlaySheetController.closeAdaptive(sheetContext, _YouTubeVideoAction.channel),
             ),
+          if (canToggleSubscription)
             FocusableListTile(
+              autofocus: videoId == null && !canOpenChannel,
               leading: AppIcon(subscribed ? Symbols.notifications_off_rounded : Symbols.notifications_rounded, fill: 1),
               title: Text(subscribed ? t.yattee.unsubscribe : t.yattee.subscribe),
               onTap: () => OverlaySheetController.closeAdaptive(sheetContext, _YouTubeVideoAction.toggleSubscription),
             ),
-          ],
           const SizedBox(height: 8),
         ],
       ),
@@ -113,7 +120,7 @@ Future<void> showYouTubeVideoActions(BuildContext context, MediaItem item) async
       await toggleYouTubeSubscription(
         context,
         account: account,
-        subscription: YatteeSubscription(channelId: channelId!, name: item.youTubeChannelName ?? channelId),
+        subscription: YatteeSubscription(channelId: channelId!, name: item.youTubeChannelName ?? channelId, site: site),
       );
   }
 }
@@ -125,9 +132,11 @@ Future<void> toggleYouTubeSubscription(
   required YatteeAccountProvider account,
   required YatteeSubscription subscription,
 }) async {
-  final wasSubscribed = account.isSubscribed(subscription.channelId);
+  // Keyed on the site too: the site-less defaults would look past a Twitch
+  // channel and silently leave it subscribed.
+  final wasSubscribed = account.isSubscribed(subscription.channelId, site: subscription.site);
   if (wasSubscribed) {
-    await account.unsubscribe(subscription.channelId);
+    await account.unsubscribe(subscription.channelId, site: subscription.site);
   } else {
     await account.subscribe(subscription);
   }
