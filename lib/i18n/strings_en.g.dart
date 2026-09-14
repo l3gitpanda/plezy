@@ -5534,6 +5534,18 @@ class Translations$yattee$en {
 	/// en: 'Unsubscribe'
 	String get unsubscribe => 'Unsubscribe';
 
+	/// en: 'Mark as watched'
+	String get markWatched => 'Mark as watched';
+
+	/// en: 'Mark as unwatched'
+	String get markUnwatched => 'Mark as unwatched';
+
+	/// en: 'Marked as watched'
+	String get markedWatched => 'Marked as watched';
+
+	/// en: 'Marked as unwatched'
+	String get markedUnwatched => 'Marked as unwatched';
+
 	/// en: 'Subscribed to ${channel}'
 	String subscribed({required Object channel}) => 'Subscribed to ${channel}';
 
@@ -9471,6 +9483,10 @@ extension on Translations {
 			'yattee.searchFailed' => 'Search failed. Try again.',
 			'yattee.subscribe' => 'Subscribe',
 			'yattee.unsubscribe' => 'Unsubscribe',
+			'yattee.markWatched' => 'Mark as watched',
+			'yattee.markUnwatched' => 'Mark as unwatched',
+			'yattee.markedWatched' => 'Marked as watched',
+			'yattee.markedUnwatched' => 'Marked as unwatched',
 			'yattee.subscribed' => ({required Object channel}) => 'Subscribed to ${channel}',
 			'yattee.unsubscribed' => ({required Object channel}) => 'Unsubscribed from ${channel}',
 			'yattee.importChannels' => 'Import channels from server',
@@ -9495,12 +9511,12 @@ extension on Translations {
 			'yattee.emptyMessage' => 'Nothing to show yet.',
 			'yattee.loadFailed' => ({required Object error}) => 'Couldn\'t load YouTube: ${error}',
 			'yattee.channelLoadFailed' => ({required Object error}) => 'Couldn\'t load this channel: ${error}',
+			_ => null,
+		} ?? switch (path) {
 			'yattee.videoLoadFailed' => ({required Object error}) => 'Couldn\'t load this video: ${error}',
 			'yattee.liveUnavailable' => 'This live stream isn\'t available right now. It may have just ended.',
 			'yattee.premiereNotStarted' => 'This premiere hasn\'t started yet.',
 			'yattee.noPlayableStream' => 'No playable stream was found for this video.',
-			_ => null,
-		} ?? switch (path) {
 			'yattee.channelOffline' => 'This channel is offline right now. Its past broadcasts are still here.',
 			'yattee.videoUnavailable' => 'This stream has ended and is no longer available.',
 			'yattee.views' => ({required Object count}) => '${count} views',

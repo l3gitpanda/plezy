@@ -68,6 +68,8 @@ Future<void> showYouTubeVideoActions(BuildContext context, MediaItem item) async
   // the feed cannot synthesise, and a video row does not carry one — those
   // are added by name in the Yattee settings instead.
   final canToggleSubscription = channelId != null && (subscribed || site == YatteeSite.youtube);
+  // Plezy's own record: Yattee Server keeps no watch state to sync with.
+  final watched = videoId != null && account.isVideoWatched(site, videoId);
   if (videoId == null && !canOpenChannel && !canToggleSubscription) return;
   final action = await OverlaySheetController.showAdaptive<_YouTubeVideoAction>(
     context,
@@ -83,6 +85,12 @@ Future<void> showYouTubeVideoActions(BuildContext context, MediaItem item) async
               leading: const AppIcon(Symbols.play_arrow_rounded, fill: 1),
               title: Text(t.common.play),
               onTap: () => OverlaySheetController.closeAdaptive(sheetContext, _YouTubeVideoAction.play),
+            ),
+          if (videoId != null)
+            FocusableListTile(
+              leading: AppIcon(watched ? Symbols.visibility_off_rounded : Symbols.check_circle_rounded, fill: 1),
+              title: Text(watched ? t.yattee.markUnwatched : t.yattee.markWatched),
+              onTap: () => OverlaySheetController.closeAdaptive(sheetContext, _YouTubeVideoAction.toggleWatched),
             ),
           if (canOpenChannel)
             FocusableListTile(
@@ -116,6 +124,11 @@ Future<void> showYouTubeVideoActions(BuildContext context, MediaItem item) async
       );
     case _YouTubeVideoAction.channel:
       await openYouTubeChannel(context, channelId: channelId!, channelName: item.youTubeChannelName);
+    case _YouTubeVideoAction.toggleWatched:
+      await account.setVideoWatched(site, videoId!, !watched);
+      if (context.mounted) {
+        showAppSnackBar(context, watched ? t.yattee.markedUnwatched : t.yattee.markedWatched);
+      }
     case _YouTubeVideoAction.toggleSubscription:
       await toggleYouTubeSubscription(
         context,
@@ -167,4 +180,4 @@ Future<void> toggleYouTubeSubscription(
   );
 }
 
-enum _YouTubeVideoAction { play, channel, toggleSubscription }
+enum _YouTubeVideoAction { play, channel, toggleSubscription, toggleWatched }

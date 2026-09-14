@@ -511,7 +511,15 @@ class _HubDetailScreenState extends State<HubDetailScreen>
             primary: true,
             clipBehavior: Clip.none,
             slivers: [
-              CustomAppBar(title: Text(widget.hub.title), pinned: true, actions: buildFocusableAppBarActions()),
+              CustomAppBar(
+                title: Text(widget.hub.title),
+                pinned: true,
+                // On TV the chevron is replaced, not joined, by the Back
+                // action below: D-pad never reaches the leading slot, so
+                // leaving it there is a second arrow that cannot be picked.
+                automaticallyImplyLeading: !PlatformDetector.isTV(),
+                actions: buildFocusableAppBarActions(),
+              ),
               if (_errorMessage != null)
                 SliverErrorState(message: _errorMessage!, onRetry: _loadMoreItems)
               else if (_filteredItems.isEmpty && _isLoading)

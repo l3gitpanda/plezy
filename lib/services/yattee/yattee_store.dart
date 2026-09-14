@@ -19,6 +19,7 @@ class YatteeStore {
   static const String _sessionKey = 'yattee_session';
   static const String _subscriptionsKey = 'yattee_subscriptions';
   static const String _qualityKey = 'yattee_quality';
+  static const String _watchedKey = 'yattee_watched';
 
   // Shared across profile-keyed provider/store lifetimes. Enqueue the entire
   // operation before any preferences/vault await so a new load or clear cannot
@@ -28,6 +29,11 @@ class YatteeStore {
   const YatteeStore();
 
   String _scopedKey(String userUuid, String baseKey) => profileScopedPrefsKey(userUuid, baseKey);
+
+  /// How many watched marks are kept per profile before the oldest are
+  /// dropped. Generous for a browse history, small enough that the blob stays
+  /// a few tens of kilobytes.
+  static const int maxWatchedEntries = 2000;
 
   Future<YatteeSession?> loadSession(String userUuid) => _persistence.run(() async {
     final prefs = await BaseSharedPreferencesService.sharedCache();
@@ -82,6 +88,39 @@ class YatteeStore {
       _scopedKey(userUuid, _subscriptionsKey),
       jsonEncode([for (final subscription in subscriptions) subscription.toJson()]),
     );
+  });
+
+  /// Videos this profile has marked watched, oldest first.
+  ///
+  /// Kept here rather than on the server because Yattee Server has no watch
+  /// state to keep it in: it exposes no history, progress or mark-watched
+  /// route of any kind. So this is Plezy's own record and travels with the
+  /// profile, not the instance.
+  Future<List<String>> loadWatched(String userUuid) => _persistence.run(() async {
+    final prefs = await BaseSharedPreferencesService.sharedCache();
+    final raw = readTolerantString(prefs, _scopedKey(userUuid, _watchedKey));
+    if (raw == null) return const [];
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return const [];
+      return [
+        for (final entry in decoded)
+          if (entry is String && entry.isNotEmpty) entry,
+      ];
+    } catch (_) {
+      return const [];
+    }
+  });
+
+  /// Writes the list, keeping only the most recent [maxWatchedEntries].
+  ///
+  /// Preferences are a single blob rewritten on every change, so an unbounded
+  /// list would grow the write forever. The oldest marks are the ones least
+  /// likely to be looked at again.
+  Future<void> saveWatched(String userUuid, List<String> watched) => _persistence.run(() async {
+    final prefs = await BaseSharedPreferencesService.sharedCache();
+    final bounded = watched.length <= maxWatchedEntries ? watched : watched.sublist(watched.length - maxWatchedEntries);
+    await prefs.setString(_scopedKey(userUuid, _watchedKey), jsonEncode(bounded));
   });
 
   Future<YatteeQuality> loadQuality(String userUuid) => _persistence.run(() async {
