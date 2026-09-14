@@ -66,14 +66,17 @@ Future<void> navigateToYouTubeVideo(
           : 'muxed'})',
     );
     final metadata = YouTubeMediaItems.fromSummary(video.summary);
-    final route = buildVideoPlayerRoute(
+    final route = VideoPlayerRoute(
       builder: (_) => VideoPlayerScreen(
         metadata: metadata,
         youtube: YouTubeSessionArgs(video: video, selection: selection),
       ),
     );
     await loading.dismiss();
-    unawaited(navigator.push<bool>(route));
+    // Pushed through the route itself rather than the navigator: that is what
+    // tears down a player already on screen before this one starts, so
+    // launching one video from another does not leave two sessions alive.
+    unawaited(route.push(navigator));
   } catch (e, stackTrace) {
     appLogger.w('YouTube: failed to resolve $videoId', error: e, stackTrace: stackTrace);
     await loading.dismiss();
