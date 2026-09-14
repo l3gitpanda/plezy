@@ -289,6 +289,20 @@ class YouTubeScreenState extends State<YouTubeScreen>
       return null;
     }
     try {
+      // A site whose channels are broadcasts is read channel by channel: the
+      // feed carries no live flag and serves the thumbnail it cached when the
+      // channel was first crawled, so from it every streamer looks offline
+      // and frozen at the moment you subscribed.
+      if (site.browsesByChannel) {
+        final videos = await feedClient.fetchChannelStates(subscriptions);
+        if (!mounted || feedGeneration != _feedGeneration) return null;
+        setState(() {
+          _rows[row] = videos.map(YouTubeMediaItems.fromSummary).toList();
+          _feedFetching.remove(row);
+          _feedError.remove(row);
+        });
+        return null;
+      }
       final page = await feedClient.fetchFeed(subscriptions, limit: feedLimit);
       if (!mounted || feedGeneration != _feedGeneration) return null;
       setState(() {
@@ -333,6 +347,12 @@ class YouTubeScreenState extends State<YouTubeScreen>
     if (site != null) {
       final subscriptions = _account.subscriptionsFor(site);
       if (subscriptions.isEmpty) return const [];
+      if (site.browsesByChannel) {
+        // Deeper per channel than the shelf takes, but still one extraction
+        // each — the cost scales with channels followed, not with the page.
+        final videos = await client.fetchChannelStates(subscriptions, perChannelLimit: 20);
+        return videos.map(YouTubeMediaItems.fromSummary).toList();
+      }
       final page = await client.fetchFeed(subscriptions, limit: gridFeedLimit);
       return page.videos.map(YouTubeMediaItems.fromSummary).toList();
     }

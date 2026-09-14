@@ -1,5 +1,7 @@
 import 'package:http/http.dart' as http;
 
+import '../../utils/app_logger.dart';
+
 import '../../models/yattee/yattee_session.dart';
 import '../../models/yattee/yattee_site.dart';
 import '../../models/yattee/yattee_video.dart';
@@ -244,6 +246,53 @@ class YatteeClient {
       timeout: YatteeConstants.videoTimeout,
     );
     return YatteeExtractedChannel.fromJson(_asMap(data, '/extract/channel'));
+  }
+
+  /// Current state of each channel in [subscriptions], newest-live-first.
+  ///
+  /// The row-shaped alternative to [fetchFeed] for a site whose channels are
+  /// broadcasts (see [YatteeSite.browsesByChannel]). One extraction per
+  /// channel, run concurrently but bounded so a long list cannot open a
+  /// connection per channel at once.
+  ///
+  /// A channel that fails is dropped rather than failing the row: one
+  /// unreachable streamer must not blank everyone else. The caller gets
+  /// whatever resolved, so an empty result means every channel failed.
+  Future<List<YatteeVideoSummary>> fetchChannelStates(
+    List<YatteeSubscription> subscriptions, {
+    int concurrency = 4,
+    int perChannelLimit = 4,
+  }) async {
+    final targets = [
+      for (final subscription in subscriptions)
+        if (subscription.channelUrl case final url?) (subscription, url),
+    ];
+    final results = <YatteeVideoSummary>[];
+    for (var start = 0; start < targets.length; start += concurrency) {
+      final batch = targets.skip(start).take(concurrency);
+      final pages = await Future.wait(
+        batch.map((target) async {
+          try {
+            final channel = await extractChannel(target.$2);
+            return channel.videos.take(perChannelLimit).toList();
+          } catch (e) {
+            appLogger.w('Yattee: could not read ${target.$1.name} (${target.$1.site.id}): $e');
+            return const <YatteeVideoSummary>[];
+          }
+        }),
+        eagerError: false,
+      );
+      for (final page in pages) {
+        results.addAll(page);
+      }
+    }
+    // Live first, then most recent: the reason to open this row is to see who
+    // is on air, and a card for a broadcast that ended is not that.
+    results.sort((a, b) {
+      if (a.liveNow != b.liveNow) return a.liveNow ? -1 : 1;
+      return (b.published ?? 0).compareTo(a.published ?? 0);
+    });
+    return results;
   }
 
   static Map<String, dynamic> _asMap(dynamic data, String path) {

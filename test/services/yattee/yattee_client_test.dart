@@ -203,6 +203,53 @@ void main() {
       expect(video.summary.site, YatteeSite.twitch);
     });
 
+    test('channel states put live channels first and survive one that fails', () async {
+      final client = YatteeClient(
+        _session(),
+        httpClient: MockClient((request) async {
+          final url = request.url.queryParameters['url']!;
+          if (url.endsWith('/broken')) return _json({'detail': 'Could not extract video'}, status: 422);
+          final live = url.endsWith('/live');
+          return _json({
+            'author': url.split('/').last,
+            'authorId': url.split('/').last,
+            'authorUrl': url,
+            'extractor': 'twitch',
+            'videos': [
+              {
+                ..._video(url.split('/').last),
+                'liveNow': live,
+                'published': live ? 1 : 500,
+                'extractor': 'twitch',
+                'videoUrl': url,
+              },
+            ],
+          });
+        }),
+      );
+
+      final states = await client.fetchChannelStates(const [
+        YatteeSubscription(channelId: 'a', name: 'a', site: YatteeSite.twitch, channelUrl: 'https://tw/offline'),
+        YatteeSubscription(channelId: 'b', name: 'b', site: YatteeSite.twitch, channelUrl: 'https://tw/broken'),
+        YatteeSubscription(channelId: 'c', name: 'c', site: YatteeSite.twitch, channelUrl: 'https://tw/live'),
+      ]);
+
+      // Live first even though it is the older publish date — the reason to
+      // open the row is to see who is on air.
+      expect(states.map((v) => v.videoId), ['live', 'offline']);
+      expect(states.first.liveNow, isTrue);
+      // One unreachable streamer must not blank the whole row.
+      expect(states.map((v) => v.videoId), isNot(contains('broken')));
+    });
+
+    test('channel states skip a subscription with no channel URL', () async {
+      final client = YatteeClient(_session(), httpClient: MockClient((_) async => fail('no request expected')));
+      final states = await client.fetchChannelStates(const [
+        YatteeSubscription(channelId: 'a', name: 'a', site: YatteeSite.twitch),
+      ]);
+      expect(states, isEmpty);
+    });
+
     test('extract channel pages by number and tags its videos with the site', () async {
       late Uri seen;
       final client = YatteeClient(
