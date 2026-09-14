@@ -161,6 +161,9 @@ extension YouTubeMediaItemX on MediaItem {
   /// The video's own URL, for sites fetched by URL rather than by id.
   String? get youTubeVideoUrl => _youTube?['videoUrl'] as String?;
 
+  /// Whether this stand-in is a broadcast that is on air.
+  bool get youTubeIsLive => _youTube?['live'] == true;
+
   /// `12:34`-style runtime for the card's poster, or null when there is none
   /// to show.
   ///

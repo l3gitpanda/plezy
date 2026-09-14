@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../i18n/strings.g.dart';
 import '../../models/yattee/yattee_site.dart';
+import '../../models/yattee/yattee_video.dart';
 import '../../models/yattee/youtube_media_item.dart';
 import '../../providers/yattee/yattee_account_provider.dart';
 import '../../screens/video_player/youtube_session_args.dart';
@@ -44,11 +45,20 @@ Future<void> navigateToYouTubeVideo(
     );
   try {
     // YouTube is fetched by id; every other site by its own URL, because
-    // `/videos/{id}` is YouTube-only (it asserts the extractor before it does
-    // anything else) and only `/extract` runs an arbitrary extractor.
-    final video = site == YatteeSite.youtube || videoUrl == null
-        ? await client.fetchVideo(videoId)
-        : await client.extractVideo(videoUrl);
+    // `/videos/{id}` is YouTube-only — it asserts the extractor first, and its
+    // id sanitiser rejects anything that is not YouTube-shaped ("Invalid video
+    // ID format"). Falling back to it for a URL-less non-YouTube item was
+    // therefore never going to work, only fail confusingly.
+    final YatteeVideo video;
+    if (site == YatteeSite.youtube) {
+      video = await client.fetchVideo(videoId);
+    } else if (videoUrl != null) {
+      video = await client.extractVideo(videoUrl);
+    } else {
+      await loading.dismiss();
+      if (context.mounted) showErrorSnackBar(context, t.yattee.videoUnavailable);
+      return;
+    }
     if (!context.mounted) return;
     final decision = YatteeStreamSelector.decide(video, quality: account.quality);
     if (decision.reason case final reason?) {

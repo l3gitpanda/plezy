@@ -32,7 +32,7 @@ Future<void> activateYouTubeItem(BuildContext context, MediaItem item) async {
       account: account,
       videoId: videoId,
       site: item.youTubeSite,
-      videoUrl: item.youTubeVideoUrl,
+      videoUrl: youTubePlaybackUrl(item, account),
     );
     return;
   }
@@ -112,7 +112,7 @@ Future<void> showYouTubeVideoActions(BuildContext context, MediaItem item) async
         account: account,
         videoId: videoId!,
         site: site,
-        videoUrl: item.youTubeVideoUrl,
+        videoUrl: youTubePlaybackUrl(item, account),
       );
     case _YouTubeVideoAction.channel:
       await openYouTubeChannel(context, channelId: channelId!, channelName: item.youTubeChannelName);
@@ -123,6 +123,26 @@ Future<void> showYouTubeVideoActions(BuildContext context, MediaItem item) async
         subscription: YatteeSubscription(channelId: channelId!, name: item.youTubeChannelName ?? channelId, site: site),
       );
   }
+}
+
+/// The URL to extract [item] from, for a site that is fetched by URL.
+///
+/// Normally the server states it on the item. When it does not, a live
+/// broadcast can still be resolved: on Twitch the channel URL *is* the
+/// stream, and the subscription stored an exact one when it was added. That
+/// substitution is deliberately limited to live items — for a past broadcast
+/// the channel URL points at whatever is on air now, which would quietly play
+/// the wrong thing instead of admitting it could not find the right one.
+String? youTubePlaybackUrl(MediaItem item, YatteeAccountProvider account) {
+  if (item.youTubeVideoUrl case final url?) return url;
+  final site = item.youTubeSite;
+  if (site == YatteeSite.youtube || !item.youTubeIsLive) return null;
+  final channelId = item.youTubeChannelId;
+  if (channelId == null) return null;
+  for (final subscription in account.subscriptionsFor(site)) {
+    if (subscription.channelId == channelId) return subscription.channelUrl;
+  }
+  return null;
 }
 
 /// Subscribe or unsubscribe with a confirmation toast. The list lives in the
