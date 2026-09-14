@@ -39,8 +39,15 @@ class YatteeHttpClient {
 
   /// GET/POST [path] (absolute on the instance — callers prefix
   /// [YatteeConstants.apiPath] themselves so `/health` and `/info` share the
-  /// code) and decode the JSON body. 401/403 and 429 raise
-  /// [YatteeAuthException]; any other non-2xx raises [YatteeApiException].
+  /// code) and decode the JSON body. 401 and 429 raise [YatteeAuthException];
+  /// any other non-2xx raises [YatteeApiException] carrying FastAPI's detail.
+  ///
+  /// 403 is deliberately NOT an auth failure. Yattee Server answers 401 for
+  /// bad credentials ("Invalid username or password") and reserves 403 for
+  /// policy decisions that say nothing about who you are: "Extraction from
+  /// 'twitch' is not allowed", "Admin privileges required", "URL targets
+  /// restricted network resources", "Relay URL expired". Treating those as an
+  /// auth failure replaced an actionable reason with "check your password".
   Future<dynamic> send(
     String method,
     String path, {
@@ -75,7 +82,7 @@ class YatteeHttpClient {
     if (code >= 200 && code < 300) return data;
     final detail = data is Map ? data['detail'] : null;
     final message = detail is String && detail.isNotEmpty ? detail : 'HTTP $code';
-    if (code == 401 || code == 403 || code == 429) {
+    if (code == 401 || code == 429) {
       throw YatteeAuthException(message, statusCode: code);
     }
     throw YatteeApiException(message, statusCode: code);

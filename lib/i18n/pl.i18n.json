@@ -2277,6 +2277,8 @@
     "liveUnavailable": "",
     "premiereNotStarted": "",
     "noPlayableStream": "",
+    "channelOffline": "",
+    "videoUnavailable": "",
     "views": "",
     "subscribers": "",
     "connectedAs": ""

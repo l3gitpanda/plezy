@@ -371,14 +371,49 @@ void main() {
 
     test('watched channels surfaces a non-admin 403 rather than looking empty', () async {
       // The caller has to tell "you are not an admin" apart from "the server
-      // has no channels" — they need different things from the user.
+      // has no channels" — they need different things from the user. It is an
+      // API exception, not an auth one: the credentials were accepted, the
+      // account simply lacks the role.
       final client = YatteeClient(
         _session(),
         httpClient: MockClient((_) async => _json({'detail': 'Admin privileges required'}, status: 403)),
       );
       await expectLater(
         client.fetchWatchedChannels(),
-        throwsA(isA<YatteeAuthException>().having((e) => e.statusCode, 'status', 403)),
+        throwsA(
+          isA<YatteeApiException>()
+              .having((e) => e.statusCode, 'status', 403)
+              .having((e) => e.message, 'message', 'Admin privileges required'),
+        ),
+      );
+    });
+
+    // Regression: 403 used to raise YatteeAuthException, so every policy
+    // refusal the server makes — a site not enabled for extraction, an
+    // SSRF-blocked URL, an expired relay link — surfaced to the user as
+    // "invalid username and password", sending them to check credentials
+    // that were never refused. Only 401 means that.
+    test('a policy 403 keeps its reason instead of reading as bad credentials', () async {
+      final client = YatteeClient(
+        _session(),
+        httpClient: MockClient((_) async => _json({'detail': "Extraction from 'twitch' is not allowed"}, status: 403)),
+      );
+      await expectLater(
+        client.extractVideo('https://www.twitch.tv/shroud'),
+        throwsA(
+          isA<YatteeApiException>().having((e) => e.message, 'message', "Extraction from 'twitch' is not allowed"),
+        ),
+      );
+    });
+
+    test('401 is still a credential failure', () async {
+      final client = YatteeClient(
+        _session(),
+        httpClient: MockClient((_) async => _json({'detail': 'Invalid username or password'}, status: 401)),
+      );
+      await expectLater(
+        client.extractVideo('https://www.twitch.tv/shroud'),
+        throwsA(isA<YatteeAuthException>().having((e) => e.statusCode, 'status', 401)),
       );
     });
 

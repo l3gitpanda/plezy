@@ -5621,6 +5621,12 @@ class Translations$yattee$en {
 	/// en: 'No playable stream was found for this video.'
 	String get noPlayableStream => 'No playable stream was found for this video.';
 
+	/// en: 'This channel is offline right now. Its past broadcasts are still here.'
+	String get channelOffline => 'This channel is offline right now. Its past broadcasts are still here.';
+
+	/// en: 'This stream has ended and is no longer available.'
+	String get videoUnavailable => 'This stream has ended and is no longer available.';
+
 	/// en: '${count} views'
 	String views({required Object count}) => '${count} views';
 
@@ -9495,6 +9501,8 @@ extension on Translations {
 			'yattee.noPlayableStream' => 'No playable stream was found for this video.',
 			_ => null,
 		} ?? switch (path) {
+			'yattee.channelOffline' => 'This channel is offline right now. Its past broadcasts are still here.',
+			'yattee.videoUnavailable' => 'This stream has ended and is no longer available.',
 			'yattee.views' => ({required Object count}) => '${count} views',
 			'yattee.subscribers' => ({required Object count}) => '${count} subscribers',
 			'yattee.connectedAs' => ({required Object username}) => 'Signed in as ${username}',
