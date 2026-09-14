@@ -22,14 +22,22 @@ MediaItem _youTube({int lengthSeconds = 212, bool liveNow = false}) => YouTubeMe
   ),
 );
 
-Future<void> pumpGridCard(WidgetTester tester, MediaItem item) {
+/// [fullBleed] selects the other grid builder. Both matter: the TV browse
+/// rail renders cards with `forceGridMode`, and switches to the full-bleed
+/// one under the TV full-card layout setting — so the badge has to survive
+/// both or it vanishes on exactly the surface it was asked for.
+Future<void> pumpGridCard(WidgetTester tester, MediaItem item, {bool fullBleed = false}) {
   return tester.pumpWidget(
     TranslationProvider(
       child: MaterialApp(
         theme: monoTheme(dark: true),
         home: Scaffold(
           body: Center(
-            child: SizedBox(width: 200, height: 160, child: MediaCard(item: item)),
+            child: SizedBox(
+              width: 200,
+              height: 160,
+              child: MediaCard(item: item, width: 200, height: 120, forceGridMode: true, fullBleedImage: fullBleed),
+            ),
           ),
         ),
       ),
@@ -53,6 +61,13 @@ void main() {
 
     expect(find.text('3:32'), findsOneWidget);
     expect(find.byKey(const Key('media-card-duration')), findsOneWidget);
+  });
+
+  testWidgets('and shows it in the full-bleed layout the TV rail can use', (tester) async {
+    await pumpGridCard(tester, _youTube(), fullBleed: true);
+    await tester.pump();
+
+    expect(find.text('3:32'), findsOneWidget);
   });
 
   // A live broadcast reports zero length; a runtime there would be a lie.

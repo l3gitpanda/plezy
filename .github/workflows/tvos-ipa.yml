@@ -103,6 +103,39 @@ jobs:
       # resolution is left enabled on purpose: tvOS is not built through the
       # Flutter tool, so Xcode is what fetches MPVKit (see
       # scripts/refresh_apple_spm.sh).
+      # SwiftPM pulls MPVKit's binary targets from GitHub release downloads,
+      # which answer 504 often enough to fail a build outright (runs 14 and 15
+      # died on Libavutil, Libavformat and lcms2 across two different hosts).
+      # Caching them keys on the resolved pins, so a warm cache skips the
+      # network entirely and a cold one only pays once.
+      - name: Cache SwiftPM binary artifacts
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            ~/Library/Caches/org.swift.swiftpm
+            ~/Library/org.swift.swiftpm
+          key: ${{ env.TVOS_CACHE_VERSION }}-swiftpm-${{ hashFiles('tvos/Runner.xcworkspace/xcshareddata/swiftpm/Package.resolved', 'tvos/Runner.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+
+      # Resolution is the only network-bound part of the build, so it retries
+      # on its own rather than the whole xcodebuild: a compile error should
+      # fail once and fast, not three times slowly.
+      - name: Resolve SwiftPM packages
+        shell: bash
+        run: |
+          set -uo pipefail
+          for attempt in 1 2 3; do
+            if xcodebuild -resolvePackageDependencies \
+                -workspace tvos/Runner.xcworkspace \
+                -scheme Runner \
+                -derivedDataPath build/tvos; then
+              exit 0
+            fi
+            echo "::warning::SwiftPM resolution failed (attempt $attempt/3); retrying"
+            sleep $((attempt * 20))
+          done
+          echo "::error::SwiftPM package resolution failed after 3 attempts" >&2
+          exit 1
+
       - name: Build tvOS app (no codesign)
         shell: bash
         # GIT_COMMIT reaches the Dart compile through tvos/scripts/xcode_appletv.sh
