@@ -23,7 +23,11 @@ import '../../services/yattee/yattee_client.dart';
 import '../../utils/app_logger.dart';
 import '../../utils/layout_constants.dart';
 import '../../utils/platform_detector.dart';
+import '../../widgets/app_icon.dart';
+import '../../widgets/bottom_sheet_page_scaffold.dart';
+import '../../widgets/focusable_list_tile.dart';
 import '../../widgets/focusable_media_card.dart';
+import '../../widgets/overlay_sheet.dart';
 import '../../widgets/desktop_app_bar.dart';
 import '../../widgets/hub_section.dart';
 import '../../widgets/loading_indicator_box.dart';
@@ -32,6 +36,7 @@ import '../../widgets/settings_builder.dart';
 import '../../widgets/toolbar_scrim.dart';
 import '../../widgets/tv_browse_rail.dart';
 import '../../widgets/tv_spotlight_scaffold.dart';
+import '../hub_detail_screen.dart';
 import '../libraries/state_messages.dart';
 import 'youtube_search_screen.dart';
 import 'youtube_video_actions.dart';
@@ -340,6 +345,57 @@ class YouTubeScreenState extends State<YouTubeScreen>
     return videos.map(YouTubeMediaItems.fromSummary).toList();
   }
 
+  /// Open the browsable grid for one row, chosen from a sheet.
+  ///
+  /// Both rails put their own View All in the slot AFTER the last card, which
+  /// on a fifty-item shelf is fifty presses away — present, but no way to
+  /// find it. This is the discoverable entry, in the toolbar beside search
+  /// where focus already starts.
+  Future<void> _browseRow() async {
+    final rows = [
+      for (final row in YouTubeRow.values)
+        if (_rows[row]?.isNotEmpty ?? false) row,
+    ];
+    if (rows.isEmpty) return;
+    // One row is not a choice worth a sheet; go straight to it.
+    final row = rows.length == 1
+        ? rows.single
+        : await OverlaySheetController.showAdaptive<YouTubeRow>(
+            context,
+            builder: (sheetContext) => BottomSheetPageScaffold(
+              title: t.common.viewAll,
+              icon: Symbols.grid_view_rounded,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (var i = 0; i < rows.length; i++)
+                    FocusableListTile(
+                      autofocus: i == 0,
+                      leading: AppIcon(_rowIcon(rows[i]), fill: 1),
+                      title: Text(_rowTitle(rows[i])),
+                      onTap: () => OverlaySheetController.closeAdaptive(sheetContext, rows[i]),
+                    ),
+                  const SizedBox(height: 8),
+                ],
+              ),
+            ),
+          );
+    if (row == null || !mounted) return;
+    MediaHub? target;
+    for (final hub in _hubs) {
+      if (_rowForHub(hub) == row) {
+        target = hub;
+        break;
+      }
+    }
+    if (target == null) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => HubDetailScreen(hub: target!, loadItems: () => _loadAll(row)),
+      ),
+    );
+  }
+
   void _ensureFresh() {
     final loadedAt = _loadedAt;
     if (_loading || (loadedAt != null && DateTime.now().difference(loadedAt) < staleAfter)) return;
@@ -434,6 +490,11 @@ class YouTubeScreenState extends State<YouTubeScreen>
           key: _actionBarKey,
           onNavigateDown: searchFocusNode.requestFocus,
           actions: [
+            FocusableAction(
+              icon: Symbols.grid_view_rounded,
+              tooltip: t.common.viewAll,
+              onPressed: () => unawaited(_browseRow()),
+            ),
             FocusableAction(
               icon: Symbols.refresh_rounded,
               tooltip: t.common.refresh,
@@ -589,6 +650,12 @@ class YouTubeScreenState extends State<YouTubeScreen>
                 tooltip: t.common.search,
                 onPressed: () =>
                     Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const YouTubeSearchScreen())),
+              ),
+              FocusableAction(
+                icon: Symbols.grid_view_rounded,
+                iconColor: foregroundColor,
+                tooltip: t.common.viewAll,
+                onPressed: () => unawaited(_browseRow()),
               ),
               FocusableAction(
                 icon: Symbols.refresh_rounded,

@@ -225,6 +225,21 @@ void main() {
     expect(YouTubeScreenState.gridFeedLimit, greaterThan(YouTubeScreenState.feedLimit));
   });
 
+  testWidgets('the toolbar offers a reachable way into the grid', (tester) async {
+    // The rails' own View All sits after the last card, which on a long shelf
+    // is unreachable in practice; the toolbar action is the discoverable one.
+    await _pumpYouTube(tester, subscribed: true);
+    final browse = find.byTooltip(t.common.viewAll);
+    expect(browse, findsOneWidget);
+
+    await tester.tap(browse);
+    await tester.pumpAndSettle();
+
+    // Several rows loaded, so it asks which before opening one.
+    expect(find.text(t.yattee.rows.trending), findsWidgets);
+    expect(find.text(t.yattee.rows.popular), findsWidgets);
+  });
+
   testWidgets('no Twitch subscriptions means no Twitch row', (tester) async {
     await _pumpYouTube(tester, subscribed: true);
     expect(find.text(t.yattee.rows.subscriptions), findsOneWidget);
