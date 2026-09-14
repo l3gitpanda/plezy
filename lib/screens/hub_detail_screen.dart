@@ -87,6 +87,16 @@ class _HubDetailScreenState extends State<HubDetailScreen>
   @override
   List<FocusableAction> getAppBarActions() {
     return [
+      // The app bar's own back chevron is focusable but unreachable by D-pad:
+      // Up from the grid lands on this action bar, and nothing navigates left
+      // out of it. On TV that left the screen with no selectable way out, so
+      // Back joins the actions, where focus already goes.
+      if (PlatformDetector.isTV())
+        FocusableAction(
+          icon: Symbols.arrow_back_rounded,
+          tooltip: t.common.back,
+          onPressed: () => Navigator.of(context).maybePop(),
+        ),
       FocusableAction(icon: Symbols.swap_vert_rounded, tooltip: t.libraries.sort, onPressed: _showSortBottomSheet),
     ];
   }
