@@ -10,6 +10,25 @@ void main() {
       expect(YatteeSite.fromId('youtube'), YatteeSite.youtube);
     });
 
+    // Regression: yt-dlp names an extractor for what it extracts, not the
+    // site — a live Twitch channel reports `twitch:stream`. An exact match
+    // sent every one of those to the YouTube default, and from there to
+    // /videos/{id}, which rejects a Twitch id: "Invalid video ID format".
+    // The server matches the same way, by family: re.search("twitch", …).
+    test('matches the extractor family yt-dlp actually reports', () {
+      expect(YatteeSite.fromId('twitch:stream'), YatteeSite.twitch);
+      expect(YatteeSite.fromId('twitch:vod'), YatteeSite.twitch);
+      expect(YatteeSite.fromId('Twitch:Stream'), YatteeSite.twitch);
+      expect(YatteeSite.fromId('youtube:tab'), YatteeSite.youtube);
+    });
+
+    test('does not match a site whose id merely appears inside another name', () {
+      // Only a family prefix counts, so an unrelated extractor cannot be
+      // mistaken for one this build knows.
+      expect(YatteeSite.fromId('nottwitch'), YatteeSite.youtube);
+      expect(YatteeSite.fromId('mytwitch:stream'), YatteeSite.youtube);
+    });
+
     // Everything stored before sites existed is YouTube, and so is anything
     // from an extractor this build has no row for.
     test('falls back to YouTube for missing and unknown ids', () {
