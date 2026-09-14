@@ -1,3 +1,5 @@
+import '../../utils/app_logger.dart';
+
 /// A content source a Yattee Server can serve.
 ///
 /// The server's API splits along this line, and the split is not cosmetic:
@@ -51,8 +53,19 @@ enum YatteeSite {
     if (id == null || id.isEmpty) return YatteeSite.youtube;
     final normalized = id.toLowerCase();
     for (final site in YatteeSite.values) {
-      if (site.id == normalized) return site;
+      // Matched by family, not by equality. yt-dlp names an extractor for the
+      // thing it extracts, not the site: a Twitch broadcast reports
+      // `twitch:stream` and a past one `twitch:vod`. Yattee Server matches the
+      // same way — `get_site_by_extractor` does `re.search("twitch", extractor)`
+      // — so an exact comparison here disagreed with the server about what
+      // site a video came from, and every Twitch item fell through to the
+      // YouTube default below.
+      if (normalized == site.id || normalized.startsWith('${site.id}:')) return site;
     }
+    // An extractor this build has no row for. Reading it as YouTube is right
+    // for the rows that predate the field — they are all YouTube — but it is
+    // a guess for anything else, so say so where it can be seen.
+    appLogger.w('Yattee: unrecognised extractor "$id"; treating it as YouTube');
     return YatteeSite.youtube;
   }
 
