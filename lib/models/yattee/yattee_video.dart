@@ -1,4 +1,5 @@
 import '../../utils/json_utils.dart';
+import 'yattee_site.dart';
 
 /// One entry of an Invidious-style thumbnail list.
 class YatteeThumbnail {
@@ -54,6 +55,15 @@ class YatteeVideoSummary {
   final bool isUpcoming;
   final bool isShort;
 
+  /// Which source this video came from. The server reports it as
+  /// `extractor`, which for feed rows is the stored `site` column.
+  final YatteeSite site;
+
+  /// The video's own page URL, for sites whose videos are fetched by URL
+  /// rather than by id. Null on YouTube, where `/videos/{id}` takes the bare
+  /// id; required to play anything else (see [YatteeClient.extractVideo]).
+  final String? videoUrl;
+
   const YatteeVideoSummary({
     required this.videoId,
     required this.title,
@@ -69,6 +79,8 @@ class YatteeVideoSummary {
     this.liveNow = false,
     this.isUpcoming = false,
     this.isShort = false,
+    this.site = YatteeSite.youtube,
+    this.videoUrl,
   });
 
   factory YatteeVideoSummary.fromJson(Map<String, dynamic> json) => YatteeVideoSummary(
@@ -86,6 +98,8 @@ class YatteeVideoSummary {
     liveNow: flexibleBool(json['liveNow']),
     isUpcoming: flexibleBool(json['isUpcoming']),
     isShort: flexibleBool(json['isShort']),
+    site: YatteeSite.fromId(json['extractor'] as String?),
+    videoUrl: _nonBlank(json['videoUrl']),
   );
 
   static List<YatteeVideoSummary> listFromJson(Object? value) =>
@@ -145,6 +159,40 @@ class YatteeChannelVideosPage {
   const YatteeChannelVideosPage({required this.videos, this.continuation});
 
   factory YatteeChannelVideosPage.fromJson(Map<String, dynamic> json) => YatteeChannelVideosPage(
+    videos: YatteeVideoSummary.listFromJson(json['videos']),
+    continuation: json['continuation']?.toString(),
+  );
+}
+
+/// `GET /extract/channel` — a channel on a site the Invidious-compatible
+/// routes do not serve.
+///
+/// Distinct from [YatteeChannel]: this shape carries no avatar, banners or
+/// subscriber count (yt-dlp's channel extraction reports none of them for
+/// most sites), and its [authorUrl] is the re-extraction URL a subscription
+/// has to keep, since the server cannot rebuild it from an id.
+class YatteeExtractedChannel {
+  final String author;
+  final String authorId;
+  final String authorUrl;
+  final YatteeSite site;
+  final List<YatteeVideoSummary> videos;
+  final String? continuation;
+
+  const YatteeExtractedChannel({
+    required this.author,
+    required this.authorId,
+    required this.authorUrl,
+    this.site = YatteeSite.youtube,
+    this.videos = const [],
+    this.continuation,
+  });
+
+  factory YatteeExtractedChannel.fromJson(Map<String, dynamic> json) => YatteeExtractedChannel(
+    author: stringOrEmpty(json['author']),
+    authorId: stringOrEmpty(json['authorId']),
+    authorUrl: stringOrEmpty(json['authorUrl']),
+    site: YatteeSite.fromId(json['extractor'] as String?),
     videos: YatteeVideoSummary.listFromJson(json['videos']),
     continuation: json['continuation']?.toString(),
   );

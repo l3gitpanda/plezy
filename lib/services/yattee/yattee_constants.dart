@@ -9,10 +9,6 @@ abstract final class YatteeConstants {
   /// no port of its own.
   static const List<int> defaultPorts = [8085, 8080];
 
-  /// Every subscription channel is `site: youtube`; the server also proxies
-  /// other yt-dlp extractors, but Plezy only browses YouTube.
-  static const String site = 'youtube';
-
   /// `POST /feed` rejects more channels than this per call (422).
   static const int feedChannelLimit = 500;
 

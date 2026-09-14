@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../mixins/disposable_change_notifier_mixin.dart';
 import '../../models/yattee/yattee_session.dart';
+import '../../models/yattee/yattee_site.dart';
 import '../../services/yattee/yattee_auth_service.dart';
 import '../../services/yattee/yattee_client.dart';
 import '../../services/yattee/yattee_exceptions.dart';
@@ -86,6 +87,21 @@ class YatteeAccountProvider extends ChangeNotifier with DisposableChangeNotifier
 
   List<YatteeSubscription> get subscriptions => _subscriptions;
 
+  /// This profile's subscriptions on one site, in stored order.
+  ///
+  /// The feed is fetched per site — each is its own row — because a single
+  /// `POST /feed` merges everything it is given into one list, and because a
+  /// site the server has disabled fails the whole call rather than its own
+  /// share of it.
+  List<YatteeSubscription> subscriptionsFor(YatteeSite site) => [
+    for (final subscription in _subscriptions)
+      if (subscription.site == site) subscription,
+  ];
+
+  /// Sites this profile actually follows anything on, so the UI can leave out
+  /// a row nobody has subscriptions for.
+  Set<YatteeSite> get subscribedSites => {for (final subscription in _subscriptions) subscription.site};
+
   YatteeQuality get quality => _quality;
 
   void _logPersistenceFailure(Object e) => appLogger.w('Yattee: persistence failed', error: e);
@@ -152,10 +168,10 @@ class YatteeAccountProvider extends ChangeNotifier with DisposableChangeNotifier
     }
     if (!_isCurrentBinding(userUuid, generation)) return const YatteeSeedResult(YatteeSeedOutcome.failed);
     if (discovered.isEmpty) return const YatteeSeedResult(YatteeSeedOutcome.empty);
-    final known = {for (final subscription in _subscriptions) subscription.channelId};
+    final known = {for (final subscription in _subscriptions) (subscription.site, subscription.channelId)};
     final added = [
       for (final subscription in discovered)
-        if (!known.contains(subscription.channelId)) subscription,
+        if (!known.contains((subscription.site, subscription.channelId))) subscription,
     ];
     if (added.isEmpty) return const YatteeSeedResult(YatteeSeedOutcome.alreadyKnown);
     _subscriptions = [..._subscriptions, ...added];
@@ -190,20 +206,23 @@ class YatteeAccountProvider extends ChangeNotifier with DisposableChangeNotifier
     await _store.clearSession(userUuid);
   }
 
-  bool isSubscribed(String channelId) => _subscriptions.any((s) => s.channelId == channelId);
+  /// Channel ids are only unique within a site, so membership is keyed on
+  /// both — a Twitch channel and a YouTube channel can share a name.
+  bool isSubscribed(String channelId, {YatteeSite site = YatteeSite.youtube}) =>
+      _subscriptions.any((s) => s.channelId == channelId && s.site == site);
 
   Future<void> subscribe(YatteeSubscription subscription) async {
-    if (isDisposed || isSubscribed(subscription.channelId)) return;
+    if (isDisposed || isSubscribed(subscription.channelId, site: subscription.site)) return;
     _subscriptions = [subscription, ..._subscriptions];
     safeNotifyListeners();
     await _persistSubscriptions();
   }
 
-  Future<void> unsubscribe(String channelId) async {
-    if (isDisposed || !isSubscribed(channelId)) return;
+  Future<void> unsubscribe(String channelId, {YatteeSite site = YatteeSite.youtube}) async {
+    if (isDisposed || !isSubscribed(channelId, site: site)) return;
     _subscriptions = [
       for (final s in _subscriptions)
-        if (s.channelId != channelId) s,
+        if (s.channelId != channelId || s.site != site) s,
     ];
     safeNotifyListeners();
     await _persistSubscriptions();

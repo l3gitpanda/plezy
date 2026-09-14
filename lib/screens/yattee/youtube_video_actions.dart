@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../../i18n/strings.g.dart';
 import '../../media/media_item.dart';
+import '../../models/yattee/yattee_site.dart';
 import '../../models/yattee/youtube_media_item.dart';
 import '../../models/yattee/yattee_session.dart';
 import '../../providers/yattee/yattee_account_provider.dart';
@@ -26,11 +27,21 @@ Future<void> activateYouTubeItem(BuildContext context, MediaItem item) async {
   final account = context.read<YatteeAccountProvider>();
   final videoId = item.youTubeVideoId;
   if (videoId != null) {
-    await navigateToYouTubeVideo(context, account: account, videoId: videoId);
+    await navigateToYouTubeVideo(
+      context,
+      account: account,
+      videoId: videoId,
+      site: item.youTubeSite,
+      videoUrl: item.youTubeVideoUrl,
+    );
     return;
   }
   final channelId = item.youTubeChannelId;
-  if (channelId != null) await openYouTubeChannel(context, channelId: channelId, channelName: item.youTubeChannelName);
+  // Only YouTube has a channel page: `/channels/{id}` is one of the
+  // Invidious-compatible routes, so a Twitch channel has nothing to open.
+  if (channelId != null && item.youTubeSite == YatteeSite.youtube) {
+    await openYouTubeChannel(context, channelId: channelId, channelName: item.youTubeChannelName);
+  }
 }
 
 Future<void> openYouTubeChannel(BuildContext context, {required String channelId, String? channelName}) {
@@ -45,10 +56,13 @@ Future<void> openYouTubeChannel(BuildContext context, {required String channelId
 /// would break on an item with no server, so YouTube items get this instead.
 Future<void> showYouTubeVideoActions(BuildContext context, MediaItem item) async {
   final videoId = item.youTubeVideoId;
-  final channelId = item.youTubeChannelId;
+  final site = item.youTubeSite;
+  // Channel actions are YouTube-only (see [activateYouTubeItem]); on another
+  // site the sheet offers Play alone.
+  final channelId = site == YatteeSite.youtube ? item.youTubeChannelId : null;
   if (videoId == null && channelId == null) return;
   final account = context.read<YatteeAccountProvider>();
-  final subscribed = channelId != null && account.isSubscribed(channelId);
+  final subscribed = channelId != null && account.isSubscribed(channelId, site: site);
   final action = await OverlaySheetController.showAdaptive<_YouTubeVideoAction>(
     context,
     builder: (sheetContext) => BottomSheetPageScaffold(
@@ -86,7 +100,13 @@ Future<void> showYouTubeVideoActions(BuildContext context, MediaItem item) async
   if (action == null || !context.mounted) return;
   switch (action) {
     case _YouTubeVideoAction.play:
-      await navigateToYouTubeVideo(context, account: account, videoId: videoId!);
+      await navigateToYouTubeVideo(
+        context,
+        account: account,
+        videoId: videoId!,
+        site: site,
+        videoUrl: item.youTubeVideoUrl,
+      );
     case _YouTubeVideoAction.channel:
       await openYouTubeChannel(context, channelId: channelId!, channelName: item.youTubeChannelName);
     case _YouTubeVideoAction.toggleSubscription:

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'yattee_site.dart';
 
 /// A connected Yattee Server for one profile: instance URL plus the HTTP
 /// Basic Auth credentials every `/api/v1` call carries.
@@ -71,13 +72,40 @@ class YatteeSubscription {
   /// feed request in [YatteeClient.fetchFeed] for why.
   final String? avatarUrl;
 
-  const YatteeSubscription({required this.channelId, required this.name, this.avatarUrl});
+  /// Which source this channel lives on. Each site is browsed as its own
+  /// row, and the feed is fetched per site.
+  final YatteeSite site;
 
-  Map<String, Object?> toJson() => {'channel_id': channelId, 'name': name, 'avatar_url': avatarUrl};
+  /// The channel's page URL. Required by `POST /feed` for every non-YouTube
+  /// channel — the server synthesises YouTube's from the `UC…` id and has no
+  /// convention for anything else (see [YatteeSite.channelUrlFor]) — and
+  /// null for YouTube, where sending one would only add an SSRF check to
+  /// fail.
+  final String? channelUrl;
 
+  const YatteeSubscription({
+    required this.channelId,
+    required this.name,
+    this.avatarUrl,
+    this.site = YatteeSite.youtube,
+    this.channelUrl,
+  });
+
+  Map<String, Object?> toJson() => {
+    'channel_id': channelId,
+    'name': name,
+    'avatar_url': avatarUrl,
+    'site': site.id,
+    'channel_url': channelUrl,
+  };
+
+  /// Subscriptions stored before sites existed carry no `site`, and they are
+  /// all YouTube — which is what [YatteeSite.fromId] returns for a missing id.
   factory YatteeSubscription.fromJson(Map<String, Object?> json) => YatteeSubscription(
     channelId: json['channel_id'] as String,
     name: json['name'] as String? ?? '',
     avatarUrl: json['avatar_url'] as String?,
+    site: YatteeSite.fromId(json['site'] as String?),
+    channelUrl: json['channel_url'] as String?,
   );
 }

@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:plezy/i18n/strings.g.dart';
 import 'package:plezy/models/yattee/yattee_session.dart';
+import 'package:plezy/models/yattee/yattee_site.dart';
 import 'package:plezy/services/yattee/yattee_auth_service.dart';
 import 'package:plezy/services/yattee/yattee_client.dart';
 import 'package:plezy/services/yattee/yattee_exceptions.dart';
@@ -146,6 +147,90 @@ void main() {
       expect(page.readyCount, 2);
     });
 
+    test('feed carries each channel\'s own site and URL', () async {
+      late Map<String, dynamic> body;
+      final client = YatteeClient(
+        _session(),
+        httpClient: MockClient((request) async {
+          body = jsonDecode(request.body) as Map<String, dynamic>;
+          return _json({'status': 'ready', 'videos': [], 'total': 0, 'has_more': false});
+        }),
+      );
+      await client.fetchFeed(const [
+        YatteeSubscription(
+          channelId: 'shroud',
+          name: 'shroud',
+          site: YatteeSite.twitch,
+          channelUrl: 'https://www.twitch.tv/shroud',
+        ),
+      ]);
+      // channel_url is required for every non-YouTube channel: the server can
+      // synthesise a YouTube URL from the id but raises without one here.
+      expect(body['channels'], [
+        {
+          'channel_id': 'shroud',
+          'site': 'twitch',
+          'channel_name': 'shroud',
+          'channel_url': 'https://www.twitch.tv/shroud',
+        },
+      ]);
+    });
+
+    test('extract fetches a video by URL and reads its site back', () async {
+      late Uri seen;
+      final client = YatteeClient(
+        _session(),
+        httpClient: MockClient((request) async {
+          seen = request.url;
+          return _json({
+            'videoId': 'v1',
+            'title': 'A stream',
+            'author': 'shroud',
+            'authorId': 'shroud',
+            'lengthSeconds': 0,
+            'liveNow': true,
+            'extractor': 'twitch',
+            'videoUrl': 'https://www.twitch.tv/shroud',
+            'formatStreams': [],
+            'adaptiveFormats': [],
+          });
+        }),
+      );
+      final video = await client.extractVideo('https://www.twitch.tv/shroud');
+      expect(seen.path, '/api/v1/extract');
+      expect(seen.queryParameters['url'], 'https://www.twitch.tv/shroud');
+      expect(video.summary.liveNow, isTrue);
+      expect(video.summary.site, YatteeSite.twitch);
+    });
+
+    test('extract channel pages by number and tags its videos with the site', () async {
+      late Uri seen;
+      final client = YatteeClient(
+        _session(),
+        httpClient: MockClient((request) async {
+          seen = request.url;
+          return _json({
+            'author': 'shroud',
+            'authorId': 'shroud',
+            'authorUrl': 'https://www.twitch.tv/shroud',
+            'extractor': 'twitch',
+            'videos': [
+              {..._video('v1'), 'extractor': 'twitch', 'videoUrl': 'https://www.twitch.tv/videos/1'},
+            ],
+            'continuation': '2',
+          });
+        }),
+      );
+      final channel = await client.extractChannel('https://www.twitch.tv/shroud', page: 2);
+      expect(seen.path, '/api/v1/extract/channel');
+      expect(seen.queryParameters['page'], '2');
+      expect(channel.site, YatteeSite.twitch);
+      expect(channel.authorUrl, 'https://www.twitch.tv/shroud');
+      expect(channel.videos.single.site, YatteeSite.twitch);
+      expect(channel.videos.single.videoUrl, 'https://www.twitch.tv/videos/1');
+      expect(channel.continuation, '2');
+    });
+
     test('feed skips the network entirely with no subscriptions', () async {
       final client = YatteeClient(_session(), httpClient: MockClient((_) async => fail('no request expected')));
       final page = await client.fetchFeed(const []);
@@ -241,7 +326,7 @@ void main() {
       expect(page.continuation, isNull);
     });
 
-    test('watched channels seed maps rows, filters non-YouTube sites, and skips blanks', () async {
+    test('watched channels seed maps rows across sites and skips unusable ones', () async {
       late Uri seen;
       final client = YatteeClient(
         _session(),
@@ -252,7 +337,18 @@ void main() {
             {'channel_id': 'UC1', 'site': 'youtube', 'channel_name': 'One', 'avatar_url': 'https://a/1.jpg'},
             // Name absent: the id stands in so the row is still usable.
             {'channel_id': 'UC2', 'site': 'youtube', 'channel_name': null, 'avatar_url': null},
-            // Another extractor's channel must not become a YouTube subscription.
+            // Another site's channel is seeded too, tagged with its site.
+            {
+              'channel_id': 'shroud',
+              'site': 'twitch',
+              'channel_name': 'shroud',
+              'channel_url': 'https://www.twitch.tv/shroud',
+            },
+            // A non-YouTube channel with no URL can never be refreshed: the
+            // feed request that would do it is rejected without one.
+            {'channel_id': 'ninja', 'site': 'twitch', 'channel_name': 'ninja'},
+            // An extractor this build has no row for is read as YouTube, so
+            // it needs no URL — but it does need an id.
             {'channel_id': 'S1', 'site': 'peertube', 'channel_name': 'Other'},
             // Unusable rows are dropped rather than producing empty entries.
             {'channel_id': '', 'site': 'youtube', 'channel_name': 'Blank'},
@@ -263,11 +359,14 @@ void main() {
       final seeded = await client.fetchWatchedChannels();
       // Root-mounted admin router: NOT under /api/v1.
       expect(seen.path, '/api/watched-channels');
-      expect(seeded.map((s) => s.channelId), ['UC1', 'UC2']);
+      expect(seeded.map((s) => s.channelId), ['UC1', 'UC2', 'shroud', 'S1']);
       expect(seeded.first.name, 'One');
       expect(seeded.first.avatarUrl, 'https://a/1.jpg');
-      expect(seeded.last.name, 'UC2');
-      expect(seeded.last.avatarUrl, isNull);
+      expect(seeded[1].name, 'UC2');
+      expect(seeded[1].avatarUrl, isNull);
+      expect(seeded[2].site, YatteeSite.twitch);
+      expect(seeded[2].channelUrl, 'https://www.twitch.tv/shroud');
+      expect(seeded.last.site, YatteeSite.youtube);
     });
 
     test('watched channels surfaces a non-admin 403 rather than looking empty', () async {
