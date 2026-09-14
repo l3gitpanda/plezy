@@ -607,6 +607,7 @@ class MediaCardState extends State<MediaCard> with ContextMenuTapMixin<MediaCard
                   ),
                   if (item is MediaItem && _showsWatchedIndicator(item)) WatchedIndicator(item: item),
                   if (badgeLabels.isNotEmpty) _CatalogBadges(labels: badgeLabels),
+                  if (item is MediaItem) ?_durationBadge(item),
                 ],
               ),
             ),
@@ -653,6 +654,7 @@ class MediaCardState extends State<MediaCard> with ContextMenuTapMixin<MediaCard
             ),
             if (item is MediaItem && _showsWatchedIndicator(item)) WatchedIndicator(item: item),
             if (badgeLabels.isNotEmpty) _CatalogBadges(labels: badgeLabels),
+            if (item is MediaItem) ?_durationBadge(item),
           ],
         ),
       ),
@@ -1447,6 +1449,33 @@ List<String> _buildCatalogBadgeLabels(CatalogItem? item, DateTime? now) {
 
   add(_catalogEpisodeBadge(item));
   return labels;
+}
+
+/// Runtime chip for a YouTube stand-in, bottom-right of the poster.
+///
+/// Only YouTube items: a server-backed one reaches a detail screen that states
+/// its runtime, while these play straight from the card, so the length is
+/// worth knowing before committing to one. Bottom-right is the free corner —
+/// the watched check sits top-right and the badges top-left.
+Widget? _durationBadge(MediaItem item) {
+  final label = item.youTubeDurationLabel;
+  if (label == null) return null;
+  return Positioned(
+    key: const Key('media-card-duration'),
+    right: 6,
+    bottom: 6,
+    child: DecoratedBox(
+      decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.76), borderRadius: BorderRadius.circular(4)),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
+        child: Text(
+          label,
+          maxLines: 1,
+          style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: .w700, height: 1),
+        ),
+      ),
+    ),
+  );
 }
 
 class _CatalogBadges extends StatelessWidget {
