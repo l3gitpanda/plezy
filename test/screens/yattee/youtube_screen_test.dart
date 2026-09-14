@@ -211,6 +211,20 @@ void main() {
     expect(find.text('Feed One'), findsOneWidget);
   });
 
+  testWidgets('every row offers a View All grid, and the feed asks it for a deeper page', (tester) async {
+    final (_, server) = await _pumpYouTube(tester, subscribed: true);
+    final hubs = tester.widgetList<HubSection>(find.byType(HubSection)).map((s) => s.hub).toList();
+    expect(hubs.every((hub) => hub.more), isTrue);
+
+    // The shelf's own call asked for the shelf page size; the grid loader is
+    // what goes deeper, so the two must not be the same request.
+    expect(server.feedBodies.single['limit'], YouTubeScreenState.feedLimit);
+    final section = tester.widget<HubSection>(find.byType(HubSection).first);
+    await section.loadMoreItems!();
+    expect(server.feedBodies.last['limit'], YouTubeScreenState.gridFeedLimit);
+    expect(YouTubeScreenState.gridFeedLimit, greaterThan(YouTubeScreenState.feedLimit));
+  });
+
   testWidgets('no Twitch subscriptions means no Twitch row', (tester) async {
     await _pumpYouTube(tester, subscribed: true);
     expect(find.text(t.yattee.rows.subscriptions), findsOneWidget);

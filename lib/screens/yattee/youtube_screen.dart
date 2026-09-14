@@ -80,6 +80,13 @@ class YouTubeScreenState extends State<YouTubeScreen>
   /// How many uploads the subscriptions row asks for.
   static const int feedLimit = 50;
 
+  /// How many the View All grid asks for instead. A shelf is a single
+  /// scrolling line, so 50 is plenty there; the grid is the browse surface
+  /// and shows several rows at once. The server accepts up to 1000, but it
+  /// answers out of its own cache — asking for far more than it has crawled
+  /// just returns what there is.
+  static const int gridFeedLimit = 300;
+
   /// A first feed call for channels the server has never crawled answers
   /// `fetching`; retry a bounded number of times before leaving it to a
   /// manual refresh.
@@ -176,6 +183,11 @@ class YouTubeScreenState extends State<YouTubeScreen>
           type: 'clip',
           items: items,
           size: items.length,
+          // Every row opens a View All grid. For the feed rows that is a
+          // genuinely deeper page; for trending and popular the server has no
+          // paging at all, and the grid is still the better way to read a
+          // long list than a one-line shelf.
+          more: true,
         ),
   ];
 
@@ -299,6 +311,33 @@ class YouTubeScreenState extends State<YouTubeScreen>
       }
       return e;
     }
+  }
+
+  /// Everything the View All grid should show for [row].
+  ///
+  /// Deliberately a fresh fetch rather than the shelf's cached list: the feed
+  /// rows can go much deeper than the shelf asked for, and re-running the
+  /// catalog rows costs one request against a server that caches them.
+  ///
+  /// Runs outside the tab's generation guards — the grid is its own screen
+  /// and its own lifetime, so a tab reload underneath must not cancel it.
+  Future<List<MediaItem>> _loadAll(YouTubeRow row) async {
+    final client = _account.client;
+    if (client == null) return const [];
+    final site = row.feedSite;
+    if (site != null) {
+      final subscriptions = _account.subscriptionsFor(site);
+      if (subscriptions.isEmpty) return const [];
+      final page = await client.fetchFeed(subscriptions, limit: gridFeedLimit);
+      return page.videos.map(YouTubeMediaItems.fromSummary).toList();
+    }
+    final videos = switch (row) {
+      YouTubeRow.trending => await client.fetchTrending(),
+      YouTubeRow.popular => await client.fetchPopular(),
+      // Unreachable: every non-feed row is one of the two above.
+      _ => const <YatteeVideoSummary>[],
+    };
+    return videos.map(YouTubeMediaItems.fromSummary).toList();
   }
 
   void _ensureFresh() {
@@ -451,6 +490,7 @@ class YouTubeScreenState extends State<YouTubeScreen>
               hub: hubs[i],
               focusMemory: _hubFocusMemory,
               icon: _rowIcon(_rowForHub(hubs[i])!),
+              loadMoreItems: () => _loadAll(_rowForHub(hubs[i])!),
               onItemTap: _activate,
               onItemLongPress: _showActions,
               onVerticalNavigation: (isUp) => _handleVerticalNavigation(i, isUp),
@@ -622,6 +662,13 @@ class YouTubeScreenState extends State<YouTubeScreen>
                 hubs: hubs,
                 focusMemory: _hubFocusMemory,
                 iconForHub: (hub, _) => _rowIcon(_rowForHub(hub) ?? YouTubeRow.popular),
+                // The rail's own trailing slot is what opens the grid on TV;
+                // there is no pointer to click a header link with.
+                trailingForHub: (_) => TvRailTrailing.viewAll,
+                loadMoreItems: (hub) async {
+                  final row = _rowForHub(hub);
+                  return row == null ? const <MediaItem>[] : _loadAll(row);
+                },
                 onFocusedItemChanged: _spotlight.select,
                 onActivateItem: (_, item) {
                   _activate(item);
