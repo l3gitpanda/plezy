@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../i18n/strings.g.dart';
+import '../../models/yattee/yattee_site.dart';
 import '../../models/yattee/youtube_media_item.dart';
 import '../../providers/yattee/yattee_account_provider.dart';
 import '../../screens/video_player/youtube_session_args.dart';
@@ -29,6 +30,8 @@ Future<void> navigateToYouTubeVideo(
   BuildContext context, {
   required YatteeAccountProvider account,
   required String videoId,
+  YatteeSite site = YatteeSite.youtube,
+  String? videoUrl,
 }) async {
   final client = account.client;
   if (client == null || _launchInFlight) return;
@@ -40,7 +43,12 @@ Future<void> navigateToYouTubeVideo(
       builder: (_) => const PopScope(canPop: false, child: Center(child: CircularProgressIndicator())),
     );
   try {
-    final video = await client.fetchVideo(videoId);
+    // YouTube is fetched by id; every other site by its own URL, because
+    // `/videos/{id}` is YouTube-only (it asserts the extractor before it does
+    // anything else) and only `/extract` runs an arbitrary extractor.
+    final video = site == YatteeSite.youtube || videoUrl == null
+        ? await client.fetchVideo(videoId)
+        : await client.extractVideo(videoUrl);
     if (!context.mounted) return;
     final decision = YatteeStreamSelector.decide(video, quality: account.quality);
     if (decision.reason case final reason?) {

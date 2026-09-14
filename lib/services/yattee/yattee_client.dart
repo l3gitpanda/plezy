@@ -1,6 +1,7 @@
 import 'package:http/http.dart' as http;
 
 import '../../models/yattee/yattee_session.dart';
+import '../../models/yattee/yattee_site.dart';
 import '../../models/yattee/yattee_video.dart';
 import 'yattee_constants.dart';
 import 'yattee_exceptions.dart';
@@ -51,6 +52,12 @@ class YatteeClient {
   /// `POST /feed` with the client-held subscription list. The server caps
   /// one call at [YatteeConstants.feedChannelLimit] channels; larger lists
   /// are sent in chunks and the pages merged, newest first.
+  ///
+  /// Each channel carries its own `site` and, for non-YouTube sites, the
+  /// `channel_url` the server needs to reach it — `feed_fetcher.py` can
+  /// synthesise a YouTube channel URL from the id but raises for anything
+  /// else without one. Callers pass a single site's subscriptions at a time,
+  /// since each site is its own row.
   Future<YatteeFeedPage> fetchFeed(List<YatteeSubscription> subscriptions, {int limit = 50, int offset = 0}) async {
     if (subscriptions.isEmpty) {
       return const YatteeFeedPage(status: 'ready', videos: [], total: 0, hasMore: false);
@@ -69,8 +76,12 @@ class YatteeClient {
             for (final subscription in chunk)
               {
                 'channel_id': subscription.channelId,
-                'site': YatteeConstants.site,
+                'site': subscription.site.id,
                 'channel_name': subscription.name,
+                // Sent only when the site needs it. The server SSRF-validates
+                // every URL it receives and rejects the whole request when one
+                // fails, so a YouTube channel — which needs no URL — sends none.
+                'channel_url': ?subscription.channelUrl,
                 // Deliberately no `avatar_url`. The field is optional, and the
                 // server SSRF-validates every URL it receives, rejecting the
                 // WHOLE feed request with 403 when one resolves to a private
@@ -133,16 +144,22 @@ class YatteeClient {
     for (final entry in data) {
       if (entry is! Map) continue;
       final row = entry.cast<String, Object?>();
-      if (row['site'] != YatteeConstants.site) continue;
       final channelId = row['channel_id']?.toString();
       if (channelId == null || channelId.isEmpty) continue;
       final name = row['channel_name']?.toString();
       final avatarUrl = row['avatar_url']?.toString();
+      final channelUrl = row['channel_url']?.toString();
+      final site = YatteeSite.fromId(row['site']?.toString());
+      // A non-YouTube channel is unusable without its URL: the feed request
+      // that would refresh it is rejected outright without one.
+      if (site != YatteeSite.youtube && (channelUrl == null || channelUrl.isEmpty)) continue;
       subscriptions.add(
         YatteeSubscription(
           channelId: channelId,
           name: name == null || name.isEmpty ? channelId : name,
           avatarUrl: avatarUrl == null || avatarUrl.isEmpty ? null : avatarUrl,
+          site: site,
+          channelUrl: channelUrl == null || channelUrl.isEmpty ? null : channelUrl,
         ),
       );
     }
@@ -195,6 +212,38 @@ class YatteeClient {
       timeout: YatteeConstants.videoTimeout,
     );
     return YatteeVideo.fromJson(_asMap(data, '/videos'));
+  }
+
+  /// `GET /extract?url=…` — the by-URL twin of [fetchVideo], for sites the
+  /// Invidious-compatible routes do not serve.
+  ///
+  /// `/videos/{id}` is YouTube-only: it opens by asserting
+  /// `validate_extractor_allowed("youtube")` and builds a youtube.com URL
+  /// from the bare id. This route takes the video's own URL instead and runs
+  /// whichever yt-dlp extractor matches, answering with the same
+  /// `VideoResponse` — so the stream selector needs no special case.
+  ///
+  /// The site must be enabled in the server's admin settings, or it answers
+  /// 403 "Extraction from '…' is not allowed".
+  Future<YatteeVideo> extractVideo(String url) async {
+    final data = await _http.send('GET', '$_api/extract', query: {'url': url}, timeout: YatteeConstants.videoTimeout);
+    return YatteeVideo.fromJson(_asMap(data, '/extract'));
+  }
+
+  /// `GET /extract/channel?url=…` — a channel page on any enabled site.
+  ///
+  /// The only way to find a non-YouTube channel: `/search` takes no site and
+  /// serves YouTube alone, so a Twitch channel is reached by naming it.
+  /// Pages are 1-based integers rather than YouTube's opaque continuation
+  /// token, and the server returns the next page number as a string.
+  Future<YatteeExtractedChannel> extractChannel(String url, {int page = 1}) async {
+    final data = await _http.send(
+      'GET',
+      '$_api/extract/channel',
+      query: {'url': url, 'page': page},
+      timeout: YatteeConstants.videoTimeout,
+    );
+    return YatteeExtractedChannel.fromJson(_asMap(data, '/extract/channel'));
   }
 
   static Map<String, dynamic> _asMap(dynamic data, String path) {

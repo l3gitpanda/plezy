@@ -3,6 +3,7 @@ import '../../media/media_backend.dart';
 import '../../media/media_item.dart';
 import '../../media/media_kind.dart';
 import '../../utils/formatters.dart';
+import 'yattee_site.dart';
 import 'yattee_video.dart';
 
 /// Builds the rendering-only [MediaItem] stand-ins the YouTube tab feeds
@@ -38,6 +39,11 @@ abstract final class YouTubeMediaItems {
           'videoId': video.videoId,
           'channelId': video.authorId,
           'channel': video.author,
+          'site': video.site.id,
+          // How this video is fetched for playback. YouTube takes the bare
+          // id; every other site is reached by its own URL, and without one
+          // there is nothing to open.
+          'videoUrl': ?video.videoUrl,
           // Carried so the card can badge the poster without re-fetching.
           if (video.liveNow) 'live': true,
           if (video.isUpcoming) 'upcoming': true,
@@ -118,6 +124,13 @@ extension YouTubeMediaItemX on MediaItem {
   String? get youTubeChannelId => _youTube?['channelId'] as String?;
 
   String? get youTubeChannelName => _youTube?['channel'] as String?;
+
+  /// Which source this stand-in came from; [YatteeSite.youtube] for anything
+  /// built before sites existed.
+  YatteeSite get youTubeSite => YatteeSite.fromId(_youTube?['site'] as String?);
+
+  /// The video's own URL, for sites fetched by URL rather than by id.
+  String? get youTubeVideoUrl => _youTube?['videoUrl'] as String?;
 
   /// Poster badge for a broadcast: LIVE, Upcoming, or none.
   ///
