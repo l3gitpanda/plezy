@@ -132,6 +132,20 @@ extension YouTubeMediaItemX on MediaItem {
   /// The video's own URL, for sites fetched by URL rather than by id.
   String? get youTubeVideoUrl => _youTube?['videoUrl'] as String?;
 
+  /// `12:34`-style runtime for the card's poster, or null when there is none
+  /// to show.
+  ///
+  /// Null covers more than a missing field: a live broadcast and an unstarted
+  /// premiere both report a length of zero, and [YouTubeMediaItems.fromSummary]
+  /// stores no duration for them — so the badge stays off exactly where a
+  /// runtime would be a lie, and the LIVE badge speaks instead.
+  String? get youTubeDurationLabel {
+    if (!isYouTubeItem) return null;
+    final ms = durationMs;
+    if (ms == null || ms <= 0) return null;
+    return formatDurationTimestamp(Duration(milliseconds: ms));
+  }
+
   /// Poster badge for a broadcast: LIVE, Upcoming, or none.
   ///
   /// A live or upcoming video reports no length, so without this it is

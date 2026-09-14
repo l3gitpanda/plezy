@@ -42,11 +42,24 @@ void main() {
       expect(item.youTubeBroadcastBadge, t.explore.status.upcoming);
     });
 
+    test('an upload shows its runtime in YouTube\'s mm:ss form', () {
+      expect(YouTubeMediaItems.fromSummary(_summary()).youTubeDurationLabel, '3:32');
+      expect(YouTubeMediaItems.fromSummary(_summary(lengthSeconds: 3725)).youTubeDurationLabel, '1:02:05');
+    });
+
+    // A live broadcast and an unstarted premiere both report zero, and a
+    // runtime badge on either would be a lie — the LIVE badge speaks instead.
+    test('a broadcast shows no runtime', () {
+      expect(YouTubeMediaItems.fromSummary(_summary(liveNow: true, lengthSeconds: 0)).youTubeDurationLabel, isNull);
+      expect(YouTubeMediaItems.fromSummary(_summary(isUpcoming: true, lengthSeconds: 0)).youTubeDurationLabel, isNull);
+    });
+
     test('a channel stand-in has no broadcast badge', () {
       final item = YouTubeMediaItems.fromChannel(const YatteeChannel(authorId: 'UC123', author: 'A channel'));
 
       expect(item.isYouTubeItem, isTrue);
       expect(item.youTubeBroadcastBadge, isNull);
+      expect(item.youTubeDurationLabel, isNull);
     });
   });
 }
