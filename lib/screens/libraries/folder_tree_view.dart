@@ -6,6 +6,7 @@ import '../../media/media_item.dart';
 import '../../media/media_kind.dart';
 import '../../media/media_server_client.dart';
 import '../../services/jellyfin_sequential_launcher.dart';
+import '../../services/media_list_playback_launcher.dart';
 import '../../services/play_queue_launcher.dart';
 import '../../utils/app_logger.dart';
 import '../../utils/error_message_utils.dart';
@@ -46,12 +47,14 @@ class FolderTreeView extends StatefulWidget {
 
 /// Public state so parents can trigger a refresh via GlobalKey.
 class FolderTreeViewState extends State<FolderTreeView> {
-  /// Reload the root folders. Exposed for parent-driven pull-to-refresh.
-  Future<void> refresh() => _loadRootFolders();
+  /// Reload the root folders. Exposed for parent-driven refreshes; resolves
+  /// `true` only when the fresh root listing was applied under the current
+  /// load epoch (not superseded, unmounted, or failed).
+  Future<bool> refresh() => _loadRootFolders();
 
   /// Folders/items returned by the backend's folder API and mapped to neutral
   /// [MediaItem]s. Plex folder URLs survive in [MediaItem.raw]['key'];
-  /// Jellyfin folders use the item id as their recursive parent id.
+  /// MediaBrowser folders use the item id as their recursive parent id.
   List<MediaItem> _rootFolders = [];
   final Map<String, List<MediaItem>> _childrenCache = {};
   final Set<String> _expandedFolders = {};
@@ -59,9 +62,9 @@ class FolderTreeViewState extends State<FolderTreeView> {
   bool _isLoadingRoot = false;
   String? _errorMessage;
 
-  /// Generation counter for in-flight loads. Jellyfin folder fetches render
-  /// page-by-page via `onPage`; a root reload or deletion refresh bumps the
-  /// epoch so superseded pagination callbacks are dropped.
+  /// Generation counter for in-flight loads. MediaBrowser folder fetches
+  /// render page-by-page via `onPage`; a root reload or deletion refresh
+  /// bumps the epoch so superseded pagination callbacks are dropped.
   int _loadEpoch = 0;
 
   /// Stable expand/cache key for an expandable row: the backend folder key
@@ -89,7 +92,7 @@ class FolderTreeViewState extends State<FolderTreeView> {
     return epoch;
   }
 
-  Future<void> _loadRootFolders() async {
+  Future<bool> _loadRootFolders() async {
     final epoch = _supersedeInFlightLoads();
     setState(() {
       _isLoadingRoot = true;
@@ -109,7 +112,7 @@ class FolderTreeViewState extends State<FolderTreeView> {
         },
       );
 
-      if (!mounted || epoch != _loadEpoch) return;
+      if (!mounted || epoch != _loadEpoch) return false;
 
       setState(() {
         _rootFolders = folders;
@@ -117,14 +120,16 @@ class FolderTreeViewState extends State<FolderTreeView> {
       });
 
       appLogger.d('Loaded ${folders.length} root folders');
+      return true;
     } catch (e, stackTrace) {
-      if (!mounted || epoch != _loadEpoch) return;
+      if (!mounted || epoch != _loadEpoch) return false;
 
       final message = localizedLoadErrorMessage(e, stackTrace, context: t.libraries.folders);
       setState(() {
         _errorMessage = message;
         _isLoadingRoot = false;
       });
+      return false;
     }
   }
 
@@ -243,60 +248,37 @@ class FolderTreeViewState extends State<FolderTreeView> {
     }
   }
 
-  Future<void> _handleFolderPlay(MediaItem folder) async {
-    if (folder.backend == MediaBackend.jellyfin) {
-      final launcher = JellyfinSequentialLauncher(context: context);
-      await launcher.launchFromFolder(folder: folder, shuffle: false);
-      return;
+  /// Play (or shuffle) a folder row through the backend's launcher. Built
+  /// here rather than via [MediaListPlaybackLauncher.forItem] because this
+  /// tree is pinned to one server: the Plex client must be the one backing
+  /// [widget.serverId], not `forItem`'s fall-back-to-any-online resolution.
+  Future<void> _launchFolder(MediaItem folder, {required bool shuffle}) async {
+    final MediaListPlaybackLauncher launcher;
+    if (folder.backend.usesMediaBrowserApi) {
+      launcher = JellyfinSequentialLauncher(context: context);
+    } else {
+      final client = context.getPlexClientForServer(ServerId(widget.serverId!));
+      launcher = PlexPlayQueueLauncher(context: context, client: client, serverId: widget.serverId);
     }
-
-    final folderKey = folder.backendFolderKey;
-    if (folderKey == null) return;
-    final client = context.getPlexClientForServer(ServerId(widget.serverId!));
-    final launcher = PlexPlayQueueLauncher(context: context, client: client, serverId: widget.serverId);
-    await launcher.launchFromFolder(
-      folderKey: folderKey,
-      shuffle: false,
-      libraryId: folder.libraryId,
-      libraryTitle: folder.libraryTitle,
-    );
+    await launcher.launchFromFolder(folder: folder, shuffle: shuffle);
   }
 
-  Future<void> _handleFolderShuffle(MediaItem folder) async {
-    if (folder.backend == MediaBackend.jellyfin) {
-      final launcher = JellyfinSequentialLauncher(context: context);
-      await launcher.launchFromFolder(folder: folder, shuffle: true);
-      return;
-    }
-
-    final folderKey = folder.backendFolderKey;
-    if (folderKey == null) return;
-    final client = context.getPlexClientForServer(ServerId(widget.serverId!));
-    final launcher = PlexPlayQueueLauncher(context: context, client: client, serverId: widget.serverId);
-    await launcher.launchFromFolder(
-      folderKey: folderKey,
-      shuffle: true,
-      libraryId: folder.libraryId,
-      libraryTitle: folder.libraryTitle,
-    );
-  }
-
-  /// Expandable rows: directory rows plus Jellyfin media containers whose
+  /// Expandable rows: directory rows plus MediaBrowser media containers whose
   /// direct children form the folder tree. Music libraries expose folder-
   /// backed artists and albums as MusicArtist/MusicAlbum rather than generic
   /// Folder DTOs, so those rows must expand instead of opening empty details.
   bool _isExpandable(MediaItem item) {
-    return item.kind == MediaKind.folder || (item.backend == MediaBackend.jellyfin && _isJellyfinMediaContainer(item));
+    return item.kind == MediaKind.folder || (item.backend.usesMediaBrowserApi && _isMediaBrowserMediaContainer(item));
   }
 
-  bool _isJellyfinMediaContainer(MediaItem item) {
+  bool _isMediaBrowserMediaContainer(MediaItem item) {
     if (item.kind == MediaKind.show || item.kind == MediaKind.season) return true;
     return widget.libraryKind?.isMusic == true && (item.kind == MediaKind.artist || item.kind == MediaKind.album);
   }
 
   bool _canPlayFolder(MediaItem item) {
     if (item.backend == MediaBackend.plex) return true;
-    if (item.backend == MediaBackend.jellyfin) return widget.libraryKind?.isMusic != true;
+    if (item.backend.usesMediaBrowserApi) return widget.libraryKind?.isMusic != true;
     return false;
   }
 
@@ -400,8 +382,8 @@ class FolderTreeViewState extends State<FolderTreeView> {
             serverId: widget.serverId,
             onExpand: isExpandable ? () => _toggleFolder(item) : null,
             onTap: !isExpandable ? () => _handleItemTap(item, entry.parent) : null,
-            onPlayAll: canPlayFolder ? () => _handleFolderPlay(item) : null,
-            onShuffle: canPlayFolder ? () => _handleFolderShuffle(item) : null,
+            onPlayAll: canPlayFolder ? () => _launchFolder(item, shuffle: false) : null,
+            onShuffle: canPlayFolder ? () => _launchFolder(item, shuffle: true) : null,
             focusNode: isFirstRootItem ? widget.firstItemFocusNode : null,
             onNavigateUp: isFirstRootItem ? widget.onNavigateUp : null,
             onNavigateLeft: widget.onNavigateLeft,

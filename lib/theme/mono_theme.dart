@@ -1,8 +1,22 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'gapped_track_shape.dart';
 import 'mono_tokens.dart';
 
+final Map<({bool dark, bool oled, TargetPlatform platform}), ThemeData> _monoThemeCache = {};
+
 ThemeData monoTheme({required bool dark, bool oled = false}) {
+  // ThemeData derives several defaults from defaultTargetPlatform.
+  final key = (dark: dark || oled, oled: oled, platform: defaultTargetPlatform);
+  final cached = _monoThemeCache[key];
+  if (cached != null) return cached;
+
+  final theme = _buildMonoTheme(dark: key.dark, oled: key.oled, platform: key.platform);
+  _monoThemeCache[key] = theme;
+  return theme;
+}
+
+ThemeData _buildMonoTheme({required bool dark, required bool oled, required TargetPlatform platform}) {
   // neutral greys tuned for crisp contrast
   final ({Color bg, Color surface, Color outline, Color text, Color textMuted}) c;
   if (oled) {
@@ -46,8 +60,13 @@ ThemeData monoTheme({required bool dark, bool oled = false}) {
   );
 
   final base = ThemeData(
+    platform: platform,
     useMaterial3: true,
     brightness: isDark ? Brightness.dark : Brightness.light,
+    // Linux resolves UI text through fontconfig, which on a minimal desktop
+    // may have no CJK font at all; the bundled subtitle fonts (pubspec
+    // `fonts:`) cover it. Other platforms keep their native CJK fonts.
+    fontFamilyFallback: platform == TargetPlatform.linux ? const ['Go Noto Current', 'Go Noto Current Hangul'] : null,
     colorScheme: ColorScheme(
       brightness: isDark ? Brightness.dark : Brightness.light,
       primary: c.text,
@@ -175,7 +194,6 @@ ThemeData monoTheme({required bool dark, bool oled = false}) {
         outline: c.outline,
         text: c.text,
         textMuted: c.textMuted,
-        splashFactory: NoSplash.splashFactory,
       ),
     ],
   );

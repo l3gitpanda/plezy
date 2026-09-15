@@ -8,14 +8,13 @@ import 'package:plezy/focus/input_mode_tracker.dart';
 import 'package:plezy/media/media_kind.dart';
 import 'package:plezy/providers/multi_server_provider.dart';
 import 'package:plezy/screens/libraries/folder_tree_view.dart';
-import 'package:plezy/services/data_aggregation_service.dart';
 import 'package:plezy/services/jellyfin_client.dart';
-import 'package:plezy/services/multi_server_manager.dart';
 import 'package:plezy/services/settings_service.dart';
 import 'package:plezy/theme/mono_theme.dart';
 import 'package:provider/provider.dart';
 
 import '../../test_helpers/backend_client_fixtures.dart';
+import '../../test_helpers/multi_server_fixtures.dart';
 import '../../test_helpers/prefs.dart';
 
 void main() {
@@ -62,12 +61,7 @@ void main() {
         );
       }),
     );
-    final manager = MultiServerManager()..debugRegisterClientForTesting(client);
-    final provider = MultiServerProvider(manager, DataAggregationService(manager));
-    addTearDown(() {
-      provider.dispose();
-      manager.dispose();
-    });
+    final provider = testMultiServer(clients: [client]).provider;
 
     await tester.pumpWidget(
       ChangeNotifierProvider<MultiServerProvider>.value(
@@ -99,5 +93,55 @@ void main() {
     await tester.tap(find.text('Album One'));
     await tester.pumpAndSettle();
     expect(find.text('Track One'), findsOneWidget);
+  });
+
+  testWidgets('refresh reports whether the root listing landed', (tester) async {
+    var failNext = false;
+    final client = JellyfinClient.forTesting(
+      connection: testJellyfinConnection(machineId: 'srv'),
+      httpClient: MockClient((request) async {
+        if (failNext) return http.Response('down', 500);
+        final foldersOnly = request.url.queryParameters['IncludeItemTypes'] == 'Folder,CollectionFolder';
+        final items = foldersOnly
+            ? const <Map<String, Object?>>[]
+            : const [
+                {'Id': 'f1', 'Name': 'Folder One', 'Type': 'Folder', 'IsFolder': true},
+              ];
+        return http.Response(
+          jsonEncode({'Items': items, 'TotalRecordCount': items.length}),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+    final provider = testMultiServer(clients: [client]).provider;
+    final key = GlobalKey<FolderTreeViewState>();
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider<MultiServerProvider>.value(
+        value: provider,
+        child: InputModeTracker(
+          child: MaterialApp(
+            theme: monoTheme(dark: true),
+            home: Scaffold(
+              body: CustomScrollView(
+                slivers: [FolderTreeView(key: key, libraryKey: 'lib', serverId: 'srv', libraryKind: MediaKind.movie)],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Folder One'), findsOneWidget);
+
+    final refreshed = key.currentState!.refresh();
+    await tester.pumpAndSettle();
+    expect(await refreshed, isTrue);
+
+    failNext = true;
+    final failed = key.currentState!.refresh();
+    await tester.pumpAndSettle();
+    expect(await failed, isFalse);
   });
 }

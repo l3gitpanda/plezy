@@ -7,6 +7,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -17,6 +18,12 @@
 #include "../../../shared/mpv/mpv_player_common.h"
 
 namespace mpv {
+struct InnerWindowSubclassState;
+
+// Style of the window mpv renders into. WS_DISABLED takes the host, and every
+// window mpv creates inside it, out of input targeting so mouse, touch, and pen
+// over the video reach the parent Flutter view instead of mpv's thread.
+inline constexpr DWORD kVideoHostWindowStyle = WS_CHILD | WS_CLIPSIBLINGS | WS_DISABLED;
 
 // Wrapper for libmpv that handles initialization, commands, properties,
 // and event dispatching.
@@ -47,7 +54,7 @@ class MpvPlayer {
 
   // Callback types for async mpv requests.
   using StatusCallback = plezy::mpv_common::StatusCallback;
-  using CommandCallback = StatusCallback;
+  using CommandCallback = plezy::mpv_common::CommandCallback;
   using GetPropertyCallback = plezy::mpv_common::GetPropertyCallback;
 
   // Executes an mpv command asynchronously to prevent UI blocking.
@@ -87,31 +94,56 @@ class MpvPlayer {
   void NotifyPowerResume();
 
  private:
+  friend class MpvPlayerPropertyContractTestPeer;
+
   void StartEventLoop();
   void StopEventLoop();
   void EventLoop();
   void HandleMpvEvent(mpv_event* event);
   void SendPropertyChange(const char* name, mpv_node* data);
+  void SendActiveSourceEvent(const std::string& name);
+  void SendPlaybackRestartEvent(const double* position_seconds);
   void SendEvent(const std::string& name, const flutter::EncodableMap& data = {});
   void MaybeRunAudioRecovery();
-  void TryAudioReload(const char* reason, int attempt);
+  void TryAudioReload(const char* reason, int attempt, uint64_t request_generation);
   void LogRecovery(const std::string& text);
+  // Reports the applied HDR pipeline options once per player, as a synthetic
+  // log-message on the first file load (when the Dart callback is wired).
+  void LogHdrPipelineOnce();
+  void EnsureMpvInnerSubclassed();
+  void DetachMpvInnerSubclass();
 
   const bool audio_only_;
   mpv_handle* mpv_ = nullptr;
   HWND hwnd_ = nullptr;
+  HWND forward_target_view_ = nullptr;
+  std::mutex inner_subclass_mutex_;
+  std::shared_ptr<InnerWindowSubclassState> inner_subclass_;
 
   std::thread event_thread_;
   std::atomic<bool> running_{false};
   EventCallback event_callback_;
   std::mutex callback_mutex_;
   plezy::mpv_common::AudioRecoveryState audio_recovery_;
+  // Set when audio recovery gave up and stopped playback itself; the END_FILE
+  // that stop produces is then reported as the AO_INIT_FAILED error the core
+  // would have raised without audio-fallback-to-null. Event thread only.
+  bool audio_output_failed_ = false;
 
   plezy::mpv_common::AsyncRequestRegistry pending_requests_;
   plezy::mpv_common::PropertyObservationRegistry observed_properties_;
+  // The playlist entry whose START_FILE event was most recently dequeued.
+  // Event payloads copy this value before the plugin queues them to the
+  // platform thread, so a later START_FILE cannot relabel delayed properties.
+  int64_t active_source_id_ = 0;
+  bool has_active_source_id_ = false;
 
   // HDR state
   bool hdr_enabled_ = true;
+  // Set during Initialize when a Qualcomm Adreno GPU is present; names the
+  // tone-map LUT workaround so the first file load can log it.
+  bool adreno_tone_map_workaround_ = false;
+  bool hdr_config_logged_ = false;
 
   void SetHDREnabled(bool enabled, StatusCallback callback = nullptr);
 };
