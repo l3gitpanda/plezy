@@ -6,7 +6,9 @@ name: Sync Fork
 #   1. sync-tracked-branch — runs the same server-side sync as the repository
 #      page's "Sync fork" button, so main follows upstream without a checkout.
 #   2. update-branches — merges the refreshed main into every eligible branch
-#      and pushes the result.
+#      and pushes the result. A merge that conflicts only in generated output is
+#      settled by re-running the generator over the merged sources; a conflict
+#      anywhere else is reported for a hand-merge without failing the run.
 #
 # This file has to live on the default branch: GitHub only ever runs the copy
 # of a scheduled workflow that exists on the default branch, and it ignores the
@@ -51,6 +53,9 @@ concurrency:
 env:
   # The branch tracked on both sides of the fork relationship.
   TRACKED_BRANCH: main
+  # Only the codegen fallback uses this. Keep it in step with ci.yml: generated
+  # output is byte-compared there, and a different SDK produces different bytes.
+  FLUTTER_VERSION: "3.47.1"
   # Branches the propagation job never touches, as space-separated shell globs.
   EXCLUDED_BRANCHES: "tmp/* revert-*"
 
@@ -117,6 +122,19 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Set up Flutter
+        # Only the codegen fallback needs this, and only for a merge whose
+        # conflicts are all generated output. Which branches those are is not
+        # known until the merges run, and the cached SDK restores in well under
+        # a minute, so having it ready costs less than splitting the job in two
+        # to find out.
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          channel: "stable"
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+          pub-cache: false
+
       - name: Merge the tracked branch into each eligible branch
         env:
           PUSH_TOKEN: ${{ secrets.SYNC_TOKEN || github.token }}
@@ -150,10 +168,58 @@ jobs:
           read -r -a EXCLUDE_PATTERNS <<< "$EXCLUDED_BRANCHES"
 
           REPORT=()
+          # A conflict is a branch that drifted, not a broken job; only a push
+          # that failed is. They are counted apart so the run's verdict reflects
+          # the second.
+          CONFLICTS=0
           FAILURES=0
 
           record() {
             REPORT+=("| \`$1\` | $2 | $3 |")
+          }
+
+          # Output `scripts/codegen.sh` rewrites wholesale, mirroring the same
+          # definition in scripts/checks/check_codegen.py. CI byte-compares these
+          # against fresh generator output, so hand-merging one fails that check
+          # even when the merge looks right.
+          is_generated_path() {
+            case "$1" in
+              lib/*.g.dart | lib/*.freezed.dart) return 0 ;;
+              lib/data/ducet_order.dart | lib/data/hid_key_labels.dart) return 0 ;;
+              lib/data/iso_639_data.dart | server/relay_protocol_gen.go) return 0 ;;
+              *) return 1 ;;
+            esac
+          }
+
+          # Settle a conflicted merge by re-running the generator over the merged
+          # sources. Only when every conflicted path is generated output: the
+          # generator reads the sources, so it cannot decide what a conflicted
+          # source file should say, and a half-resolved merge must not be pushed.
+          regenerate_conflicted_output() {
+            local unmerged path
+            unmerged=$(git diff --diff-filter=U --name-only)
+            [ -n "$unmerged" ] || return 1
+            while IFS= read -r path; do
+              is_generated_path "$path" || return 1
+            done <<< "$unmerged"
+
+            # Stage either side first. The content is about to be overwritten;
+            # this only clears the conflict so the tree parses while the
+            # generator runs over it.
+            printf '%s\n' "$unmerged" | xargs -r git checkout --theirs -- || return 1
+            printf '%s\n' "$unmerged" | xargs -r git add -- || return 1
+
+            flutter pub get >/dev/null 2>&1 || return 1
+            scripts/codegen.sh --delete-conflicting-outputs >/dev/null 2>&1 || return 1
+            git add -A || return 1
+
+            # The generator has to have actually settled every path, and nothing
+            # may still carry a marker.
+            [ -z "$(git diff --diff-filter=U --name-only)" ] || return 1
+            if git grep -lE '^(<<<<<<< |>>>>>>> )' -- . >/dev/null 2>&1; then
+              return 1
+            fi
+            return 0
           }
 
           for BRANCH in "${CANDIDATES[@]}"; do
@@ -192,25 +258,33 @@ jobs:
             fi
 
             git checkout --quiet --force -B "$BRANCH" "$REMOTE_REF"
+            NOTE=""
             # --no-stat: a 90-file diffstat per branch buries the merge result in the log.
             if ! git merge --no-edit --no-stat -m "chore: merge $TRACKED_BRANCH into $BRANCH" "$TRACKED_REF"; then
-              git merge --abort || true
-              record "$BRANCH" "conflict" "resolve by hand; branch left untouched"
-              FAILURES=$((FAILURES + 1))
-              continue
+              if regenerate_conflicted_output; then
+                git commit --no-edit --quiet
+                NOTE=", generated files rebuilt"
+              else
+                git merge --abort || true
+                git reset --hard --quiet "$REMOTE_REF"
+                git clean -qfd
+                record "$BRANCH" "conflict" "resolve by hand; branch left untouched"
+                CONFLICTS=$((CONFLICTS + 1))
+                continue
+              fi
             fi
 
             AHEAD=$(git rev-list --count "$REMOTE_REF..HEAD")
 
             if [ "$DRY_RUN" = "true" ]; then
-              record "$BRANCH" "would update" "$AHEAD commit(s), not pushed"
+              record "$BRANCH" "would update" "$AHEAD commit(s), not pushed$NOTE"
               continue
             fi
 
             PUSH_STATUS=0
             PUSH_OUTPUT=$(git -c http.extraheader="$AUTH_HEADER" push origin "$BRANCH" 2>&1) || PUSH_STATUS=$?
             if [ "$PUSH_STATUS" -eq 0 ]; then
-              record "$BRANCH" "updated" "$AHEAD commit(s)"
+              record "$BRANCH" "updated" "$AHEAD commit(s)$NOTE"
             elif printf '%s' "$PUSH_OUTPUT" | grep -q 'workflow'; then
               # GITHUB_TOKEN may not push a change under .github/workflows/.
               record "$BRANCH" "blocked" "merge changes a workflow file; needs the SYNC_TOKEN secret"
@@ -230,7 +304,15 @@ jobs:
             [ "${#REPORT[@]}" -gt 0 ] && printf '%s\n' "${REPORT[@]}"
           } >> "$GITHUB_STEP_SUMMARY"
 
+          if [ "$CONFLICTS" -gt 0 ]; then
+            # Expected of a long-lived topic branch that has drifted, and not
+            # something a later run can clear on its own. Failing the run every
+            # six hours over it only teaches everyone to ignore this job, so the
+            # table reports it and the run stays green.
+            echo "::notice::$CONFLICTS branch(es) need a hand-merge; see the run summary."
+          fi
+
           if [ "$FAILURES" -gt 0 ]; then
-            echo "::error::$FAILURES branch(es) could not be updated; see the run summary."
+            echo "::error::$FAILURES branch(es) could not be pushed; see the run summary."
             exit 1
           fi
