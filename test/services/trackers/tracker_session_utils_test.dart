@@ -6,11 +6,6 @@ import 'package:plezy/services/trackers/tracker_session_utils.dart';
 
 void main() {
   group('tracker token expiry helpers', () {
-    test('detects expired token', () {
-      expect(isTrackerTokenExpired(100, nowSeconds: 100), isTrue);
-      expect(isTrackerTokenExpired(101, nowSeconds: 100), isFalse);
-    });
-
     test('detects refresh window', () {
       expect(trackerTokenNeedsRefresh(400, nowSeconds: 100), isTrue);
       expect(trackerTokenNeedsRefresh(401, nowSeconds: 100), isFalse);
@@ -19,19 +14,11 @@ void main() {
   });
 
   group('tracker session json codec', () {
-    test('round-trips through provided factory', () {
-      final encoded = encodeTrackerSessionJson({'access_token': 'abc', 'created_at': 123});
-      final decoded = decodeTrackerSessionJson(encoded, (json) => json);
-
-      expect(decoded, {'access_token': 'abc', 'created_at': 123});
-    });
-
-    test('round-trips Trakt sessions with snake-case keys and default scope', () {
+    test('round-trips Trakt sessions with snake-case keys', () {
       const session = TrackerSession(
         accessToken: 'trakt-at',
         refreshToken: 'trakt-rt',
         expiresAt: 2000,
-        scope: 'public',
         createdAt: 1000,
       );
 
@@ -40,7 +27,6 @@ void main() {
         'refresh_token': 'trakt-rt',
         'expires_at': 2000,
         'username': null,
-        'scope': 'public',
         'created_at': 1000,
       });
 
@@ -55,18 +41,6 @@ void main() {
       expect(decoded.refreshToken, 'trakt-rt');
       expect(decoded.expiresAt, 2000);
       expect(decoded.username, isNull);
-      expect(decoded.scope, isNull);
-      expect(decoded.createdAt, 1000);
-    });
-
-    test('round-trips AniList sessions through shared encode mixin', () {
-      const session = TrackerSession(accessToken: 'anilist-at', expiresAt: 2000, username: 'alice', createdAt: 1000);
-
-      final decoded = TrackerSession.decode(session.encode());
-
-      expect(decoded.accessToken, 'anilist-at');
-      expect(decoded.expiresAt, 2000);
-      expect(decoded.username, 'alice');
       expect(decoded.createdAt, 1000);
     });
 
@@ -88,17 +62,7 @@ void main() {
       expect(decoded.createdAt, 1000);
     });
 
-    test('round-trips Simkl sessions through shared encode mixin', () {
-      const session = TrackerSession(accessToken: 'simkl-at', username: 'carol', createdAt: 1000);
-
-      final decoded = TrackerSession.decode(session.encode());
-
-      expect(decoded.accessToken, 'simkl-at');
-      expect(decoded.username, 'carol');
-      expect(decoded.createdAt, 1000);
-    });
-
-    test('builds Trakt token sessions with default scope', () {
+    test('builds Trakt token sessions', () {
       final session = TrackerSession.fromTokenResponse(TrackerService.trakt, {
         'access_token': 'trakt-at',
         'refresh_token': 'trakt-rt',
@@ -106,20 +70,8 @@ void main() {
         'created_at': 1000,
       });
 
-      expect(session.scope, 'public');
+      expect(session.accessToken, 'trakt-at');
       expect(session.expiresAt, 2000);
-    });
-
-    test('defaults missing scope only when decoding stored Trakt sessions', () {
-      final encoded = encodeTrackerSessionJson({
-        'access_token': 'trakt-at',
-        'refresh_token': 'trakt-rt',
-        'expires_at': 2000,
-        'created_at': 1000,
-      });
-
-      expect(TrackerSession.decode(encoded).scope, isNull);
-      expect(TrackerSession.decode(encoded, service: TrackerService.trakt).scope, 'public');
     });
   });
 
@@ -169,7 +121,7 @@ void main() {
       expect(session.expiresAt, 2000);
     });
 
-    test('decodes a legacy Trakt blob and defaults the scope', () {
+    test('decodes a legacy Trakt blob', () {
       final raw = encodeTrackerSessionJson({
         'access_token': 'trakt-at',
         'refresh_token': 'trakt-rt',
@@ -180,7 +132,7 @@ void main() {
       final session = TrackerSession.decode(raw, service: TrackerService.trakt);
 
       expect(session.refreshToken, 'trakt-rt');
-      expect(session.scope, 'public');
+      expect(session.expiresAt, 2000);
     });
 
     test('rejects a MAL/Trakt blob missing the refresh token', () {

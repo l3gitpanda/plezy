@@ -6,14 +6,12 @@ import android.content.Intent
 import android.database.Cursor
 import android.graphics.Bitmap
 import android.graphics.Point
-import android.media.MediaMetadataRetriever
-import android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC
 import android.net.Uri
 import android.os.Build
-import android.os.ParcelFileDescriptor
 import android.provider.DocumentsContract
-import androidx.documentfile.provider.DocumentFile
+import android.provider.MediaStore
 import androidx.core.net.toUri
+import androidx.documentfile.provider.DocumentFile
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
@@ -22,19 +20,16 @@ import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler
 import io.flutter.plugin.common.MethodChannel.Result
 import io.flutter.plugin.common.PluginRegistry
+import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import java.io.File
 
-
-/** SafUtilPlugin */
-class SafUtilPlugin: FlutterPlugin, MethodCallHandler, ActivityAware {
-  /// The MethodChannel that will the communication between Flutter and native Android
-  ///
-  /// This local reference serves to register the plugin with the Flutter Engine and unregister it
-  /// when the Flutter Engine is detached from the Activity
-  private lateinit var channel : MethodChannel
+class SafUtilPlugin :
+  FlutterPlugin,
+  MethodCallHandler,
+  ActivityAware {
+  private lateinit var channel: MethodChannel
 
   private lateinit var context: Context
   private var activity: Activity? = null
@@ -44,25 +39,25 @@ class SafUtilPlugin: FlutterPlugin, MethodCallHandler, ActivityAware {
   private var pendingArguments: PendingArguments? = null
   private val requestCodeOpenDocumentTree = 1001
   private val requestCodeOpenFiles = 1002
+  private val requestCodePickMedia = 1003
   private val activityResultListener = PluginRegistry.ActivityResultListener { requestCode, resultCode, data ->
     onActivityResult(requestCode, resultCode, data)
   }
+  private val fileDescriptorRegistry = FileDescriptorRegistry()
 
-  /// Atomically takes ownership of the pending picker state. Every reply to a
-  /// pending Result must go through this so no already-answered Result is ever
-  /// left behind to be answered again ("Reply already submitted" crashes).
+  /** Takes ownership before replying so a Result can never be answered twice. */
   private fun takePendingResult(): Result? {
     val result = pendingResult
     pendingResult = null
     pendingArguments = null
     return result
   }
-  private val fdMap = mutableMapOf<Int, ParcelFileDescriptor>()
 
   override fun onAttachedToEngine(flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
+    context = flutterPluginBinding.applicationContext
+    fileDescriptorRegistry.attach()
     channel = MethodChannel(flutterPluginBinding.binaryMessenger, "saf_util")
     channel.setMethodCallHandler(this)
-    context = flutterPluginBinding.applicationContext
   }
 
   override fun onDetachedFromActivity() {
@@ -94,7 +89,10 @@ class SafUtilPlugin: FlutterPlugin, MethodCallHandler, ActivityAware {
     activity = null
   }
 
-  override fun onMethodCall(call: MethodCall, result: Result) {
+  override fun onMethodCall(
+    call: MethodCall,
+    result: Result
+  ) {
     when (call.method) {
       "list" -> {
         CoroutineScope(Dispatchers.IO).launch {
@@ -105,25 +103,27 @@ class SafUtilPlugin: FlutterPlugin, MethodCallHandler, ActivityAware {
             val dir = documentFileFromUri(uri, true) ?: throw Exception("Failed to get DocumentFile from $uri")
             val resolver = context.contentResolver
             val mUri = dir.uri
-            val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(
-              mUri,
-              DocumentsContract.getDocumentId(mUri)
-            )
+            val childrenUri =
+              DocumentsContract.buildChildDocumentsUriUsingTree(
+                mUri,
+                DocumentsContract.getDocumentId(mUri)
+              )
             val results = mutableListOf<Map<String, Any?>>()
 
-            cursor = resolver.query(
-              childrenUri,
-              arrayOf(
-                DocumentsContract.Document.COLUMN_DOCUMENT_ID,
-                DocumentsContract.Document.COLUMN_DISPLAY_NAME,
-                DocumentsContract.Document.COLUMN_SIZE,
-                DocumentsContract.Document.COLUMN_MIME_TYPE,
-                DocumentsContract.Document.COLUMN_LAST_MODIFIED
-              ),
-              null,
-              null,
-              null
-            )
+            cursor =
+              resolver.query(
+                childrenUri,
+                arrayOf(
+                  DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                  DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                  DocumentsContract.Document.COLUMN_SIZE,
+                  DocumentsContract.Document.COLUMN_MIME_TYPE,
+                  DocumentsContract.Document.COLUMN_LAST_MODIFIED
+                ),
+                null,
+                null,
+                null
+              )
 
             while (cursor?.moveToNext() == true) {
               val documentId = cursor.getString(0)
@@ -133,17 +133,16 @@ class SafUtilPlugin: FlutterPlugin, MethodCallHandler, ActivityAware {
               val lastModified = cursor.getLong(4)
               val documentUri = DocumentsContract.buildDocumentUriUsingTree(mUri, documentId)
 
-              // Determine if the file is a directory based on the MIME type
               val isDirectory = DocumentsContract.Document.MIME_TYPE_DIR == mimeType
 
-              // Create a dictionary (map) for each file with its details
-              val fileInfo = fileObjMap(
-                documentUri,
-                isDirectory,
-                fileName,
-                fileSize,
-                lastModified,
-              )
+              val fileInfo =
+                fileObjMap(
+                  documentUri,
+                  isDirectory,
+                  fileName,
+                  fileSize,
+                  lastModified
+                )
               results.add(fileInfo)
             }
 
@@ -191,9 +190,22 @@ class SafUtilPlugin: FlutterPlugin, MethodCallHandler, ActivityAware {
           try {
             val uri = call.argument<String>("uri") as String
             val isDir = call.argument<Boolean>("isDir")
+            val throws = call.argument<Boolean>("throws") ?: false
 
             val df = documentFileFromUri(uri, isDir)
-            if (df == null || !df.exists()) {
+            if (df == null) {
+              if (throws) {
+                throw Exception("Failed to get DocumentFile from $uri")
+              }
+              launch(Dispatchers.Main) {
+                result.success(null)
+              }
+              return@launch
+            }
+            if (!df.exists()) {
+              if (throws) {
+                throw Exception("DocumentFile at $uri does not exist")
+              }
               launch(Dispatchers.Main) {
                 result.success(null)
               }
@@ -258,9 +270,11 @@ class SafUtilPlugin: FlutterPlugin, MethodCallHandler, ActivityAware {
             val uri = call.argument<String>("uri") as String
 
             val df = documentFileFromUri(uri, false) ?: throw Exception("Failed to get DocumentFile from $uri")
-            val fd = context.contentResolver.openFileDescriptor(df.uri, "r") ?: throw Exception("Failed to open file descriptor")
-            val fdInt = fd.fd
-            fdMap[fdInt] = fd
+            val descriptor =
+              context.contentResolver.openFileDescriptor(df.uri, "r") ?: throw Exception("Failed to open file descriptor")
+            val fdInt =
+              fileDescriptorRegistry.register(descriptor)
+                ?: throw IllegalStateException("Plugin detached before file descriptor opened")
 
             launch(Dispatchers.Main) {
               result.success(fdInt)
@@ -277,8 +291,7 @@ class SafUtilPlugin: FlutterPlugin, MethodCallHandler, ActivityAware {
         CoroutineScope(Dispatchers.IO).launch {
           try {
             val fdInt = call.argument<Int>("fd") as Int
-            val fd = fdMap.remove(fdInt)
-            fd?.close()
+            fileDescriptorRegistry.close(fdInt)
 
             launch(Dispatchers.Main) {
               result.success(null)
@@ -305,14 +318,14 @@ class SafUtilPlugin: FlutterPlugin, MethodCallHandler, ActivityAware {
               if (findRes == null) {
                 val createRes = curDocument.createDirectory(curName)
                 if (createRes != null && createRes.name != curName) {
-                  // There are cases where the created directory has a different name due to concurrent operations.
-                  // In this case, we need to find the directory with the correct name again.
+                  // SAF may rename a concurrently created directory; resolve the requested name.
                   val findRes2 = findDirectChild(curDocument.uri, curName)
-                  nextDocument = if (findRes2 != null) {
-                    documentFileFromUriObj(findRes2.uri, findRes2.isDir)
-                  } else {
-                    null
-                  }
+                  nextDocument =
+                    if (findRes2 != null) {
+                      documentFileFromUriObj(findRes2.uri, findRes2.isDir)
+                    } else {
+                      null
+                    }
                 } else {
                   nextDocument = createRes
                 }
@@ -355,7 +368,9 @@ class SafUtilPlugin: FlutterPlugin, MethodCallHandler, ActivityAware {
                 }
                 return@launch
               }
-              curDocument = documentFileFromUriObj(findRes.uri, findRes.isDir) ?: throw Exception("Failed to get DocumentFile at $curName")
+              curDocument =
+                documentFileFromUriObj(findRes.uri, findRes.isDir)
+                  ?: throw Exception("Failed to get DocumentFile at $curName")
             }
 
             launch(Dispatchers.Main) {
@@ -386,10 +401,12 @@ class SafUtilPlugin: FlutterPlugin, MethodCallHandler, ActivityAware {
                 result.success(documentFileToMap(df))
               }
             } else {
-              val newUri = renameFileDocumentFile(df, newName)
-                ?: throw Exception("Failed to rename to $newName")
-              val newDF = documentFileFromUriObj(newUri, false)
-                ?: throw Exception("Failed to get DocumentFile from $newUri")
+              val newUri =
+                renameFileDocumentFile(df, newName)
+                  ?: throw Exception("Failed to rename to $newName")
+              val newDF =
+                documentFileFromUriObj(newUri, false)
+                  ?: throw Exception("Failed to get DocumentFile from $newUri")
               launch(Dispatchers.Main) {
                 result.success(documentFileToMap(newDF))
               }
@@ -414,12 +431,13 @@ class SafUtilPlugin: FlutterPlugin, MethodCallHandler, ActivityAware {
             val parentUriObj = parentUri.toUri()
             val newParentUriObj = newParentUri.toUri()
 
-            val resUri = DocumentsContract.moveDocument(
-              context.contentResolver,
-              uriObj,
-              parentUriObj,
-              newParentUriObj
-            ) ?: throw Exception("Failed to move document")
+            val resUri =
+              DocumentsContract.moveDocument(
+                context.contentResolver,
+                uriObj,
+                parentUriObj,
+                newParentUriObj
+              ) ?: throw Exception("Failed to move document")
 
             val resultDF = documentFileFromUriObj(resUri, isDir) ?: throw Exception("Failed to get DocumentFile from $resUri")
             launch(Dispatchers.Main) {
@@ -443,11 +461,12 @@ class SafUtilPlugin: FlutterPlugin, MethodCallHandler, ActivityAware {
             val uriObj = uri.toUri()
             val newParentUriObj = newParentUri.toUri()
 
-            val resUri = DocumentsContract.copyDocument(
-              context.contentResolver,
-              uriObj,
-              newParentUriObj
-            ) ?: throw Exception("Failed to move document")
+            val resUri =
+              DocumentsContract.copyDocument(
+                context.contentResolver,
+                uriObj,
+                newParentUriObj
+              ) ?: throw Exception("Failed to move document")
 
             val resultDF = documentFileFromUriObj(resUri, isDir) ?: throw Exception("Failed to get DocumentFile from $resUri")
 
@@ -477,7 +496,6 @@ class SafUtilPlugin: FlutterPlugin, MethodCallHandler, ActivityAware {
             return
           }
 
-          // Store the result to return the URI later
           pendingResult = result
           pendingArguments = PendingDirArguments(writePermission, persistablePermission)
           val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
@@ -492,14 +510,15 @@ class SafUtilPlugin: FlutterPlugin, MethodCallHandler, ActivityAware {
             )
           }
           intent.addFlags(
-            if (writePermission) Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION
-            else Intent.FLAG_GRANT_READ_URI_PERMISSION
+            if (writePermission) {
+              Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION
+            } else {
+              Intent.FLAG_GRANT_READ_URI_PERMISSION
+            }
           )
 
           activity?.startActivityForResult(intent, requestCodeOpenDocumentTree)
         } catch (err: Exception) {
-          // Launch failed after pendingResult was set: drop the pending state
-          // so a later activity result can't reply to this Result again.
           takePendingResult()
           result.error("PluginError", err.message, null)
         }
@@ -508,7 +527,7 @@ class SafUtilPlugin: FlutterPlugin, MethodCallHandler, ActivityAware {
       "pickFiles" -> {
         try {
           val initialUri = call.argument<String>("initialUri")
-          val multiple = call.argument<Boolean>("multiple") ?: false
+          val multiple = call.argument<Boolean>("multiple") ?: true
           val mimeTypes = call.argument<ArrayList<String>>("mimeTypes") ?: arrayListOf()
 
           if (activity == null) {
@@ -520,7 +539,6 @@ class SafUtilPlugin: FlutterPlugin, MethodCallHandler, ActivityAware {
             return
           }
 
-          // Store the result to return the URI later
           pendingResult = result
           val intent = Intent(Intent.ACTION_OPEN_DOCUMENT)
           intent.addCategory(Intent.CATEGORY_OPENABLE)
@@ -544,8 +562,53 @@ class SafUtilPlugin: FlutterPlugin, MethodCallHandler, ActivityAware {
 
           activity?.startActivityForResult(intent, requestCodeOpenFiles)
         } catch (err: Exception) {
-          // Launch failed after pendingResult was set: drop the pending state
-          // so a later activity result can't reply to this Result again.
+          takePendingResult()
+          result.error("PluginError", err.message, null)
+        }
+      }
+
+      "pickMedia" -> {
+        try {
+          val multiple = call.argument<Boolean>("multiple") ?: false
+          val mode = call.argument<String>("mode") ?: "all"
+
+          if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            result.error("NOT_SUPPORTED", "Photo Picker is only supported on Android 13 (API 33) and above", null)
+            return
+          }
+          if (activity == null) {
+            result.error("NO_ACTIVITY", "Activity is null", null)
+            return
+          }
+          if (pendingResult != null) {
+            result.error("ALREADY_PICKING", "Another picker process is already in progress", null)
+            return
+          }
+
+          val normalizedMode = mode.lowercase()
+          if (normalizedMode != "photo" && normalizedMode != "video" && normalizedMode != "all") {
+            result.error("INVALID_ARGUMENT", "mode must be one of: photo, video, all", null)
+            return
+          }
+
+          pendingResult = result
+          pendingArguments = PendingMediaArguments(multiple)
+          val intent = Intent(MediaStore.ACTION_PICK_IMAGES)
+          intent.type =
+            when (normalizedMode) {
+              "photo" -> "image/*"
+              "video" -> "video/*"
+              else -> "*/*"
+            }
+          if (multiple) {
+            intent.putExtra(
+              MediaStore.EXTRA_PICK_IMAGES_MAX,
+              MediaStore.getPickImagesMaxLimit()
+            )
+          }
+
+          activity?.startActivityForResult(intent, requestCodePickMedia)
+        } catch (err: Exception) {
           takePendingResult()
           result.error("PluginError", err.message, null)
         }
@@ -558,14 +621,52 @@ class SafUtilPlugin: FlutterPlugin, MethodCallHandler, ActivityAware {
             val checkRead = call.argument<Boolean>("checkRead") ?: true
             val checkWrite = call.argument<Boolean>("checkWrite") ?: false
 
-            val persisted = hasPersistedUriPermission(
-              context,
-              uri.toUri(),
-              checkRead,
-              checkWrite
-            )
+            val persisted =
+              PersistedPermissionResolver.hasPermission(
+                context.contentResolver,
+                uri.toUri(),
+                checkRead,
+                checkWrite
+              )
             launch(Dispatchers.Main) {
               result.success(persisted)
+            }
+          } catch (err: Exception) {
+            launch(Dispatchers.Main) {
+              result.error("PluginError", err.message, null)
+            }
+          }
+        }
+      }
+
+      "resolvePersistedPermissionUri" -> {
+        CoroutineScope(Dispatchers.IO).launch {
+          try {
+            val uri = call.argument<String>("uri") as String
+            val persistedUri =
+              PersistedPermissionResolver.resolveUri(
+                context.contentResolver,
+                uri.toUri()
+              )
+            launch(Dispatchers.Main) {
+              result.success(persistedUri?.toString())
+            }
+          } catch (err: Exception) {
+            launch(Dispatchers.Main) {
+              result.error("PluginError", err.message, null)
+            }
+          }
+        }
+      }
+
+      "getPersistedPermissionUris" -> {
+        CoroutineScope(Dispatchers.IO).launch {
+          try {
+            val persistedUris =
+              PersistedPermissionResolver.getPersistedUris(context.contentResolver)
+                .map(Uri::toString)
+            launch(Dispatchers.Main) {
+              result.success(persistedUris)
             }
           } catch (err: Exception) {
             launch(Dispatchers.Main) {
@@ -582,12 +683,11 @@ class SafUtilPlugin: FlutterPlugin, MethodCallHandler, ActivityAware {
             val read = call.argument<Boolean>("read") ?: true
             val write = call.argument<Boolean>("write") ?: false
 
-            context.contentResolver.releasePersistableUriPermission(
+            PersistedPermissionResolver.release(
+              context.contentResolver,
               uri.toUri(),
-              if (read && write) Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-              else if (read) Intent.FLAG_GRANT_READ_URI_PERMISSION
-              else if (write) Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-              else 0
+              read,
+              write
             )
             launch(Dispatchers.Main) {
               result.success(null)
@@ -621,31 +721,24 @@ class SafUtilPlugin: FlutterPlugin, MethodCallHandler, ActivityAware {
               return@launch
             }
 
-            val bitmap: Bitmap?
-            // Use MediaMetadataRetriever for video files.
-            if (mime.startsWith("video/")) {
-              val mmr = MediaMetadataRetriever()
-              mmr.setDataSource(context, uri)
-              bitmap = if (Build.VERSION.SDK_INT >= 27) {
-                mmr.getScaledFrameAtTime(-1, OPTION_CLOSEST_SYNC, width, height)
+            val bitmap: Bitmap? =
+              if (mime.startsWith("video/")) {
+                extractVideoFrame(context, uri, width, height)
               } else {
-                mmr.frameAtTime
+                // Use DocumentsContract for other files.
+                DocumentsContract.getDocumentThumbnail(
+                  context.contentResolver,
+                  uri,
+                  Point(width, height),
+                  null
+                )
               }
-            } else {
-              // Use DocumentsContract for other files.
-              bitmap = DocumentsContract.getDocumentThumbnail(
-                context.contentResolver,
-                uri,
-                Point(width, height),
-                null
-              )
-            }
 
             if (bitmap != null) {
               File(dest).writeBitmap(
                 bitmap,
                 if (isPng) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG,
-                quality,
+                quality
               )
               launch(Dispatchers.Main) {
                 result.success(true)
@@ -663,66 +756,68 @@ class SafUtilPlugin: FlutterPlugin, MethodCallHandler, ActivityAware {
         }
       }
 
-      else -> result.notImplemented()
+      else -> {
+        result.notImplemented()
+      }
     }
   }
 
-  // Handle the result of the folder/file pickers. Returns whether the
-  // request code was ours — unrelated request codes must not touch (let
-  // alone answer) the pending picker state.
-  private fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?): Boolean {
-    if (requestCode != requestCodeOpenDocumentTree && requestCode != requestCodeOpenFiles) {
+  private fun onActivityResult(
+    requestCode: Int,
+    resultCode: Int,
+    data: Intent?
+  ): Boolean {
+    if (
+      requestCode != requestCodeOpenDocumentTree &&
+      requestCode != requestCodeOpenFiles &&
+      requestCode != requestCodePickMedia
+    ) {
       return false
     }
-    // Take ownership before replying: a duplicate delivery finds no pending
-    // state instead of a second reply on an already-answered Result.
+
     val args = pendingArguments
     val result = takePendingResult() ?: return true
     try {
       if (requestCode == requestCodeOpenDocumentTree) {
-        // Handle the result of the folder picker.
         if (resultCode == Activity.RESULT_OK && data != null) {
           val uri: Uri? = data.data
-          if (uri != null && args is PendingDirArguments) {
-            if (args.persistablePermission) {
-              context.contentResolver.takePersistableUriPermission(
-                uri,
-                if (args.writePermission) Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION
-                else Intent.FLAG_GRANT_READ_URI_PERMISSION
-              )
-            }
+          if (uri != null && args is PendingDirArguments && args.persistablePermission) {
+            context.contentResolver.takePersistableUriPermission(
+              uri,
+              if (args.writePermission) {
+                Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION
+              } else {
+                Intent.FLAG_GRANT_READ_URI_PERMISSION
+              }
+            )
           }
           val df = documentFileFromUri(uri.toString(), true)
-          result.success(
-            if (df != null) documentFileToMap(df)
-            else null
-          )
+          result.success(if (df != null) documentFileToMap(df) else null)
         } else {
           result.success(null)
         }
       } else {
-        // Handle the result of file picker.
         if (resultCode == Activity.RESULT_OK && data != null) {
-          val uris: List<Uri> = if (data.clipData != null) {
-            val clipData = data.clipData
-            val uris = mutableListOf<Uri>()
-            for (i in 0 until clipData!!.itemCount) {
-              uris.add(clipData.getItemAt(i).uri)
+          val allowMultiple =
+            if (requestCode == requestCodePickMedia) {
+              (args as? PendingMediaArguments)?.multiple ?: false
+            } else {
+              true
             }
-            uris
-          } else {
-            listOf(data.data!!)
-          }
+          val uris: List<Uri> =
+            if (allowMultiple && data.clipData != null) {
+              val clipData = data.clipData!!
+              List(clipData.itemCount) { index -> clipData.getItemAt(index).uri }
+            } else {
+              listOf(data.data!!)
+            }
 
           val documentFileMaps: MutableList<Map<String, Any?>> = mutableListOf()
           for (uri in uris) {
             val df = documentFileFromUri(uri.toString(), false)
-            if (df != null) {
-              documentFileMaps.add(documentFileToMap(df))
-            }
+            if (df != null) documentFileMaps.add(documentFileToMap(df))
           }
-
-          result.success(documentFileMaps)  // Return the URIs to Flutter
+          result.success(documentFileMaps)
         } else {
           result.success(null)
         }
@@ -731,8 +826,7 @@ class SafUtilPlugin: FlutterPlugin, MethodCallHandler, ActivityAware {
       try {
         result.error("PluginError", err.message, null)
       } catch (_: IllegalStateException) {
-        // Reply already submitted — never crash the host activity over a
-        // picker teardown race.
+        // A duplicate native delivery must not crash the host Activity.
       }
     }
     return true
@@ -740,66 +834,56 @@ class SafUtilPlugin: FlutterPlugin, MethodCallHandler, ActivityAware {
 
   override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
     channel.setMethodCallHandler(null)
+    fileDescriptorRegistry.detach()
   }
 
-  private fun documentFileFromUri(uri: String, isDir: Boolean?): DocumentFile? {
+  private fun documentFileFromUri(
+    uri: String,
+    isDir: Boolean?
+  ): DocumentFile? {
     val uriObj = uri.toUri()
     val isDirRes =
       isDir ?: DocumentsContract.isTreeUri(uriObj)
     return documentFileFromUriObj(uriObj, isDirRes)
   }
 
-  private fun documentFileFromUriObj(uriObj: Uri, isDir: Boolean): DocumentFile? {
-    val res = if (isDir) {
-      DocumentFile.fromTreeUri(context, uriObj)
-    } else {
-      DocumentFile.fromSingleUri(context, uriObj)
-    }
+  private fun documentFileFromUriObj(
+    uriObj: Uri,
+    isDir: Boolean
+  ): DocumentFile? {
+    val res =
+      if (isDir) {
+        DocumentFile.fromTreeUri(context, uriObj)
+      } else {
+        DocumentFile.fromSingleUri(context, uriObj)
+      }
     return res
   }
 
-  private fun hasPersistedUriPermission(
-    context: Context,
-    uri: Uri,
-    checkRead: Boolean,
-    checkWrite: Boolean
-  ): Boolean {
-    val permissions = context.contentResolver.persistedUriPermissions
-    for (permission in permissions) {
-      if (areSameDocumentLocation(permission.uri, uri)) {
-        val hasRead = !checkRead || permission.isReadPermission
-        val hasWrite = !checkWrite || permission.isWritePermission
-        return hasRead && hasWrite
-      }
-    }
-    return false
-  }
-
-  private fun areSameDocumentLocation(treeUri: Uri, docUri: Uri): Boolean {
-    val treeDocId = DocumentsContract.getTreeDocumentId(treeUri)
-    val docId = DocumentsContract.getDocumentId(docUri)
-    return treeDocId == docId
-  }
-
-  private fun findDirectChild(parentUri: Uri, name: String): UriInfo? {
+  private fun findDirectChild(
+    parentUri: Uri,
+    name: String
+  ): UriInfo? {
     var cursor: Cursor? = null
     try {
       val resolver = context.contentResolver
-      val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(
-        parentUri,
-        DocumentsContract.getDocumentId(parentUri)
-      )
-      cursor = resolver.query(
-        childrenUri,
-        arrayOf(
-          DocumentsContract.Document.COLUMN_DOCUMENT_ID,
-          DocumentsContract.Document.COLUMN_DISPLAY_NAME,
-          DocumentsContract.Document.COLUMN_MIME_TYPE,
-        ),
-        null,
-        null,
-        null
-      )
+      val childrenUri =
+        DocumentsContract.buildChildDocumentsUriUsingTree(
+          parentUri,
+          DocumentsContract.getDocumentId(parentUri)
+        )
+      cursor =
+        resolver.query(
+          childrenUri,
+          arrayOf(
+            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+            DocumentsContract.Document.COLUMN_MIME_TYPE
+          ),
+          null,
+          null,
+          null
+        )
 
       while (cursor?.moveToNext() == true) {
         val documentId = cursor.getString(0)
@@ -821,45 +905,51 @@ class SafUtilPlugin: FlutterPlugin, MethodCallHandler, ActivityAware {
     }
   }
 
-  private fun renameFileDocumentFile(df: DocumentFile, newName: String): Uri? {
+  private fun renameFileDocumentFile(
+    df: DocumentFile,
+    newName: String
+  ): Uri? {
     // https://cs.android.com/androidx/platform/frameworks/support/+/androidx-main:documentfile/documentfile/src/main/java/androidx/documentfile/provider/TreeDocumentFile.java
     try {
-      val result = DocumentsContract.renameDocument(
-        context.contentResolver, df.uri, newName
-      )
+      val result =
+        DocumentsContract.renameDocument(
+          context.contentResolver,
+          df.uri,
+          newName
+        )
       return result
     } catch (err: Exception) {
       return null
     }
   }
 
-  private fun documentFileToMap(file: DocumentFile): Map<String, Any?> {
-    return fileObjMap(
-      file.uri,
-      file.isDirectory,
-      file.name ?: "",
-      file.length(),
-      file.lastModified(),
-    )
-  }
+  private fun documentFileToMap(file: DocumentFile): Map<String, Any?> = fileObjMap(
+    file.uri,
+    file.isDirectory,
+    file.name ?: "",
+    file.length(),
+    file.lastModified()
+  )
 
   private fun fileObjMap(
     uri: Uri,
     isDir: Boolean,
     name: String,
     length: Long,
-    lastMod: Long,
-  ): Map<String, Any?> {
-    return mapOf(
-      "uri" to uri.toString(),
-      "isDir" to isDir,
-      "name" to name,
-      "length" to length,
-      "lastModified" to lastMod,
-    )
-  }
+    lastMod: Long
+  ): Map<String, Any?> = mapOf(
+    "uri" to uri.toString(),
+    "isDir" to isDir,
+    "name" to name,
+    "length" to length,
+    "lastModified" to lastMod
+  )
 
-  private fun File.writeBitmap(bitmap: Bitmap, format: Bitmap.CompressFormat, quality: Int) {
+  private fun File.writeBitmap(
+    bitmap: Bitmap,
+    format: Bitmap.CompressFormat,
+    quality: Int
+  ) {
     outputStream().use { out ->
       bitmap.compress(format, quality, out)
       out.flush()
@@ -867,11 +957,19 @@ class SafUtilPlugin: FlutterPlugin, MethodCallHandler, ActivityAware {
   }
 }
 
-internal data class UriInfo(val uri: Uri, val name: String, val isDir: Boolean)
+internal data class UriInfo(
+  val uri: Uri,
+  val name: String,
+  val isDir: Boolean
+)
 
 internal open class PendingArguments
 
 internal class PendingDirArguments(
   val writePermission: Boolean,
-  val persistablePermission: Boolean,
-): PendingArguments()
+  val persistablePermission: Boolean
+) : PendingArguments()
+
+internal class PendingMediaArguments(
+  val multiple: Boolean
+) : PendingArguments()

@@ -5,6 +5,7 @@ import 'package:plezy/media/media_item.dart';
 import 'package:plezy/media/media_kind.dart';
 import 'package:plezy/models/download_models.dart';
 import 'package:plezy/widgets/download_tree_view.dart';
+import '../test_helpers/media_items.dart';
 
 DownloadTreeNode _episodeNode(String globalKey) => DownloadTreeNode(
   key: globalKey,
@@ -34,7 +35,7 @@ MediaItem _episodeMeta({
   required ServerId? serverId,
   required String? grandparentId,
   required String? parentId,
-}) => MediaItem(
+}) => testMediaItem(
   id: id,
   backend: MediaBackend.plex,
   kind: MediaKind.episode,
@@ -131,6 +132,56 @@ void main() {
       };
 
       expect(resolveDownloadContainerGlobalKey(show, metadata), 'plex1:42');
+    });
+  });
+
+  group('determineDownloadAggregateStatus', () {
+    test('all-cancelled children aggregate to cancelled, not completed', () {
+      expect(determineDownloadAggregateStatus([DownloadStatus.cancelled]), DownloadStatus.cancelled);
+      expect(
+        determineDownloadAggregateStatus([DownloadStatus.cancelled, DownloadStatus.cancelled]),
+        DownloadStatus.cancelled,
+      );
+    });
+
+    test('completed mixed with cancelled aggregates to partial', () {
+      expect(
+        determineDownloadAggregateStatus([DownloadStatus.completed, DownloadStatus.cancelled]),
+        DownloadStatus.partial,
+      );
+    });
+
+    test('a partial child keeps the container partial', () {
+      expect(determineDownloadAggregateStatus([DownloadStatus.partial]), DownloadStatus.partial);
+      expect(
+        determineDownloadAggregateStatus([DownloadStatus.completed, DownloadStatus.partial]),
+        DownloadStatus.partial,
+      );
+    });
+
+    test('active, paused, and failed precedence is unchanged', () {
+      expect(
+        determineDownloadAggregateStatus([
+          DownloadStatus.completed,
+          DownloadStatus.downloading,
+          DownloadStatus.cancelled,
+        ]),
+        DownloadStatus.downloading,
+      );
+      expect(
+        determineDownloadAggregateStatus([DownloadStatus.cancelled, DownloadStatus.queued]),
+        DownloadStatus.queued,
+      );
+      expect(
+        determineDownloadAggregateStatus([DownloadStatus.completed, DownloadStatus.paused]),
+        DownloadStatus.paused,
+      );
+      expect(
+        determineDownloadAggregateStatus([DownloadStatus.failed, DownloadStatus.completed]),
+        DownloadStatus.failed,
+      );
+      expect(determineDownloadAggregateStatus([DownloadStatus.completed]), DownloadStatus.completed);
+      expect(determineDownloadAggregateStatus(const []), DownloadStatus.queued);
     });
   });
 }

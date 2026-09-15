@@ -1,7 +1,8 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:plezy/mpv/player/platform/player_android.dart';
-import 'package:plezy/mpv/player/player_base.dart';
 import 'package:plezy/mpv/player/player_native.dart';
 import 'package:plezy/services/settings_service.dart';
 
@@ -60,11 +61,6 @@ void main() {
 
   Set<String> names(List<MethodCall> calls) => calls.map((c) => (c.arguments as Map)['name'] as String).toSet();
 
-  test('the shared core table covers every state-critical property', () {
-    final tableNames = PlayerBase.corePropertyObservations.map((e) => e.$1).toSet()..add('track-list');
-    expect(tableNames, coreNames);
-  });
-
   test('ExoPlayer registers the core properties (plus its cache extra)', () async {
     final player = PlayerAndroid();
     final observations = await capturedObservations(
@@ -83,6 +79,30 @@ void main() {
     }
   });
 
+  test('PlayerAndroid forwards only explicit playback restart events', () async {
+    final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    const channel = MethodChannel('com.plezy/exo_player');
+    messenger.setMockMethodCallHandler(channel, (_) async => null);
+    addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+
+    final player = PlayerAndroid();
+    var restartCount = 0;
+    final subscription = player.streams.playbackRestart.listen((_) => restartCount++);
+    addTearDown(() async {
+      await subscription.cancel();
+      await player.dispose();
+    });
+
+    player.handlePropertyChange('paused-for-cache', false);
+    player.handlePropertyChange('time-pos', 12.0);
+    await Future<void>.delayed(Duration.zero);
+    expect(restartCount, 0);
+
+    player.handlePlayerEvent('playback-restart', null);
+    await Future<void>.delayed(Duration.zero);
+    expect(restartCount, 1);
+  });
+
   test('mpv registers the core properties (plus its track/device extras)', () async {
     final player = PlayerNative();
     final observations = await capturedObservations(
@@ -94,5 +114,25 @@ void main() {
     final registered = names(observations);
     expect(registered, containsAll(coreNames));
     expect(registered, containsAll({'secondary-sid', 'demuxer-cache-state', 'audio-device-list', 'audio-device'}));
+    final structuredFormat = Platform.isAndroid ? 'string' : 'node';
+    for (final call in observations.where((call) {
+      final name = (call.arguments as Map)['name'];
+      return name == 'track-list' || name == 'demuxer-cache-state' || name == 'audio-device-list';
+    })) {
+      expect((call.arguments as Map)['format'], structuredFormat);
+    }
+  });
+
+  test('audio-only mpv registers only the properties the music path consumes', () async {
+    final player = PlayerNative.audio();
+    final observations = await capturedObservations(
+      channelName: 'com.plezy/mpv_audio_player',
+      initialize: () => player.setLogLevel('warn'), // forces _ensureInitialized
+      dispose: () => player.dispose(),
+    );
+
+    expect(names(observations), {'time-pos', 'duration', 'pause', 'eof-reached', 'playlist-pos'});
+    final playlistPos = observations.singleWhere((call) => (call.arguments as Map)['name'] == 'playlist-pos');
+    expect((playlistPos.arguments as Map)['format'], Platform.isAndroid ? 'string' : 'node');
   });
 }

@@ -2,6 +2,7 @@ import 'dart:async';
 import '../media/ids.dart';
 
 import 'package:flutter/material.dart';
+import '../i18n/strings.g.dart';
 
 import '../media/media_item.dart';
 import '../media/media_kind.dart';
@@ -12,6 +13,7 @@ import '../screens/video_player_screen.dart';
 import '../utils/app_logger.dart';
 import '../utils/snackbar_helper.dart';
 import '../utils/video_player_navigation.dart';
+import '../services/playback_launch_observer.dart';
 
 /// Navigate to the video player for a live TV channel — the single live
 /// entry for both backends. The player starts the backend-neutral
@@ -25,16 +27,21 @@ Future<void> navigateToLiveTv(
   required MultiServerProvider multiServer,
   required LiveTvChannel channel,
   required List<LiveTvChannel> channels,
+  PlaybackLaunchObserver? launchObserver,
+  bool Function()? isLaunchCurrent,
 }) async {
+  if (!(isLaunchCurrent?.call() ?? true) || !(launchObserver?.isCurrent ?? true)) return;
   final serverInfo = liveTvServerInfoForChannel(multiServer, channel);
   if (serverInfo == null) {
-    showErrorSnackBar(context, 'Live TV server is not available.');
+    launchObserver?.mark('blocked', blocker: 'serverUnavailable');
+    showErrorSnackBar(context, Translations.of(context).liveTv.serverUnavailable);
     return;
   }
 
   final client = multiServer.getClientForServer(ServerId(serverInfo.serverId));
   if (client == null) {
-    showErrorSnackBar(context, 'Live TV server is not connected.');
+    launchObserver?.mark('blocked', blocker: 'serverUnavailable');
+    showErrorSnackBar(context, Translations.of(context).liveTv.serverNotConnected);
     return;
   }
 
@@ -64,29 +71,31 @@ Future<void> navigateToLiveTv(
     appLogger.w('Live TV launch channel was not present in navigation list; prepending ${channel.key}');
   }
 
-  final route = PageRouteBuilder<bool>(
-    settings: const RouteSettings(name: kVideoPlayerRouteName),
-    pageBuilder: (context, animation, secondaryAnimation) => VideoPlayerScreen(
+  final route = VideoPlayerRoute(
+    builder: (_) => VideoPlayerScreen(
       metadata: placeholder,
       live: LiveTvSessionArgs(channel: channel, channels: normalizedChannels, currentChannelIndex: currentChannelIndex),
+      launchObserver: launchObserver,
+      isLaunchCurrent: isLaunchCurrent,
     ),
-    transitionDuration: Duration.zero,
-    reverseTransitionDuration: Duration.zero,
   );
 
-  unawaited(navigator.push<bool>(route));
+  unawaited(route.push(navigator));
+  launchObserver?.mark('opening');
 }
 
+/// Resolves the Live TV backend without weakening explicit channel ownership.
+///
+/// A channel scoped to a server and DVR must match that exact pair. A channel
+/// scoped only to a server may use any DVR on that server. Only an unscoped
+/// channel may retain the first-server fallback.
 LiveTvServerInfo? liveTvServerInfoForChannel(MultiServerProvider multiServer, LiveTvChannel channel) {
   final serverId = channel.serverId;
+  if (serverId == null) return multiServer.liveTvServers.firstOrNull;
+
   final dvrKey = channel.liveDvrKey;
-  if (serverId != null && dvrKey != null) {
-    final exact = multiServer.liveTvServers.where((s) => s.serverId == serverId && s.dvrKey == dvrKey).firstOrNull;
-    if (exact != null) return exact;
+  if (dvrKey != null) {
+    return multiServer.liveTvServers.where((s) => s.serverId == serverId && s.dvrKey == dvrKey).firstOrNull;
   }
-  if (serverId != null) {
-    final serverMatch = multiServer.liveTvServers.where((s) => s.serverId == serverId).firstOrNull;
-    if (serverMatch != null) return serverMatch;
-  }
-  return multiServer.liveTvServers.firstOrNull;
+  return multiServer.liveTvServers.where((s) => s.serverId == serverId).firstOrNull;
 }

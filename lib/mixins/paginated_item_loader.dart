@@ -28,6 +28,7 @@ mixin PaginatedItemLoader<T, W extends StatefulWidget> on State<W> {
 
   final Set<int> _loadingRanges = {};
   AbortController? _cancelToken;
+  Object? _paginationError;
 
   /// Monotonic generation — bumped on reset/dispose so stale fetches are
   /// discarded instead of mutating state from a prior load.
@@ -37,6 +38,8 @@ mixin PaginatedItemLoader<T, W extends StatefulWidget> on State<W> {
   Timer? _retryTimer;
   bool _visibleRangeLoading = false;
   DateTime? _lastEagerPrefetch;
+  Object? get paginationError => _paginationError;
+  bool get isPaginationLoading => _loadingRanges.isNotEmpty;
 
   /// Re-invoked by the retry timer. Most recent range-load args.
   VoidCallback? _scheduledRetry;
@@ -48,6 +51,10 @@ mixin PaginatedItemLoader<T, W extends StatefulWidget> on State<W> {
   /// Hook fired after each successful page merge. Default: no-op.
   /// Override for image prefetch, syncing a base-class `items` list, etc.
   void onPageLoaded(int _, List<T> _) {}
+
+  /// Hook fired when a lazy page starts or finishes loading, or fails.
+  /// Override when the surrounding UI exposes loading or retry state.
+  void onPaginationStateChanged() {}
 
   /// Synchronously clear pagination state and bump the generation counter.
   /// Call from inside the subclass's `setState` before awaiting
@@ -61,6 +68,7 @@ mixin PaginatedItemLoader<T, W extends StatefulWidget> on State<W> {
     _visibleRangeLoading = false;
     _lastEagerPrefetch = null;
     _scheduledRetry = null;
+    _paginationError = null;
     loadedItems.clear();
     _loadingRanges.clear();
     totalSize = 0;
@@ -173,6 +181,13 @@ mixin PaginatedItemLoader<T, W extends StatefulWidget> on State<W> {
   /// Mirrors the "one item deleted on the server" invariant: decrements
   /// [totalSize] even if [index] wasn't in the sparse map (evicted).
   void removeLoadedItemAndShift(int index) {
+    _requestId++;
+    _cancelToken?.abort();
+    _cancelToken = AbortController();
+    _retryTimer?.cancel();
+    _retryTimer = null;
+    _loadingRanges.clear();
+    _scheduledRetry = null;
     loadedItems.remove(index);
     final shifted = <int, T>{};
     for (final entry in loadedItems.entries) {
@@ -186,6 +201,88 @@ mixin PaginatedItemLoader<T, W extends StatefulWidget> on State<W> {
       ..clear()
       ..addAll(shifted);
     totalSize = (totalSize - 1).clamp(0, totalSize);
+  }
+
+  /// Refetch the loaded span in place — the sparse-grid equivalent of Plex
+  /// Web's `repopulateRange`. The old items stay rendered while the fetch
+  /// runs; on success the span is replaced wholesale and [totalSize] adopts
+  /// the server's new count, so server-side additions materialize at their
+  /// sorted positions and removals disappear with no clearing and no
+  /// skeleton flash. On failure the old content stays untouched
+  /// (best-effort background refresh; the staleness paths recover).
+  ///
+  /// [anchorId] (resolved through [idOf]) reports where a caller-chosen item
+  /// moved, so the caller can compensate the scroll offset and keep it
+  /// visually stationary. A null result means nothing was applied.
+  ///
+  /// [maxSpan] bounds the refetched request: a sparse map holding disjoint
+  /// clusters (initial pages plus an alpha-jump target) would otherwise span
+  /// nearly the whole library in one call. When the span exceeds it, entries
+  /// outside a [maxSpan]-wide window centered on [windowCenter] are dropped
+  /// first — they degrade to ordinary unloaded slots the scroll path
+  /// refetches on demand. Callers that cache per-index state (focus nodes)
+  /// evict theirs to the same window.
+  Future<({int? anchorOldIndex, int? anchorNewIndex})?> repopulateLoadedRange({
+    required String Function(T item) idOf,
+    String? anchorId,
+    int? maxSpan,
+    int? windowCenter,
+  }) async {
+    if (!mounted || loadedItems.isEmpty || totalSize == 0) return null;
+    var indices = loadedItems.keys.toList()..sort();
+    if (maxSpan != null && indices.last - indices.first + 1 > maxSpan) {
+      final center = (windowCenter ?? indices.first).clamp(indices.first, indices.last);
+      final lo = center - maxSpan ~/ 2;
+      loadedItems.removeWhere((index, _) => index < lo || index >= lo + maxSpan);
+      if (loadedItems.isEmpty) return null;
+      indices = loadedItems.keys.toList()..sort();
+    }
+    final start = indices.first;
+    final size = indices.last - start + 1;
+    int? anchorOldIndex;
+    if (anchorId != null) {
+      for (final entry in loadedItems.entries) {
+        if (idOf(entry.value) == anchorId) {
+          anchorOldIndex = entry.key;
+          break;
+        }
+      }
+    }
+    // Supersede in-flight fetches: their merges would interleave stale pages
+    // into the repopulated span.
+    _requestId++;
+    _cancelToken?.abort();
+    _cancelToken = AbortController();
+    _retryTimer?.cancel();
+    _loadingRanges.clear();
+    _scheduledRetry = null;
+    final generation = _requestId;
+    final LibraryPage<T> page;
+    try {
+      page = await fetchPage(start, size, _cancelToken);
+    } catch (_) {
+      return null;
+    }
+    if (generation != _requestId || !mounted) return null;
+    int? anchorNewIndex;
+    if (anchorId != null) {
+      for (var i = 0; i < page.items.length; i++) {
+        if (idOf(page.items[i]) == anchorId) {
+          anchorNewIndex = start + i;
+          break;
+        }
+      }
+    }
+    setState(() {
+      loadedItems.removeWhere((index, _) => index >= start && index < start + size);
+      for (var i = 0; i < page.items.length; i++) {
+        loadedItems[start + i] = page.items[i];
+      }
+      totalSize = page.totalCount;
+      loadedItems.removeWhere((index, _) => index >= totalSize);
+    });
+    onPageLoaded(start, page.items);
+    return (anchorOldIndex: anchorOldIndex, anchorNewIndex: anchorNewIndex);
   }
 
   /// Discard the "fetch in flight" markers. In-flight network requests keep
@@ -221,6 +318,7 @@ mixin PaginatedItemLoader<T, W extends StatefulWidget> on State<W> {
     _retryTimer?.cancel();
     _retryTimer = null;
     _loadingRanges.clear();
+    _paginationError = null;
     _scheduledRetry = null;
   }
 
@@ -232,6 +330,8 @@ mixin PaginatedItemLoader<T, W extends StatefulWidget> on State<W> {
     final indices = List.generate(clampedSize, (i) => start + i);
     if (indices.every((i) => _loadingRanges.contains(i) || loadedItems.containsKey(i))) return true;
     _loadingRanges.addAll(indices);
+    _paginationError = null;
+    onPaginationStateChanged();
 
     final generation = _requestId;
 
@@ -251,6 +351,7 @@ mixin PaginatedItemLoader<T, W extends StatefulWidget> on State<W> {
       return true;
     } catch (e) {
       if (e is MediaServerHttpException && e.type == MediaServerHttpErrorType.cancelled) return false;
+      _paginationError = e;
       _retryCount++;
       final delay = Duration(milliseconds: 500 * (1 << _retryCount.clamp(0, 4)));
       _retryTimer?.cancel();
@@ -260,6 +361,7 @@ mixin PaginatedItemLoader<T, W extends StatefulWidget> on State<W> {
       return false;
     } finally {
       _loadingRanges.removeAll(indices);
+      onPaginationStateChanged();
     }
   }
 }

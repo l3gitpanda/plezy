@@ -9,6 +9,8 @@ import 'package:plezy/media/media_kind.dart';
 import 'package:plezy/services/jellyfin_client.dart';
 import 'package:plezy/services/jellyfin_mappers.dart';
 
+import '../test_helpers/backend_client_fixtures.dart';
+
 const _serverId = 'jf-machine-1';
 
 /// Captured (trimmed) from a live Jellyfin 10.11 server — an `Audio` row
@@ -65,12 +67,7 @@ Map<String, dynamic> _albumJson() => {
   'MediaType': 'Unknown',
 };
 
-JellyfinConnection _conn() => JellyfinConnection(
-  id: 'srv-1/user-1',
-  baseUrl: 'https://jf.example.com',
-  serverName: 'Home',
-  serverMachineId: 'srv-1',
-  userId: 'user-1',
+JellyfinConnection _conn() => testJellyfinConnection(
   userName: 'edde',
   accessToken: 'tok-abc',
   deviceId: 'dev-xyz',
@@ -89,10 +86,10 @@ void main() {
       expect(item.parentTitle, 'Live at Testhalle');
       expect(item.grandparentId, 'a603621309dc866c91b6c5fe10cee64d');
       expect(item.grandparentTitle, 'The Synth Pops');
-      // Derived music getters.
       expect(item.trackNumber, 1);
       expect(item.discNumber, 1);
       expect(item.albumTitle, 'Live at Testhalle');
+      expect(item.albumYear, 2022);
       expect(item.albumArtistTitle, 'The Synth Pops');
       // Artists == [AlbumArtist] → no per-track performer override.
       expect(item.originalTitle, isNull);
@@ -101,6 +98,10 @@ void main() {
       expect(
         item.thumbPath,
         '/Items/425f9ab168792a3be733d169b770853f/Images/Primary?tag=1ed1281fd45ff9b8b5ad62b6f6a34d17',
+      );
+      expect(
+        item.posterThumbFallback(),
+        '/Items/27511f928761c3f5c080d43d6799ea09/Images/Primary?tag=233dccb8ad84d8ac473dbffb86c35e6c',
       );
       expect(item.durationMs, 12000);
     });
@@ -132,14 +133,15 @@ void main() {
       );
     });
 
-    test('track without embedded art or album image tag keeps a null thumb', () {
+    test('track without image tags still tries the album primary endpoint', () {
       final json = _audioJson()
         ..['ImageTags'] = <String, dynamic>{}
         ..remove('AlbumPrimaryImageTag');
 
       final item = JellyfinMappers.mediaItem(json, serverId: ServerId(_serverId), absolutizer: null)!;
 
-      expect(item.thumbPath, isNull);
+      expect(item.thumbPath, '/Items/27511f928761c3f5c080d43d6799ea09/Images/Primary');
+      expect(item.posterThumbFallback(), isNull);
     });
 
     test('maps a MusicAlbum with artist hierarchy and track counts', () {

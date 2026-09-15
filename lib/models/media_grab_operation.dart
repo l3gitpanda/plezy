@@ -5,23 +5,14 @@ import 'livetv_program.dart';
 
 part 'media_grab_operation.g.dart';
 
-Map<String, dynamic>? _metadataFromJson(Object? raw) {
-  if (raw is Map<String, dynamic>) return raw;
-  if (raw is List && raw.isNotEmpty && raw.first is Map<String, dynamic>) {
-    return raw.first as Map<String, dynamic>;
-  }
-  return null;
-}
+Map<String, dynamic>? _metadataFromJson(Object? raw) => firstFlexibleMap(raw);
 
-LiveTvProgram? _programFromMetadata(Object? raw) {
-  final metadata = _metadataFromJson(raw);
-  if (metadata == null) return null;
-  try {
-    return LiveTvProgram.fromJson(metadata);
-  } catch (_) {
-    return null;
-  }
-}
+/// The nested airing key varies with grab status in PMS JSON: `scheduled`
+/// grabs nest it under `Metadata`, while active/`complete`/`error` grabs (and
+/// every grab in XML-derived payloads) use `Video` (issue #2009 captures).
+Object? _readGrabMetadata(Map json, String key) => json['Metadata'] ?? json['Video'];
+
+LiveTvProgram? _programFromMetadata(Object? raw) => parseFlexibleJsonObject(raw, LiveTvProgram.fromJson);
 
 /// A scheduled or active Plex DVR grab operation.
 @JsonSerializable(createToJson: false)
@@ -45,7 +36,7 @@ class MediaGrabOperation {
   final bool? rolling;
   final String? error;
   final String? linkedKey;
-  @JsonKey(name: 'Metadata', fromJson: _metadataFromJson)
+  @JsonKey(name: 'Metadata', readValue: _readGrabMetadata, fromJson: _metadataFromJson)
   final Map<String, dynamic>? metadata;
 
   const MediaGrabOperation({

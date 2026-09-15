@@ -1,10 +1,17 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
+import '../media/media_item.dart';
+import '../media/library_change_event.dart';
 import '../media/media_library.dart';
 import '../mixins/disposable_change_notifier_mixin.dart';
 import '../services/data_aggregation_service.dart';
 import '../services/storage_service.dart';
 import '../utils/app_logger.dart';
+import '../utils/global_key_utils.dart';
+import '../utils/library_content_notifier.dart';
+import '../utils/coalesced_load_coordinator.dart';
 import 'multi_server_provider.dart';
 
 /// Load state for the libraries provider
@@ -16,12 +23,16 @@ enum LibrariesLoadState { initial, loading, loaded, error }
 class LibrariesProvider extends ChangeNotifier with DisposableChangeNotifierMixin {
   LibrariesProvider({this._storageService, this._multiServer, bool Function()? isProfileBinding})
     : _isProfileBinding = isProfileBinding ?? _neverBinding {
+    _loadCoordinator = CoalescedLoadCoordinator<String>(onFull: _loadLibrariesInternal, onDelta: _loadDelta);
     // Reload libraries when a new server comes online. Servers bind in waves
     // on sign-in / profile switch and slow ones reconnect after the initial
     // load; without this they stay missing from the sidebar until a re-switch
     // or restart. Removed in [dispose] so a profile switch can't leave a
     // stale listener on the app-global provider.
     _multiServer?.addOnlineServersListener(syncToOnlineServers);
+    // Server push events mark affected libraries stale; tabs consume the
+    // epoch when they are next shown. Cancelled in [dispose].
+    _libraryEventSubscription = LibraryContentNotifier().stream.listen(_onLibraryContentChanged);
   }
 
   static bool _neverBinding() => false;
@@ -40,9 +51,7 @@ class LibrariesProvider extends ChangeNotifier with DisposableChangeNotifierMixi
   LibrariesLoadState _loadState = LibrariesLoadState.initial;
   String? _errorMessage;
 
-  /// Coalesces concurrent `loadLibraries()` calls so two simultaneous callers
-  /// see the same in-flight result instead of racing two separate fetches.
-  Future<void>? _inFlightLoad;
+  late final CoalescedLoadCoordinator<String> _loadCoordinator;
 
   /// Server ids whose library fetch *succeeded* in the current [_libraries], as
   /// reported by [DataAggregationService.getMediaLibrariesFromAllServers].
@@ -53,15 +62,6 @@ class LibrariesProvider extends ChangeNotifier with DisposableChangeNotifierMixi
   /// [syncToOnlineServers].
   Set<String> _loadedServerIds = {};
 
-  /// Set when a (re)load is requested while one is already in flight, so the
-  /// loop runs another pass: a server that comes online *during* a load would
-  /// otherwise be lost to the coalesced [_inFlightLoad].
-  bool _hasPendingLoad = false;
-
-  /// Newly-online servers queued for a delta pass — fetched and merged
-  /// without refetching the already-loaded servers.
-  final Set<String> _pendingDeltaServerIds = {};
-
   /// Unmodifiable list of all libraries (ordered)
   List<MediaLibrary> get libraries => List.unmodifiable(_libraries);
 
@@ -69,9 +69,11 @@ class LibrariesProvider extends ChangeNotifier with DisposableChangeNotifierMixi
   bool get isLoading => _loadState == LibrariesLoadState.loading;
 
   /// Whether libraries have been loaded at least once
+  @visibleForTesting
   bool get hasLoaded => _loadState == LibrariesLoadState.loaded;
 
   /// Current load state
+  @visibleForTesting
   LibrariesLoadState get loadState => _loadState;
 
   /// Error message if loading failed
@@ -80,9 +82,109 @@ class LibrariesProvider extends ChangeNotifier with DisposableChangeNotifierMixi
   /// Whether libraries are available
   bool get hasLibraries => _libraries.isNotEmpty;
 
+  /// Per-library content epochs, bumped when a server push reports that a
+  /// library's content changed (#1646). A tab records the epoch it loaded
+  /// under and reloads when it is next shown with a newer one — staleness is
+  /// consumed lazily, so a push never live-reloads a grid the user is
+  /// scrolled into. Deliberately does not notify listeners: bumping is
+  /// bookkeeping, not a UI change.
+  final Map<String, int> _contentEpochByGlobalKey = {};
+  StreamSubscription<LibraryChangeEvent>? _libraryEventSubscription;
+
+  /// The current content epoch for the library with [globalKey]; 0 until a
+  /// push event first marks it.
+  int libraryContentEpoch(String globalKey) => _contentEpochByGlobalKey[globalKey] ?? 0;
+
+  void _onLibraryContentChanged(LibraryChangeEvent event) {
+    if (isDisposed || !event.hasChanges) return;
+    // Resolved once per event, not per library: the loop below is the only
+    // hot consumer and resolution walks the named ids.
+    final coversServer = _eventCoversServer(event);
+    for (final library in _libraries) {
+      if (library.serverId != event.serverId.value) continue;
+      if (!coversServer && !event.libraryIds.contains(library.id)) continue;
+      _contentEpochByGlobalKey[library.globalKey] = (_contentEpochByGlobalKey[library.globalKey] ?? 0) + 1;
+    }
+  }
+
+  /// Single matcher for push events, shared with the visible tab's live pass
+  /// so epoch marking and live refreshes always agree (#1646). An event with
+  /// no library ids targets the whole server; so does one naming any id that
+  /// matches no loaded library on that server (a brand-new library, or a
+  /// backend id the app never sees as a library — Jellyfin reports physical
+  /// collection folders, and a grouped view's folders never appear as its
+  /// id). Partial resolution widens rather than narrows: the unresolved ids
+  /// may belong to any loaded library, so every one of them is marked
+  /// alongside the exact matches. Only a fully resolved id set stays precise.
+  bool eventTargetsLibrary(LibraryChangeEvent event, MediaLibrary library) {
+    if (library.serverId == null || library.serverId != event.serverId.value) return false;
+    return event.libraryIds.contains(library.id) || _eventCoversServer(event);
+  }
+
+  /// Whether [event] must be read as touching every loaded library on its
+  /// server: unidentified scope, or a named id that resolves to nothing.
+  bool _eventCoversServer(LibraryChangeEvent event) {
+    if (event.targetsWholeServer) return true;
+    _ensureLookups();
+    for (final id in event.libraryIds) {
+      if (!_byGlobalKey.containsKey(buildGlobalKey(event.serverId, id))) return true;
+    }
+    return false;
+  }
+
+  /// Derived lookups, keyed on the identity of [_libraries]: every mutation
+  /// reassigns the list, so an identical source means the maps are current.
+  List<MediaLibrary>? _lookupSource;
+  Map<String, MediaLibrary> _byGlobalKey = const {};
+  Map<String, int> _libraryCountByServer = const {};
+
+  void _ensureLookups() {
+    if (identical(_lookupSource, _libraries)) return;
+    _byGlobalKey = {for (final library in _libraries) library.globalKey: library};
+    final counts = <String, int>{};
+    for (final library in _libraries) {
+      final serverId = library.serverId;
+      if (serverId != null) counts[serverId] = (counts[serverId] ?? 0) + 1;
+    }
+    _libraryCountByServer = counts;
+    _lookupSource = _libraries;
+  }
+
+  /// The loaded library with [globalKey] (see [MediaLibrary.globalKey]), or
+  /// null while unloaded or for an unknown key. The zero-request resolver for
+  /// items that carry a library id without its title — Plex search rows that
+  /// name their section only by `librarySectionKey` (#1970).
+  MediaLibrary? libraryByGlobalKey(String globalKey) {
+    _ensureLookups();
+    return _byGlobalKey[globalKey];
+  }
+
+  /// Number of loaded libraries on [serverId]; 0 while unloaded. The library
+  /// label on search rows renders only when this is > 1 — attribution on a
+  /// single-library server is noise (#1970).
+  int libraryCountForServer(String serverId) {
+    _ensureLookups();
+    return _libraryCountByServer[serverId] ?? 0;
+  }
+
+  /// The library name to attribute [item] with in search results (#1970), or
+  /// null when no label should render: the library is unknown, or the owning
+  /// server has only one. A missing title is resolved against the loaded
+  /// libraries, which covers Plex rows that carry a section id without its
+  /// title.
+  String? libraryLabelFor(MediaItem item) {
+    final serverId = item.serverId;
+    if (serverId == null || libraryCountForServer(serverId) < 2) return null;
+    final title = item.libraryTitle;
+    if (title != null) return title;
+    final globalKey = item.libraryGlobalKey;
+    return globalKey == null ? null : libraryByGlobalKey(globalKey)?.title;
+  }
+
   /// Initialize the provider with the aggregation service.
   /// This should be called after server connection is established.
   void initialize(DataAggregationService service) {
+    if (isDisposed) return;
     _aggregationService = service;
   }
 
@@ -101,14 +203,13 @@ class LibrariesProvider extends ChangeNotifier with DisposableChangeNotifierMixi
   /// Once a full pass has loaded, only the genuinely new servers are fetched
   /// and merged in; already-loaded servers are not refetched.
   Future<void> syncToOnlineServers(Set<String> onlineServerIds) {
-    if (_aggregationService == null || onlineServerIds.isEmpty) return Future<void>.value();
+    if (isDisposed || _aggregationService == null || onlineServerIds.isEmpty) return Future<void>.value();
     if (_loadState == LibrariesLoadState.loaded && _loadedServerIds.containsAll(onlineServerIds)) {
       return Future<void>.value();
     }
     // Nothing (or a failed pass) to merge into yet — run the full load.
     if (_loadState != LibrariesLoadState.loaded) return _load();
-    _pendingDeltaServerIds.addAll(onlineServerIds.difference(_loadedServerIds));
-    return _ensureLoadLoop();
+    return _loadCoordinator.requestDelta(onlineServerIds.difference(_loadedServerIds));
   }
 
   /// Load libraries from all connected servers, unconditionally. Used by
@@ -116,32 +217,11 @@ class LibrariesProvider extends ChangeNotifier with DisposableChangeNotifierMixi
   /// Applies saved ordering.
   Future<void> loadLibraries() => _load();
 
-  /// Single entry point for every full (re)load. Concurrent callers coalesce
-  /// onto one in-flight pass; a request that arrives mid-pass is replayed by
-  /// [_runLoadLoop] so it isn't masked by that coalescing. Each pass fetches
-  /// whatever is online at fetch time, so no caller needs to specify a target.
+  /// Single entry point for every full (re)load. Each pass fetches whatever is
+  /// online at fetch time, so no caller needs to specify a target.
   Future<void> _load() {
-    _hasPendingLoad = true;
-    return _ensureLoadLoop();
-  }
-
-  Future<void> _ensureLoadLoop() => _inFlightLoad ??= _runLoadLoop().whenComplete(() => _inFlightLoad = null);
-
-  Future<void> _runLoadLoop() async {
-    while (_hasPendingLoad || _pendingDeltaServerIds.isNotEmpty) {
-      if (_hasPendingLoad) {
-        _hasPendingLoad = false;
-        _pendingDeltaServerIds.clear(); // a full pass covers every server
-        final succeeded = await _loadLibrariesInternal();
-        // Stop on failure so a persistently failing fetch can't hot-loop; the
-        // next server-status emission re-drives the sync.
-        if (!succeeded) break;
-      } else {
-        final ids = Set<String>.of(_pendingDeltaServerIds);
-        _pendingDeltaServerIds.clear();
-        await _loadDelta(ids);
-      }
-    }
+    if (isDisposed) return Future<void>.value();
+    return _loadCoordinator.requestFull();
   }
 
   /// Fetch libraries from [serverIds] only (servers that came online after
@@ -149,37 +229,56 @@ class LibrariesProvider extends ChangeNotifier with DisposableChangeNotifierMixi
   /// the current list and leave the ids un-loaded, so the next status
   /// emission retries them.
   Future<void> _loadDelta(Set<String> serverIds) async {
+    if (isDisposed) return;
     // A full pass may have covered these ids while they sat in the queue.
     final ids = serverIds.difference(_loadedServerIds);
     if (ids.isEmpty) return;
 
     try {
       final result = await _aggregationService!.getMediaLibrariesFromAllServers(serverIds: ids);
+      if (isDisposed) return;
+      // A pass in which zero servers succeeded is never authoritative: keep
+      // the current list and leave every id un-loaded so the next status
+      // emission retries the whole delta.
+      final succeeded = result.succeededServerIds;
+      if (succeeded.isEmpty) {
+        appLogger.w('LibrariesProvider: delta load failed on all of $ids; keeping previous libraries');
+        return;
+      }
       final fresh = result.libraries;
 
+      // Replace only the entries of servers that actually succeeded. A failed
+      // server keeps its retained libraries and stays out of _loadedServerIds,
+      // so it is refetched instead of wiped.
       final merged = [
         for (final lib in _libraries)
-          if (!ids.contains(lib.serverId)) lib,
+          if (!succeeded.contains(lib.serverId)) lib,
         ...fresh,
       ];
-      final storage = _storageService ??= await StorageService.getInstance();
+      var storage = _storageService;
+      if (storage == null) {
+        storage = await StorageService.getInstance();
+        if (isDisposed) return;
+        _storageService = storage;
+      }
       _libraries = _applyLibraryOrder(merged, storage.getLibraryOrder());
       // Union *succeeded* ids only, so a server whose fetch failed is retried
       // on the next status emission instead of being cached as loaded.
-      _loadedServerIds = {..._loadedServerIds, ...result.succeededServerIds};
+      _loadedServerIds = {..._loadedServerIds, ...succeeded};
 
       appLogger.i('LibrariesProvider: merged ${fresh.length} libraries from $ids');
       safeNotifyListeners();
     } catch (e, stackTrace) {
+      if (isDisposed) return;
       appLogger.e('LibrariesProvider: delta load failed for $ids', error: e, stackTrace: stackTrace);
     }
   }
 
-  /// Returns `true` on a successful load, `false` on error.
-  Future<bool> _loadLibrariesInternal() async {
+  Future<void> _loadLibrariesInternal() async {
+    if (isDisposed) return;
     if (_aggregationService == null) {
       appLogger.w('LibrariesProvider: Cannot load libraries - not initialized');
-      return false;
+      return;
     }
 
     // Reloading over an already-loaded list (a reactive server-connect sync, an
@@ -200,6 +299,7 @@ class LibrariesProvider extends ChangeNotifier with DisposableChangeNotifierMixi
       // The aggregation service converts Plex-typed responses to MediaLibrary
       // internally; Jellyfin clients return MediaLibrary natively.
       final result = await _aggregationService!.getMediaLibrariesFromAllServers();
+      if (isDisposed) return;
 
       // A pass in which zero servers succeeded is never authoritative — it
       // must not replace existing data, and it may only commit "loaded,
@@ -215,20 +315,45 @@ class LibrariesProvider extends ChangeNotifier with DisposableChangeNotifierMixi
           // covering those servers.
           appLogger.w('LibrariesProvider: refresh failed on all servers; keeping previous libraries');
           _loadedServerIds = result.succeededServerIds;
-          return false;
+          return;
         }
         if (result.cancelledServerIds.isNotEmpty || _isProfileBinding()) {
           appLogger.d('LibrariesProvider: first load disrupted (zero successful servers); staying in loading state');
-          return false;
+          return;
         }
       }
 
       // Apply saved library order
-      final storage = _storageService ??= await StorageService.getInstance();
+      var storage = _storageService;
+      if (storage == null) {
+        storage = await StorageService.getInstance();
+        if (isDisposed) return;
+        _storageService = storage;
+      }
       final savedOrder = storage.getLibraryOrder();
-      final orderedLibraries = _applyLibraryOrder(result.libraries, savedOrder);
 
-      _libraries = orderedLibraries;
+      // Partial-failure rule: a pass is authoritative only for the servers
+      // that actually responded. On an in-place refresh where some servers
+      // failed or were aborted mid-request, mirror _loadDelta's merge — keep
+      // the prior entries of the unreachable servers and replace only the
+      // succeeded servers' entries (including an authoritative empty) —
+      // instead of replacing wholesale, which would blank a server that
+      // merely timed out. Servers absent from the pass entirely (removed
+      // servers) still drop, and _loadedServerIds below excludes the kept
+      // ones so they are refetched rather than cached as loaded.
+      var libraries = result.libraries;
+      if (reloadInPlace) {
+        final unreachable = {...result.failedServerIds, ...result.cancelledServerIds};
+        if (unreachable.isNotEmpty) {
+          libraries = [
+            for (final lib in _libraries)
+              if (unreachable.contains(lib.serverId)) lib,
+            ...result.libraries,
+          ];
+        }
+      }
+
+      _libraries = _applyLibraryOrder(libraries, savedOrder);
       // Track which servers actually responded so [syncToOnlineServers] can tell
       // a genuinely new server from one already covered. Keyed on fetch success
       // (not on which servers returned libraries) so a zero-library server still
@@ -240,22 +365,22 @@ class LibrariesProvider extends ChangeNotifier with DisposableChangeNotifierMixi
 
       appLogger.i('LibrariesProvider: Loaded ${_libraries.length} libraries');
       safeNotifyListeners();
-      return true;
     } catch (e, stackTrace) {
+      if (isDisposed) return;
       appLogger.e('LibrariesProvider: Failed to load libraries', error: e, stackTrace: stackTrace);
       // A refresh that fails over an existing list keeps the last good data and
       // `loaded` state instead of blanking to an error screen; the next status
       // emission re-drives the sync.
-      if (reloadInPlace) return false;
+      if (reloadInPlace) return;
       _loadState = LibrariesLoadState.error;
       _errorMessage = e.toString();
       safeNotifyListeners();
-      return false;
     }
   }
 
   /// Refresh libraries by reloading from the connected servers.
   Future<void> refresh() async {
+    if (isDisposed) return;
     if (_aggregationService == null) {
       appLogger.w('LibrariesProvider: Cannot refresh - not initialized');
       return;
@@ -264,26 +389,42 @@ class LibrariesProvider extends ChangeNotifier with DisposableChangeNotifierMixi
   }
 
   /// Update the library order and persist it.
-  Future<void> updateLibraryOrder(List<MediaLibrary> orderedLibraries) async {
-    _libraries = List.from(orderedLibraries);
-    safeNotifyListeners();
-
+  Future<void> updateLibraryOrder(
+    List<MediaLibrary> orderedLibraries, {
+    String? profileId,
+    void Function()? checkCurrent,
+  }) async {
+    if (isDisposed) return;
+    final previousLibraries = _libraries;
     // Save the new order
-    final storage = _storageService ??= await StorageService.getInstance();
+    var storage = _storageService;
+    if (storage == null) {
+      storage = await StorageService.getInstance();
+      if (isDisposed) return;
+      _storageService = storage;
+    }
+    if (isDisposed) return;
+    checkCurrent?.call();
     final libraryKeys = orderedLibraries.map((lib) => lib.globalKey).toList();
-    await storage.saveLibraryOrder(libraryKeys);
+    await storage.saveLibraryOrder(libraryKeys, profileId: profileId);
 
+    if (isDisposed) return;
+    checkCurrent?.call();
+    _libraries = identical(_libraries, previousLibraries)
+        ? List.from(orderedLibraries)
+        : _applyLibraryOrder(_libraries, libraryKeys);
+    safeNotifyListeners();
     appLogger.d('LibrariesProvider: Updated library order');
   }
 
   /// Clear all library data (for profile switch or logout).
   void clear() {
+    if (isDisposed) return;
     _libraries = [];
     _loadState = LibrariesLoadState.initial;
     _errorMessage = null;
     _loadedServerIds = {};
-    _hasPendingLoad = false;
-    _pendingDeltaServerIds.clear();
+    _loadCoordinator.clearPending();
     safeNotifyListeners();
     appLogger.d('LibrariesProvider: Cleared library data');
   }
@@ -291,6 +432,9 @@ class LibrariesProvider extends ChangeNotifier with DisposableChangeNotifierMixi
   @override
   void dispose() {
     _multiServer?.removeOnlineServersListener(syncToOnlineServers);
+    _libraryEventSubscription?.cancel();
+    _libraryEventSubscription = null;
+    _loadCoordinator.dispose();
     super.dispose();
   }
 
@@ -300,10 +444,8 @@ class LibrariesProvider extends ChangeNotifier with DisposableChangeNotifierMixi
       return libraries;
     }
 
-    // Create a map for quick lookup
     final libraryMap = {for (final lib in libraries) lib.globalKey: lib};
 
-    // Build ordered list based on saved order
     final orderedLibraries = <MediaLibrary>[];
     for (final key in savedOrder) {
       final lib = libraryMap.remove(key);
@@ -312,7 +454,6 @@ class LibrariesProvider extends ChangeNotifier with DisposableChangeNotifierMixi
       }
     }
 
-    // Add any new libraries that weren't in the saved order
     orderedLibraries.addAll(libraryMap.values);
 
     return orderedLibraries;

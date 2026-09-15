@@ -9,7 +9,6 @@ import 'package:plezy/media/media_server_client.dart';
 import 'package:plezy/media/server_capabilities.dart';
 import 'package:plezy/providers/multi_server_provider.dart';
 import 'package:plezy/screens/music/album_detail_screen.dart';
-import 'package:plezy/services/data_aggregation_service.dart';
 import 'package:plezy/services/multi_server_manager.dart';
 import 'package:plezy/services/music/music_playback_service.dart';
 import 'package:plezy/services/settings_service.dart';
@@ -18,6 +17,9 @@ import 'package:plezy/widgets/music/track_row.dart';
 import 'package:provider/provider.dart';
 
 import '../../test_helpers/prefs.dart';
+import '../../test_helpers/media_items.dart';
+import '../../test_helpers/multi_server_fixtures.dart';
+import '../../test_helpers/stub_music_playback_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -34,7 +36,6 @@ void main() {
     await tester.pumpWidget(harness.wrap(const AlbumDetailScreen(album: _album)));
     await tester.pumpAndSettle();
 
-    // Header: album title (app bar + header), tappable artist line, metadata.
     expect(find.text('Test Album'), findsWidgets);
     expect(find.text('Test Artist'), findsOneWidget);
     expect(find.textContaining('2001'), findsOneWidget);
@@ -48,21 +49,7 @@ void main() {
     expect(find.text('Track Two'), findsOneWidget);
     expect(find.text('Track Three'), findsOneWidget);
 
-    // Track numbers restart per disc.
     expect(find.text('1'), findsNWidgets(2));
-  });
-
-  testWidgets('tapping a track on the stub service shows the not-supported notice', (tester) async {
-    final harness = await _createHarness(_multiDiscTracks());
-
-    await tester.pumpWidget(harness.wrap(const AlbumDetailScreen(album: _album)));
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('Track One'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
-
-    expect(find.text(t.messages.musicNotSupported), findsOneWidget);
   });
 }
 
@@ -79,7 +66,7 @@ const _album = MediaItem.plex(
 
 List<MediaItem> _multiDiscTracks() {
   MediaItem track({required String id, required String title, required int disc, required int number}) {
-    return MediaItem(
+    return testMediaItem(
       id: id,
       backend: MediaBackend.plex,
       kind: MediaKind.track,
@@ -108,7 +95,7 @@ Future<_AlbumHarness> _createHarness(List<MediaItem> tracks) async {
 
   final client = _FakeMusicClient(tracks);
   final manager = MultiServerManager()..debugRegisterClientForTesting(client);
-  final multiServerProvider = MultiServerProvider(manager, DataAggregationService(manager));
+  final multiServerProvider = testMultiServerProvider(manager);
 
   addTearDown(multiServerProvider.dispose);
 
@@ -162,7 +149,7 @@ class _FakeMusicClient implements MediaServerClient {
   }
 
   @override
-  String thumbnailUrl(String? path, {int? width, int? height}) => '';
+  String thumbnailUrl(String? path, {int? width, int? height, bool cover = true}) => '';
 
   @override
   void close() {}

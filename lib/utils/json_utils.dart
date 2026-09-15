@@ -8,6 +8,10 @@ int? flexibleInt(Object? v) => switch (v) {
   _ => null,
 };
 
+int flexibleIntOrZero(Object? v) => flexibleInt(v) ?? 0;
+
+String stringOrEmpty(Object? v) => (v ?? '').toString();
+
 /// Parse a value that may be [bool], [int] (0/1), or [String] ('1'/'true'/'false') to [bool].
 /// Returns `false` for `null` or unrecognised values.
 /// Handles Plex API responses where boolean fields may arrive as integers.
@@ -49,6 +53,48 @@ List<dynamic>? flexibleList(Object? v) => switch (v) {
   final List l => l,
   _ => <dynamic>[v],
 };
+
+/// Return only JSON object entries from a value that may be one object, a
+/// heterogeneous list, or null.
+List<Map<String, dynamic>> flexibleMapList(Object? value) {
+  return [
+    for (final item in flexibleList(value) ?? const <dynamic>[])
+      if (item is Map<String, dynamic>) item,
+  ];
+}
+
+/// Return the first JSON object from a single object or heterogeneous list.
+Map<String, dynamic>? firstFlexibleMap(Object? value) {
+  for (final item in flexibleList(value) ?? const <dynamic>[]) {
+    if (item is Map<String, dynamic>) return item;
+  }
+  return null;
+}
+
+/// Parse every valid JSON object independently, dropping malformed entries
+/// instead of letting one row discard an otherwise usable response.
+List<T> parseFlexibleJsonList<T>(Object? value, T Function(Map<String, dynamic> json) parse) {
+  final result = <T>[];
+  for (final json in flexibleMapList(value)) {
+    try {
+      result.add(parse(json));
+    } catch (_) {
+      // A malformed row does not invalidate its siblings.
+    }
+  }
+  return result;
+}
+
+/// Parse the first JSON object, returning null for missing or malformed data.
+T? parseFlexibleJsonObject<T>(Object? value, T Function(Map<String, dynamic> json) parse) {
+  final json = firstFlexibleMap(value);
+  if (json == null) return null;
+  try {
+    return parse(json);
+  } catch (_) {
+    return null;
+  }
+}
 
 /// Coerce a single String, a List of Strings, or null into `List<String>?`.
 /// Non-string elements are dropped; an empty result (or null input) yields
@@ -100,3 +146,18 @@ List<String>? stringListFromRaw(Object? raw, {String? mapKey, bool stringify = f
 }
 
 List<T>? nullIfEmptyList<T>(List<T> values) => values.isEmpty ? null : values;
+
+/// First entry that is neither null nor blank after trimming, else null.
+///
+/// Remote APIs distinguish "absent" from "present but empty" inconsistently.
+/// TMDB in particular answers a `language=` query for an untranslated title or
+/// overview with an empty string rather than omitting the field, so `??`
+/// fallback chains silently select the blank. Use this where a localized value
+/// must degrade to an untranslated one.
+String? firstNonBlank(Iterable<String?> values) {
+  for (final value in values) {
+    final trimmed = value?.trim();
+    if (trimmed != null && trimmed.isNotEmpty) return trimmed;
+  }
+  return null;
+}

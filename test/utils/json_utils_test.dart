@@ -33,6 +33,21 @@ void main() {
     });
   });
 
+  test('flexibleIntOrZero defaults unsupported values to zero', () {
+    expect(flexibleIntOrZero(3.9), 3);
+    expect(flexibleIntOrZero('42'), 42);
+    expect(flexibleIntOrZero(null), 0);
+    expect(flexibleIntOrZero('bad'), 0);
+    expect(flexibleIntOrZero(true), 0);
+  });
+
+  test('stringOrEmpty stringifies values and defaults null', () {
+    expect(stringOrEmpty('value'), 'value');
+    expect(stringOrEmpty(42), '42');
+    expect(stringOrEmpty(true), 'true');
+    expect(stringOrEmpty(null), '');
+  });
+
   group('flexibleBool', () {
     test('returns bool as-is', () {
       expect(flexibleBool(true), isTrue);
@@ -210,6 +225,33 @@ void main() {
     test('returns null for null and empty input', () {
       expect(flexibleCsvStringList(null), isNull);
       expect(flexibleCsvStringList(<dynamic>[]), isNull);
+    });
+  });
+
+  group('flexible JSON objects', () {
+    String parseId(Map<String, dynamic> json) => json['id'] as String;
+
+    test('list parser keeps valid siblings around malformed entries', () {
+      final parsed = parseFlexibleJsonList([
+        {'id': 'first'},
+        {'id': 2},
+        'not-a-map',
+        {'id': 'last'},
+      ], parseId);
+
+      expect(parsed, ['first', 'last']);
+    });
+
+    test('object parser finds the first map and contains parse failures', () {
+      expect(
+        parseFlexibleJsonObject([
+          'not-a-map',
+          {'id': 'value'},
+        ], parseId),
+        'value',
+      );
+      expect(parseFlexibleJsonObject({'id': 2}, parseId), isNull);
+      expect(parseFlexibleJsonObject(null, parseId), isNull);
     });
   });
 }

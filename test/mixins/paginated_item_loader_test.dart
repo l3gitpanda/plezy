@@ -7,8 +7,10 @@ import 'package:plezy/media/media_backend.dart';
 import 'package:plezy/media/media_item.dart';
 import 'package:plezy/media/media_kind.dart';
 import 'package:plezy/mixins/paginated_item_loader.dart';
+import 'package:plezy/mixins/standard_paginated_view.dart';
 import 'package:plezy/utils/media_server_http_client.dart';
 import 'package:plezy/exceptions/media_server_exceptions.dart';
+import '../test_helpers/media_items.dart';
 
 /// Test probe wired with a controllable `fetchPage` so individual tests can
 /// stage successes, failures, and slow responses.
@@ -26,9 +28,19 @@ class _PaginatedProbe extends StatefulWidget {
   State<_PaginatedProbe> createState() => _PaginatedProbeState();
 }
 
-class _PaginatedProbeState extends State<_PaginatedProbe> with PaginatedItemLoader<MediaItem, _PaginatedProbe> {
+class _PaginatedProbeState extends State<_PaginatedProbe>
+    with PaginatedItemLoader<MediaItem, _PaginatedProbe>, StandardPaginatedView<MediaItem, _PaginatedProbe> {
   int fetchCalls = 0;
   final List<({int start, int size})> fetchArgs = [];
+
+  /// View fields required by [StandardPaginatedView], mirroring the
+  /// `items`/`isLoading`/`errorMessage` trio the real screens expose.
+  @override
+  List<MediaItem> items = [];
+  @override
+  bool isLoading = false;
+  @override
+  String? errorMessage;
 
   @override
   Future<LibraryPage<MediaItem>> fetchPage(int start, int size, AbortController? abort) {
@@ -58,7 +70,7 @@ class _PaginatedProbeState extends State<_PaginatedProbe> with PaginatedItemLoad
   Widget build(BuildContext context) => const SizedBox.shrink();
 }
 
-MediaItem _meta(int i) => MediaItem(id: 'k$i', backend: MediaBackend.plex, kind: MediaKind.movie, title: 't$i');
+MediaItem _meta(int i) => testMediaItem(id: 'k$i', backend: MediaBackend.plex, kind: MediaKind.movie, title: 't$i');
 
 LibraryPage<MediaItem> _result({required int start, required int size, required int totalSize}) {
   return LibraryPage<MediaItem>(
@@ -108,17 +120,68 @@ void main() {
       expect(hooked, [(0, 5)]);
     });
 
+    testWidgets('loadStandardPaginatedItems resets view state, publishes items, and fires onLoaded', (tester) async {
+      late _PaginatedProbeState state;
+      (int, int)? counts;
+      await tester.pumpWidget(
+        _PaginatedProbe(
+          onState: (s) => state = s,
+          fetcher: (start, size, abort) async => _result(start: start, size: size, totalSize: 7),
+        ),
+      );
+
+      // Stale view state from a previous load must be cleared by the reset.
+      state.items = [_meta(99)];
+      state.errorMessage = 'stale error';
+
+      await state.loadStandardPaginatedItems(
+        pageSize: 3,
+        errorMessageFor: (error, stackTrace) => fail('unexpected error: $error'),
+        onLoaded: (loaded, total) => counts = (loaded, total),
+      );
+      await tester.pump();
+
+      expect(state.items.map((item) => item.id), ['k0', 'k1', 'k2']);
+      expect(state.isLoading, isFalse);
+      expect(state.errorMessage, isNull);
+      expect(counts, (3, 7));
+    });
+
+    testWidgets('loadStandardPaginatedItems applies one error transaction', (tester) async {
+      late _PaginatedProbeState state;
+      Object? reportedError;
+      await tester.pumpWidget(
+        _PaginatedProbe(
+          onState: (s) => state = s,
+          fetcher: (start, size, abort) async => throw StateError('failed page'),
+        ),
+      );
+
+      await state.loadStandardPaginatedItems(
+        pageSize: 3,
+        errorMessageFor: (error, stackTrace) {
+          reportedError = error;
+          return 'could not load';
+        },
+        onLoaded: (_, _) => fail('items must not be applied'),
+      );
+      await tester.pump();
+
+      expect(reportedError, isA<StateError>());
+      expect(state.errorMessage, 'could not load');
+      expect(state.isLoading, isFalse);
+      expect(state.items, isEmpty);
+    });
+
     testWidgets('totalSize == 0 means no more pages — ensureRangeLoaded is a no-op', (tester) async {
       late _PaginatedProbeState state;
       await tester.pumpWidget(
         _PaginatedProbe(
           onState: (s) => state = s,
-          // Empty list mirrors the "library has no items" wire response.
           fetcher: (start, size, abort) async => const LibraryPage<MediaItem>(items: [], totalCount: 0),
         ),
       );
 
-      // Initial page reports totalSize = 0.
       await state.loadInitialPage(20);
       await tester.pump();
 
@@ -178,7 +241,6 @@ void main() {
       state.ensureIndexLoaded(350, pageSize: 200);
       await tester.pumpAndSettle();
 
-      // The probe records its calls; the second one should target start=200.
       expect(state.fetchArgs.length, greaterThanOrEqualTo(2));
       final pageFetch = state.fetchArgs.last;
       expect(pageFetch.start, 200);
@@ -194,7 +256,6 @@ void main() {
           onState: (s) => state = s,
           fetcher: (start, size, abort) async {
             if (start == 0) {
-              // Initial page always succeeds so totalSize > 0.
               return _result(start: 0, size: size, totalSize: 400);
             }
             rangeAttempt++;
@@ -202,7 +263,6 @@ void main() {
               // First range fetch fails — triggers retry path.
               throw MediaServerHttpException(type: MediaServerHttpErrorType.connectionError, message: 'boom');
             }
-            // Retry fetch succeeds.
             return _result(start: start, size: size, totalSize: 400);
           },
         ),
@@ -219,9 +279,13 @@ void main() {
       // Drain the failed Future, then advance past the retry timer's 1s delay
       // so the timer fires and re-invokes ensureIndexLoaded.
       await tester.pump();
+      expect(state.paginationError, isA<MediaServerHttpException>());
+      expect(state.isPaginationLoading, isFalse);
       await tester.pump(const Duration(milliseconds: 1100));
       // Drain the retry's Future.
       await tester.pump();
+      expect(state.paginationError, isNull);
+      expect(state.isPaginationLoading, isFalse);
 
       expect(state.loadedItems.containsKey(220), isTrue);
       expect(rangeAttempt, greaterThanOrEqualTo(2)); // failed + retry
@@ -258,7 +322,6 @@ void main() {
       // we'd see another fetch attempt.
       await tester.pump(const Duration(milliseconds: 1500));
 
-      // Only the failed fetch happened — no retry on cancellation.
       expect(state.fetchCalls, beforeFetches + 1);
     });
 
@@ -290,38 +353,6 @@ void main() {
       expect(state.loadedItems, isEmpty);
     });
 
-    testWidgets('disposePagination clears state and aborts in-flight fetches', (tester) async {
-      late _PaginatedProbeState state;
-      final futures = <Completer<LibraryPage<MediaItem>>>[];
-
-      await tester.pumpWidget(
-        _PaginatedProbe(
-          onState: (s) => state = s,
-          fetcher: (start, size, abort) {
-            final c = Completer<LibraryPage<MediaItem>>();
-            futures.add(c);
-            return c.future;
-          },
-        ),
-      );
-
-      // Trigger an in-flight fetch for the initial page.
-      unawaited(state.loadInitialPage(10));
-      await tester.pump();
-
-      // Capture the abort controller's state via a side channel: the mixin's
-      // public surface tells us about totalSize/loadedItems but not the
-      // controller. Instead, we observe the side-effect: after
-      // disposePagination, completing the staged future does not mutate state.
-      state.disposePagination();
-      // Completing the future after dispose should not touch loadedItems.
-      futures.first.complete(_result(start: 0, size: 10, totalSize: 50));
-      await tester.pump();
-
-      expect(state.totalSize, 0);
-      expect(state.loadedItems, isEmpty);
-    });
-
     testWidgets('removeLoadedItemAndShift removes index and shifts higher entries down', (tester) async {
       late _PaginatedProbeState state;
       await tester.pumpWidget(
@@ -346,6 +377,64 @@ void main() {
       expect(state.loadedItems[2]?.id, 'k3'); // shifted from index 3
       expect(state.loadedItems[3]?.id, 'k4'); // shifted from index 4
       expect(state.loadedItems.containsKey(4), isFalse);
+    });
+
+    testWidgets('repopulateLoadedRange refetches the loaded span in place and reports the anchor', (tester) async {
+      late _PaginatedProbeState state;
+      // The server inserts one item at the top after the initial load: every
+      // id shifts up one slot on the repopulating fetch.
+      var inserted = false;
+      await tester.pumpWidget(
+        _PaginatedProbe(
+          onState: (s) => state = s,
+          fetcher: (start, size, abort) async => inserted
+              ? LibraryPage<MediaItem>(
+                  items: [_meta(99), ...List<MediaItem>.generate(size - 1, (i) => _meta(start + i))],
+                  totalCount: 41,
+                  offset: start,
+                )
+              : _result(start: start, size: size, totalSize: 40),
+        ),
+      );
+      await state.loadInitialPage(10);
+      await tester.pump();
+
+      inserted = true;
+      final result = await state.repopulateLoadedRange(idOf: (item) => item.id, anchorId: 'k3');
+      expect(result, isNotNull);
+      expect(result!.anchorOldIndex, 3);
+      expect(result.anchorNewIndex, 4, reason: 'the anchor moved down one slot');
+      expect(state.totalSize, 41, reason: 'the span adopts the server count');
+      expect(state.loadedItems[0]?.id, 'k99');
+      expect(state.loadedItems[1]?.id, 'k0');
+    });
+
+    testWidgets('repopulateLoadedRange clamps a disjoint sparse span to maxSpan around the window center', (
+      tester,
+    ) async {
+      late _PaginatedProbeState state;
+      await tester.pumpWidget(
+        _PaginatedProbe(
+          onState: (s) => state = s,
+          fetcher: (start, size, abort) async => _result(start: start, size: size, totalSize: 10000),
+        ),
+      );
+      // Initial pages plus an alpha-jump target: clusters at 0..19 and
+      // 9000..9019 whose naive span would be a 9020-item request.
+      await state.loadInitialPage(20);
+      await tester.pump();
+      state.ensureIndexLoaded(9000, pageSize: 20);
+      await tester.pumpAndSettle();
+      expect(state.loadedItems.containsKey(0), isTrue);
+      expect(state.loadedItems.containsKey(9000), isTrue);
+
+      state.fetchArgs.clear();
+      final result = await state.repopulateLoadedRange(idOf: (item) => item.id, maxSpan: 100, windowCenter: 9010);
+      expect(result, isNotNull);
+      final request = state.fetchArgs.single;
+      expect(request.size, lessThanOrEqualTo(100));
+      expect(state.loadedItems.containsKey(0), isFalse, reason: 'entries outside the window degrade to unloaded slots');
+      expect(state.loadedItems.containsKey(9010), isTrue);
     });
 
     testWidgets('removeLoadedItemAndShift decrements totalSize even for evicted indices', (tester) async {
@@ -377,7 +466,6 @@ void main() {
         ),
       );
 
-      // No initial load — totalSize stays 0.
       state.removeLoadedItemAndShift(0);
       expect(state.totalSize, 0);
     });

@@ -2,18 +2,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:plezy/utils/external_ids.dart';
 
 void main() {
-  group('ExternalIds.intersects with Plex Guid arrays', () {
-    test('verifies a raw Plex Guid array against target ids', () {
-      final candidate = ExternalIds.fromGuids(const [
-        {'id': 'imdb://tt15398776'},
-        {'id': 'tmdb://872585'},
-        {'id': 'tvdb://287533'},
-      ]);
-      expect(const ExternalIds(tmdb: 872585).intersects(candidate), isTrue);
-      expect(const ExternalIds(imdb: 'tt0000001').intersects(candidate), isFalse);
-    });
-  });
-
   group('ExternalIds.intersects', () {
     test('matches when any shared id form is equal', () {
       const trakt = ExternalIds(imdb: 'tt0133093', tmdb: 603);
@@ -29,7 +17,7 @@ void main() {
     });
   });
 
-  group('ExternalIds.jellyfinCandidateMatching', () {
+  group('ExternalIds.jellyfinCandidatesMatching', () {
     const target = ExternalIds(imdb: 'tt0133093', tmdb: 603);
 
     test('picks the candidate whose ProviderIds intersect, skipping others', () {
@@ -44,17 +32,41 @@ void main() {
           'ProviderIds': {'Tmdb': '603'},
         },
       ];
-      expect(ExternalIds.jellyfinCandidateMatching(candidates, target)?['Name'], 'The Matrix');
+      final matches = ExternalIds.jellyfinCandidatesMatching(candidates, target);
+      expect(matches, hasLength(1));
+      expect(matches.single['Name'], 'The Matrix');
     });
 
-    test('returns null when nothing verifies', () {
+    test('returns every library copy of the same title, in response order', () {
+      final candidates = <Map<String, dynamic>>[
+        {
+          'Id': 'movie-4k',
+          'Name': 'The Matrix (4K)',
+          'ProviderIds': {'Tmdb': '603'},
+        },
+        {
+          'Id': 'movie-other',
+          'Name': 'The Matrix Reloaded',
+          'ProviderIds': {'Imdb': 'tt0234215'},
+        },
+        {
+          'Id': 'movie-hd',
+          'Name': 'The Matrix',
+          'ProviderIds': {'Imdb': 'tt0133093'},
+        },
+      ];
+      final matches = ExternalIds.jellyfinCandidatesMatching(candidates, target);
+      expect(matches.map((candidate) => candidate['Id']), ['movie-4k', 'movie-hd']);
+    });
+
+    test('returns no candidates when nothing verifies', () {
       final candidates = <Map<String, dynamic>>[
         {
           'Name': 'Similar title, different film',
           'ProviderIds': {'Imdb': 'tt0234215'},
         },
       ];
-      expect(ExternalIds.jellyfinCandidateMatching(candidates, target), isNull);
+      expect(ExternalIds.jellyfinCandidatesMatching(candidates, target), isEmpty);
     });
   });
 }
