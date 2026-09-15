@@ -9,22 +9,23 @@ import '../../mixins/controller_disposer_mixin.dart';
 import '../../models/seerr/seerr_public_settings.dart';
 import '../../models/seerr/seerr_session.dart';
 import '../../providers/seerr_account_provider.dart';
-import '../../services/seerr/seerr_auth_service.dart';
 import '../../services/seerr/seerr_constants.dart';
 import '../../services/seerr/seerr_exceptions.dart';
 import '../../theme/mono_tokens.dart';
 import '../../widgets/app_icon.dart';
 import '../../widgets/focused_scroll_scaffold.dart';
 import '../../widgets/loading_indicator_box.dart';
+import '../../widgets/quick_connect_code_panel.dart';
 import 'async_form_state_mixin.dart';
+import 'quick_connect_flow_mixin.dart';
 
 /// Which credential form is on screen after the probe.
 enum _CredentialForm { none, jellyfin, emby, local }
 
 /// Two-step Seerr connect flow:
-///   1. Probe the instance URL (`/settings/public`), expanding schemeless
-///      input into https/http/default-port candidates like the MediaBrowser
-///      add-server form.
+///   1. Probe the instance URL (`/settings/public`), racing https/http/default
+///      port candidates for schemeless input like the MediaBrowser add-server
+///      form, but never settling on plaintext while TLS may still answer.
 ///   2. Sign in with one of the methods the instance supports — one-tap
 ///      Plex (reusing the profile's stored token), Jellyfin/Emby
 ///      credentials, Jellyfin Quick Connect (Seerr 3.4+), or a local Seerr
@@ -39,7 +40,8 @@ class SeerrConnectScreen extends StatefulWidget {
   State<SeerrConnectScreen> createState() => _SeerrConnectScreenState();
 }
 
-class _SeerrConnectScreenState extends State<SeerrConnectScreen> with AsyncFormStateMixin, ControllerDisposerMixin {
+class _SeerrConnectScreenState extends State<SeerrConnectScreen>
+    with AsyncFormStateMixin, QuickConnectFlowMixin, ControllerDisposerMixin {
   late final _urlController = createTextEditingController();
   late final _identifierController = createTextEditingController();
   late final _passwordController = createTextEditingController();
@@ -56,16 +58,12 @@ class _SeerrConnectScreenState extends State<SeerrConnectScreen> with AsyncFormS
   String _baseUrl = '';
   bool _plexTokenAvailable = false;
   _CredentialForm _form = _CredentialForm.none;
-  SeerrQuickConnectInitiation? _qcInitiation;
-  bool _qcCancelled = false;
-  int _qcAttemptId = 0;
 
   @override
   void dispose() {
     // Short-circuit any in-flight Quick Connect poll so it doesn't try to
     // setState after the widget is gone.
-    _qcCancelled = true;
-    _qcAttemptId++;
+    endQuickConnectFlow();
     _urlFocus.dispose();
     _continueFocus.dispose();
     _changeServerFocus.dispose();
@@ -102,8 +100,9 @@ class _SeerrConnectScreenState extends State<SeerrConnectScreen> with AsyncFormS
     }
     await runAsync<void>(() async {
       final account = context.read<SeerrAccountProvider>();
-      // Bare hosts are common ("seerr.example.com") — race https, plain http
-      // and the default install port, like the MediaBrowser add-server form.
+      // Schemeless input is common ("seerr.example.com", "192.168.1.5:5055"):
+      // race https, plain http, and the default install port instead of
+      // assuming https and failing every plain-HTTP LAN instance.
       final reached = await account.authService.probeFirstReachable(input);
       final settings = reached.settings;
       final plexToken = await account.resolvePlexToken();
@@ -162,60 +161,45 @@ class _SeerrConnectScreenState extends State<SeerrConnectScreen> with AsyncFormS
     }, errorMapper: _describeError);
   }
 
+  /// Jellyfin Quick Connect, proxied by the instance (Seerr 3.4+). Deliberately
+  /// not auto-started on TV the way the MediaBrowser add-server screen does:
+  /// `/settings/public` exposes no "Quick Connect enabled" flag, so auto-firing
+  /// would blind-hit instances that cannot serve it.
   Future<void> _startQuickConnect() async {
-    final attemptId = ++_qcAttemptId;
-    setState(() => _qcCancelled = false);
+    final attemptId = beginQuickConnectAttempt();
     await runAsync<void>(
       () async {
         final account = context.read<SeerrAccountProvider>();
         final initiation = await account.authService.initiateQuickConnect(_baseUrl);
-        if (!_isCurrentQuickConnectAttempt(attemptId)) return;
+        if (!isCurrentQuickConnectAttempt(attemptId)) return;
         // Show the waiting panel without a spinner — opt out of busy mid-flow
         // so the visible state matches "we're polling, nothing for you to do".
-        setState(() => _qcInitiation = initiation);
-        _requestFocusAfterFrame(_cancelQuickConnectFocus);
+        showQuickConnectCode(initiation.code);
+        requestFocusAfterFrame(_cancelQuickConnectFocus);
         setBusy(false);
 
         final session = await account.authService.signInWithQuickConnect(
           baseUrl: _baseUrl,
           secret: initiation.secret,
-          shouldCancel: () => _qcCancelled || attemptId != _qcAttemptId,
+          shouldCancel: () => quickConnectAborted(attemptId),
         );
-        if (!_isCurrentQuickConnectAttempt(attemptId)) return;
+        if (!isCurrentQuickConnectAttempt(attemptId)) return;
         if (session == null) {
           // Either the user cancelled or the secret expired before approval.
           // Cancellation is silent; expiry surfaces an error.
-          setState(() => _qcInitiation = null);
-          if (!_qcCancelled) setErrorText(t.auth.quickConnectExpired);
+          hideQuickConnectCode();
+          if (!quickConnectCancelled) setErrorText(t.auth.quickConnectExpired);
           return;
         }
         await _finish(account, session);
       },
       errorMapper: _describeError,
-      shouldApplyState: () => attemptId == _qcAttemptId,
+      shouldApplyState: () => isCurrentQuickConnectAttempt(attemptId),
     );
     // Clear the QC panel after any error so the form re-shows.
-    if (_isCurrentQuickConnectAttempt(attemptId) && errorText != null && _qcInitiation != null) {
-      setState(() => _qcInitiation = null);
+    if (isCurrentQuickConnectAttempt(attemptId) && errorText != null && quickConnectCode != null) {
+      hideQuickConnectCode();
     }
-  }
-
-  bool _isCurrentQuickConnectAttempt(int attemptId) => mounted && attemptId == _qcAttemptId;
-
-  void _cancelQuickConnect() {
-    _qcAttemptId++;
-    setState(() {
-      _qcCancelled = true;
-      _qcInitiation = null;
-    });
-    setBusy(false);
-  }
-
-  void _requestFocusAfterFrame(FocusNode node) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !node.canRequestFocus) return;
-      node.requestFocus();
-    });
   }
 
   Future<void> _finish(SeerrAccountProvider account, SeerrSession session) async {
@@ -230,6 +214,7 @@ class _SeerrConnectScreenState extends State<SeerrConnectScreen> with AsyncFormS
   String _describeError(Object e) => switch (e) {
     SeerrUrlException(:final message, :final display) => display ?? message,
     SeerrAuthException(:final message, :final display) => display ?? message,
+    SeerrProxyException(:final display) => display,
     _ => t.addServer.couldNotReachServer(error: e.toString()),
   };
 
@@ -239,12 +224,19 @@ class _SeerrConnectScreenState extends State<SeerrConnectScreen> with AsyncFormS
     return FocusedScrollScaffold(
       title: Text(t.seerr.connectTitle),
       slivers: [
-        if (_qcInitiation != null)
+        if (quickConnectCode != null)
           SliverFillRemaining(
             hasScrollBody: false,
             child: Padding(
               padding: EdgeInsets.fromLTRB(24, 24, 24, 24 + MediaQuery.paddingOf(context).bottom),
-              child: Center(child: _buildQuickConnectPanel(theme)),
+              child: Center(
+                child: QuickConnectCodePanel(
+                  code: quickConnectCode!,
+                  cancelFocusNode: _cancelQuickConnectFocus,
+                  onCancel: cancelQuickConnect,
+                  errorText: errorText,
+                ),
+              ),
             ),
           )
         else
@@ -404,9 +396,8 @@ class _SeerrConnectScreenState extends State<SeerrConnectScreen> with AsyncFormS
         ),
       ),
       const SizedBox(height: 12),
-      // Seerr proxies Jellyfin Quick Connect from 3.4 on — and only for
-      // Jellyfin: the server rejects it for Emby. Older instances answer the
-      // initiate with a 404 the error text surfaces.
+      // Seerr proxies Jellyfin Quick Connect from 3.4 on, and only for
+      // Jellyfin — it rejects the routes for an Emby-backed instance.
       if (_form == _CredentialForm.jellyfin) ...[
         FocusableButton(
           focusNode: _quickConnectFocus,
@@ -421,62 +412,6 @@ class _SeerrConnectScreenState extends State<SeerrConnectScreen> with AsyncFormS
         const SizedBox(height: 12),
       ],
     ];
-  }
-
-  Widget _buildQuickConnectPanel(ThemeData theme) {
-    final code = _qcInitiation!.code;
-    final muted = theme.colorScheme.onSurface.withValues(alpha: 0.7);
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 420),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            t.auth.quickConnectInstructions,
-            textAlign: TextAlign.center,
-            style: theme.textTheme.bodyLarge?.copyWith(color: muted),
-          ),
-          const SizedBox(height: 32),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Padding(
-              // letterSpacing adds a trailing gap after the last glyph;
-              // matching left padding keeps the code optically centered.
-              padding: const EdgeInsets.only(left: 12),
-              child: Text(
-                code,
-                style: theme.textTheme.displayLarge?.copyWith(
-                  fontFamily: 'monospace',
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 12,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 32),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const LoadingIndicatorBox(size: 16),
-              const SizedBox(width: 10),
-              Text(t.auth.quickConnectWaiting, style: theme.textTheme.bodyMedium?.copyWith(color: muted)),
-            ],
-          ),
-          const SizedBox(height: 32),
-          FocusableButton(
-            focusNode: _cancelQuickConnectFocus,
-            useBackgroundFocus: true,
-            onPressed: _cancelQuickConnect,
-            child: OutlinedButton.icon(
-              onPressed: _cancelQuickConnect,
-              icon: const AppIcon(Symbols.close_rounded, fill: 1),
-              label: Text(t.auth.quickConnectCancel),
-            ),
-          ),
-          ...buildInlineError(theme, gap: 16, center: true),
-        ],
-      ),
-    );
   }
 
   Widget _buildInstanceCard(ThemeData theme, SeerrPublicSettings instance) {

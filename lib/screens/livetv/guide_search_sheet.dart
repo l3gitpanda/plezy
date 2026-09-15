@@ -16,12 +16,14 @@ import '../../services/companion_remote/companion_remote_receiver.dart';
 import '../../utils/app_logger.dart';
 import '../../utils/formatters.dart';
 import '../../utils/live_tv_matching.dart';
+import '../../utils/tone_mapped_logo_image.dart';
 import '../../widgets/app_icon.dart';
 import '../../widgets/bottom_sheet_header.dart';
 import '../../widgets/focusable_list_tile.dart';
 import '../../widgets/optimized_media_image.dart';
 import '../../widgets/overlay_sheet.dart';
 import '../../widgets/pill_input_decoration.dart';
+import 'live_tv_server_iteration.dart';
 
 /// Search sheet for the Live TV guide: filters channels and the next 24 hours
 /// of programs in memory; selecting a result jumps to it in the guide grid.
@@ -93,18 +95,22 @@ class _GuideSearchSheetState extends State<GuideSearchSheet> with ControllerDisp
     final from = now.subtract(const Duration(hours: 1));
     final to = now.add(_scheduleWindow);
     final fetched = <LiveTvProgram>[];
-    final queriedServers = <String>{};
 
-    for (final serverInfo in multiServer.liveTvServers) {
-      if (!queriedServers.add(serverInfo.serverId)) continue;
-      try {
-        final client = multiServer.getClientForServer(ServerId(serverInfo.serverId));
-        if (client == null) continue;
+    await forEachLiveTvServer(
+      multiServer,
+      resolveClient: multiServer.getClientForServer,
+      isCurrent: () => mounted,
+      body: (client, serverInfo) async {
         fetched.addAll(await client.liveTv.fetchSchedule(from: from, to: to));
-      } catch (e) {
-        appLogger.e('Guide search: failed to load programs from server ${serverInfo.serverId}', error: e);
-      }
-    }
+      },
+      onError: (client, serverInfo, error, stackTrace) {
+        appLogger.e(
+          'Guide search: failed to load programs from server ${serverInfo.serverId}',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      },
+    );
 
     if (!mounted) return;
 
@@ -205,8 +211,11 @@ class _GuideSearchSheetState extends State<GuideSearchSheet> with ControllerDisp
 
   @override
   Widget build(BuildContext context) {
+    // Deliberately fills the sheet's height cap instead of hugging content
+    // (same reason as SubtitleSearchSheet): the sheet is bottom-anchored and
+    // the field refilters on every keystroke, so a content-driven height
+    // would slide the field the user is typing in on every result change.
     return Column(
-      mainAxisSize: .min,
       children: [
         BottomSheetHeader(title: t.liveTv.searchGuide, icon: Symbols.search_rounded),
         Padding(
@@ -286,7 +295,17 @@ class _GuideSearchSheetState extends State<GuideSearchSheet> with ControllerDisp
         width: 40,
         height: 40,
         child: channel.thumb != null && client != null
-            ? OptimizedMediaImage.thumb(client: client, imagePath: channel.thumb, width: 40, height: 40, fit: .contain)
+            ? OptimizedMediaImage.thumb(
+                client: client,
+                imagePath: channel.thumb,
+                width: 40,
+                height: 40,
+                fit: .contain,
+                logoToneTarget: logoToneTargetFor(
+                  surface: Theme.of(context).colorScheme.surface,
+                  foreground: Theme.of(context).colorScheme.onSurface,
+                ),
+              )
             : Center(
                 child: AppIcon(Symbols.live_tv_rounded, fill: 1, color: Theme.of(context).colorScheme.onSurfaceVariant),
               ),
