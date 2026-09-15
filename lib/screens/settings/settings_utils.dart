@@ -1,5 +1,8 @@
+import 'dart:io';
+
 import 'package:flex_color_picker/flex_color_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import '../../focus/focusable_text_field.dart';
@@ -7,6 +10,8 @@ import '../../focus/input_mode_tracker.dart';
 import '../../i18n/strings.g.dart';
 import '../../services/settings_service.dart' as settings;
 import '../../utils/dialogs.dart';
+import '../../utils/app_logger.dart';
+import '../../utils/snackbar_helper.dart';
 import '../../widgets/app_icon.dart';
 import '../../widgets/dialog_action_button.dart';
 import '../../widgets/focusable_list_tile.dart';
@@ -38,6 +43,44 @@ typedef _SettingsDialogContentBuilder =
     );
 
 typedef _SettingsDialogActionsBuilder = List<Widget> Function(BuildContext dialogContext, StateSetter setDialogState);
+
+/// Reports a recoverable settings persistence failure without swallowing
+/// programming errors or other unexpected exception types.
+void showSettingsFailure(
+  BuildContext context, {
+  required String operation,
+  required Object error,
+  required StackTrace stackTrace,
+}) {
+  appLogger.e('$operation failed', error: error, stackTrace: stackTrace);
+  if (context.mounted) showErrorSnackBar(context, t.settings.saveFailed);
+}
+
+/// Runs [body] and reports the recoverable failures that every settings
+/// file/platform operation shares — [PlatformException], [FileSystemException]
+/// and the site-specific domain exception [E] — through [showSettingsFailure].
+/// Any other exception type is rethrown so programming errors are not swallowed.
+///
+/// [context] is resolved before [body] starts, so a failure that lands after the
+/// caller was disposed is still logged; only the snackbar is skipped. Returns
+/// `null` when the operation failed.
+Future<T?> guardSettingsOperation<T, E extends Object>(
+  BuildContext context, {
+  required String operation,
+  required Future<T> Function() body,
+}) async {
+  try {
+    return await body();
+  } on Object catch (error, stackTrace) {
+    if (error is! E && error is! PlatformException && error is! FileSystemException) rethrow;
+    if (context.mounted) {
+      showSettingsFailure(context, operation: operation, error: error, stackTrace: stackTrace);
+    } else {
+      appLogger.e('$operation failed', error: error, stackTrace: stackTrace);
+    }
+    return null;
+  }
+}
 
 void _showSettingsInputDialog({
   required BuildContext context,
@@ -89,8 +132,16 @@ class _SettingsInputDialogState extends State<_SettingsInputDialog> {
   }
 
   Future<void> _save() async {
-    final shouldClose = await widget.onSave(context);
-    if (shouldClose && mounted) Navigator.pop(context);
+    try {
+      final shouldClose = await widget.onSave(context);
+      if (shouldClose && mounted) Navigator.pop(context);
+    } on PlatformException catch (error, stackTrace) {
+      if (!mounted) return;
+      showSettingsFailure(context, operation: 'Settings input save', error: error, stackTrace: stackTrace);
+    } on FileSystemException catch (error, stackTrace) {
+      if (!mounted) return;
+      showSettingsFailure(context, operation: 'Settings input save', error: error, stackTrace: stackTrace);
+    }
   }
 
   @override
@@ -109,14 +160,18 @@ class _SettingsInputDialogState extends State<_SettingsInputDialog> {
 
 /// Shows a selection dialog with focusable rows for dpad/keyboard navigation.
 /// Used for settings with 5+ options (language, buffer size, etc.).
-Future<T?> showSelectionDialog<T>({
+///
+/// Returns the picked option, or null when the dialog was dismissed — the
+/// wrapper keeps a picked null *value* (e.g. a "same as default" option)
+/// distinguishable from dismissal.
+Future<DialogOption<T>?> showSelectionDialog<T>({
   required BuildContext context,
   required String title,
   required List<DialogOption<T>> options,
   required T currentValue,
 }) {
   final focusFirstItem = InputModeTracker.isKeyboardMode(context, listen: false);
-  return showScopedDialog<T>(
+  return showScopedDialog<DialogOption<T>>(
     context: context,
     builder: (dialogContext) => AlertDialog(
       title: Text(title),
@@ -136,7 +191,7 @@ Future<T?> showSelectionDialog<T>({
               subtitle: option.subtitle != null ? Text(option.subtitle!) : null,
               selected: selected,
               autofocus: focusFirstItem && selected,
-              onTap: () => Navigator.pop(dialogContext, option.value),
+              onTap: () => Navigator.pop(dialogContext, option),
             );
           }).toList(),
         ),
@@ -347,7 +402,16 @@ Future<void> _showColorInputDialogStandard({
     },
     actionButtons: const ColorPickerActionButtons(okButton: true, closeButton: true, dialogActionButtons: false),
   );
-  if (selected != initial) await onSave(colorToHex(selected));
+  if (selected == initial || !context.mounted) return;
+  try {
+    await onSave(colorToHex(selected));
+  } on PlatformException catch (error, stackTrace) {
+    if (!context.mounted) return;
+    showSettingsFailure(context, operation: 'Color setting save', error: error, stackTrace: stackTrace);
+  } on FileSystemException catch (error, stackTrace) {
+    if (!context.mounted) return;
+    showSettingsFailure(context, operation: 'Color setting save', error: error, stackTrace: stackTrace);
+  }
 }
 
 void _showColorInputDialogTV({
@@ -384,10 +448,19 @@ void showRegexInputDialog({
   final controller = TextEditingController(text: currentValue);
   String? errorText;
 
+  // A blank pattern compiles but matches every chapter title, so it is
+  // rejected like uncompilable input; "Reset to default" is the intentional
+  // way to clear the setting.
+  String? validationError(String value) =>
+      settings.SettingsService.isValidSkipPattern(value) ? null : t.settings.invalidRegex;
+
+  StateSetter? dialogState;
+
   _showSettingsInputDialog(
     context: context,
     title: title,
     contentBuilder: (_, _, setDialogState, saveFocusNode) {
+      dialogState = setDialogState;
       return FocusableTextField(
         controller: controller,
         decoration: InputDecoration(labelText: t.settings.regex, errorText: errorText),
@@ -395,14 +468,7 @@ void showRegexInputDialog({
         textInputAction: TextInputAction.done,
         onEditingComplete: () => saveFocusNode.requestFocus(),
         onChanged: (value) {
-          setDialogState(() {
-            try {
-              RegExp(value, caseSensitive: false);
-              errorText = null;
-            } catch (_) {
-              errorText = t.settings.invalidRegex;
-            }
-          });
+          setDialogState(() => errorText = validationError(value));
         },
       );
     },
@@ -416,7 +482,13 @@ void showRegexInputDialog({
       ),
     ],
     onSave: (_) async {
-      if (errorText != null) return false;
+      // Save is the persistence boundary: re-validate here so an
+      // already-persisted blank value cannot be saved back untouched.
+      final error = validationError(controller.text);
+      if (error != null) {
+        dialogState?.call(() => errorText = error);
+        return false;
+      }
       await onSave(controller.text);
       return true;
     },

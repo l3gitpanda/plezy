@@ -1,5 +1,5 @@
 <script lang="ts">
-  import ScrollReveal from './ScrollReveal.svelte';
+  import SectionHeader from './SectionHeader.svelte';
   import DevicePhoneIcon from '~icons/heroicons/device-phone-mobile-solid';
   import DeviceTabletIcon from '~icons/heroicons/device-tablet-solid';
   import DesktopIcon from '~icons/heroicons/computer-desktop-solid';
@@ -27,82 +27,79 @@
   type DeviceType = 'phone' | 'tablet' | 'desktop' | 'tv';
   type DeviceIconComponent = typeof DevicePhoneIcon | typeof DeviceTabletIcon | typeof DesktopIcon | typeof TvIcon;
 
-  const devices: { id: DeviceType; icon: DeviceIconComponent; label: string }[] = [
-    { id: 'phone', icon: DevicePhoneIcon, label: 'Phone' },
-    { id: 'tablet', icon: DeviceTabletIcon, label: 'Tablet' },
-    { id: 'desktop', icon: DesktopIcon, label: 'Desktop' },
-    { id: 'tv', icon: TvIcon, label: 'TV' },
-  ];
-
-  const phoneShots = [
-    { image: phoneHomeImage, alt: 'Plezy home screen' },
-    { image: phoneLibraryImage, alt: 'Plezy library view' },
-    { image: phoneMdImage, alt: 'Plezy media details' },
-    { image: phoneSearchImage, alt: 'Plezy search' },
-  ];
-
-  const tabletShots = [
-    { image: tabletHomeImage, alt: 'Plezy on tablet - home' },
-    { image: tabletLibraryImage, alt: 'Plezy on tablet - library' },
-    { image: tabletMdImage, alt: 'Plezy on tablet - media details' },
-    { image: tabletPlayerImage, alt: 'Plezy on tablet - video player' },
-  ];
-
-  const desktopShots = [
-    { image: desktopHomeImage, alt: 'Plezy on desktop - home' },
-    { image: desktopLibraryImage, alt: 'Plezy on desktop - library' },
-    { image: desktopMdImage, alt: 'Plezy on desktop - media details' },
-    { image: desktopPlayerImage, alt: 'Plezy on desktop - video player' },
-  ];
-
-  const tvShots = [
-    { image: tvHomeImage, alt: 'Plezy on TV - home' },
-    { image: tvLibraryImage, alt: 'Plezy on TV - library' },
-    { image: tvMdImage, alt: 'Plezy on TV - media details' },
-    { image: tvPlayerImage, alt: 'Plezy on TV - video player' },
-  ];
-
-  const screenshots: Record<
-    DeviceType,
+  const devices: {
+    id: DeviceType;
+    icon: DeviceIconComponent;
+    label: string;
+    sizes: string;
+    shots: { image: typeof phoneHomeImage; alt: string }[];
+  }[] = [
     {
-      shots: typeof phoneShots;
-      frameClass: string;
-      sizes: string;
-      ariaLabel: string;
-    }
-  > = {
-    phone: {
-      shots: phoneShots,
-      frameClass: 'phone-frame',
+      id: 'phone',
+      icon: DevicePhoneIcon,
+      label: 'Phone',
       sizes: '(min-width: 1024px) 214px, 187px',
-      ariaLabel: 'Phone screenshots',
+      shots: [
+        { image: phoneHomeImage, alt: 'Plezy home screen' },
+        { image: phoneLibraryImage, alt: 'Plezy library view' },
+        { image: phoneMdImage, alt: 'Plezy media details' },
+        { image: phoneSearchImage, alt: 'Plezy search' },
+      ],
     },
-    tablet: {
-      shots: tabletShots,
-      frameClass: 'tablet-frame',
+    {
+      id: 'tablet',
+      icon: DeviceTabletIcon,
+      label: 'Tablet',
       sizes: '(min-width: 1024px) 768px, 672px',
-      ariaLabel: 'Tablet screenshots',
+      shots: [
+        { image: tabletHomeImage, alt: 'Plezy on tablet - home' },
+        { image: tabletLibraryImage, alt: 'Plezy on tablet - library' },
+        { image: tabletMdImage, alt: 'Plezy on tablet - media details' },
+        { image: tabletPlayerImage, alt: 'Plezy on tablet - video player' },
+      ],
     },
-    desktop: {
-      shots: desktopShots,
-      frameClass: 'desktop-frame',
+    {
+      id: 'desktop',
+      icon: DesktopIcon,
+      label: 'Desktop',
       sizes: '(min-width: 1024px) 768px, 672px',
-      ariaLabel: 'Desktop screenshots',
+      shots: [
+        { image: desktopHomeImage, alt: 'Plezy on desktop - home' },
+        { image: desktopLibraryImage, alt: 'Plezy on desktop - library' },
+        { image: desktopMdImage, alt: 'Plezy on desktop - media details' },
+        { image: desktopPlayerImage, alt: 'Plezy on desktop - video player' },
+      ],
     },
-    tv: {
-      shots: tvShots,
-      frameClass: 'tv-frame',
+    {
+      id: 'tv',
+      icon: TvIcon,
+      label: 'TV',
       sizes: '(min-width: 1024px) 854px, 747px',
-      ariaLabel: 'TV screenshots',
+      shots: [
+        { image: tvHomeImage, alt: 'Plezy on TV - home' },
+        { image: tvLibraryImage, alt: 'Plezy on TV - library' },
+        { image: tvMdImage, alt: 'Plezy on TV - media details' },
+        { image: tvPlayerImage, alt: 'Plezy on TV - video player' },
+      ],
     },
-  };
+  ];
 
   let active: DeviceType = $state('phone');
+  let loaded: Record<DeviceType, boolean> = $state({
+    phone: true,
+    tablet: false,
+    desktop: false,
+    tv: false,
+  });
   let scrollContainer: HTMLElement | undefined = $state();
   let canScrollLeft = $state(false);
   let canScrollRight = $state(false);
   let intendedScrollLeft: number | undefined;
 
+  function selectDevice(device: DeviceType) {
+    loaded[device] = true;
+    active = device;
+  }
   function updateScrollState() {
     if (!scrollContainer) return;
     if (intendedScrollLeft !== undefined && Math.abs(scrollContainer.scrollLeft - intendedScrollLeft) < 2) {
@@ -134,11 +131,11 @@
     intendedScrollLeft = target;
     canScrollLeft = target > 10;
     canScrollRight = target < maxScroll - 10;
-    scrollContainer.scrollTo({ left: target, behavior: 'smooth' });
+    scrollContainer.scrollTo({ left: target });
   }
 
   $effect(() => {
-    // Re-check scroll state when active tab changes.
+    // Re-check scroll state after the active tab changes.
     const currentActive = active;
     const el = document.getElementById(`screenshots-${currentActive}-panel`);
 
@@ -146,7 +143,7 @@
     scrollContainer = el ?? undefined;
 
     if (el) {
-      // Double rAF ensures browser has computed layout after DOM update
+      // Double rAF waits for layout after the DOM update.
       const raf = requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           if (currentActive === active && el === scrollContainer) updateScrollState();
@@ -160,21 +157,21 @@
   });
 </script>
 
-<section id="screenshots" class="screenshots-section">
+<section id="screenshots" class="bleed-section">
   <div class="screenshots-header">
-    <ScrollReveal>
-      <p class="section-label">Preview</p>
-      <h2 class="section-heading">Designed with care</h2>
-      <p class="section-description">An experience that feels right at home on every device.</p>
-
+    <SectionHeader
+      label="Preview"
+      heading="Designed with care"
+      description="An experience that feels right at home on every device."
+      descriptionGap="2rem"
+    >
       <div class="screenshot-controls">
-        <!-- Device tabs -->
         <div class="device-tabs" role="group" aria-label="Screenshot device">
           {#each devices as device}
             {@const DeviceIcon = device.icon}
             <button
               type="button"
-              onclick={() => active = device.id}
+              onclick={() => selectDevice(device.id)}
               aria-pressed={active === device.id}
               aria-controls={`screenshots-${device.id}-panel`}
               aria-label={`Show ${device.label} screenshots`}
@@ -187,7 +184,6 @@
           {/each}
         </div>
 
-        <!-- Scroll arrows -->
         <div class="scroll-arrows">
           <button
             type="button"
@@ -211,16 +207,15 @@
           </button>
         </div>
       </div>
-    </ScrollReveal>
+    </SectionHeader>
   </div>
 
   <div class="screenshot-panels">
     {#each devices as device (device.id)}
-      {@const screenshot = screenshots[device.id]}
       <div
         id={`screenshots-${device.id}-panel`}
         role="region"
-        aria-label={screenshot.ariaLabel}
+        aria-label={`${device.label} screenshots`}
         aria-hidden={active !== device.id}
         class="screenshot-strip scrollbar-hide content-pad"
         class:panel-active={active === device.id}
@@ -228,66 +223,32 @@
           if (active === device.id) updateScrollState();
         }}
       >
-        {#each screenshot.shots as shot}
-          <div class="screenshot-item">
-            <div class={`screenshot-frame ${screenshot.frameClass}`}>
-              <enhanced:img
-                src={shot.image}
-                alt={shot.alt}
-                loading="eager"
-                class="screenshot-image"
-                sizes={screenshot.sizes}
-              />
+        {#if loaded[device.id]}
+          {#each device.shots as shot}
+            <div class="screenshot-item">
+              <div class={`screenshot-frame ${device.id}-frame`}>
+                <enhanced:img
+                  src={shot.image}
+                  alt={shot.alt}
+                  loading="lazy"
+                  class="screenshot-image"
+                  sizes={device.sizes}
+                />
+              </div>
             </div>
-          </div>
-        {/each}
+          {/each}
+        {/if}
       </div>
     {/each}
   </div>
 </section>
 
 <style>
-  .screenshots-section {
-    overflow: hidden;
-    padding-block: clamp(4rem, 9vw, 8rem);
-  }
-
   .screenshots-header {
     max-width: 64rem;
     margin-inline: auto;
     margin-bottom: clamp(2rem, 5vw, 3.5rem);
     padding-inline: 1.5rem;
-  }
-
-  .section-label {
-    width: fit-content;
-    margin-bottom: 1rem;
-    border-radius: var(--radius-full);
-    padding: 0.5rem 0.875rem;
-    color: var(--color-text-muted);
-    background: var(--color-surface);
-    font-size: 0.75rem;
-    font-weight: 700;
-    letter-spacing: 0.03em;
-  }
-
-  .section-heading {
-    max-width: 12ch;
-    margin-bottom: 1rem;
-    font-family: var(--font-display);
-    font-size: clamp(2.5rem, 7vw, 4.75rem);
-    font-weight: 700;
-    letter-spacing: -0.045em;
-    line-height: 1;
-    text-wrap: balance;
-  }
-
-  .section-description {
-    max-width: 34rem;
-    margin-bottom: 2rem;
-    color: var(--color-text-muted);
-    font-size: clamp(1rem, 2vw, 1.125rem);
-    line-height: 1.7;
   }
 
   .screenshot-controls {
@@ -334,7 +295,6 @@
   .device-button:not(.active):focus-visible {
     color: var(--color-text);
     background: rgb(237 237 237 / 0.12);
-    outline: none;
   }
 
   .device-button.active {
@@ -346,7 +306,6 @@
   .device-button.active:focus-visible {
     border-radius: var(--radius-md);
     background: #fff;
-    outline: none;
   }
 
   .device-button :global(svg),
@@ -389,7 +348,6 @@
   .scroll-arrow.enabled:focus-visible {
     border-radius: var(--radius-md);
     background: var(--color-surface-highest);
-    outline: none;
   }
 
   .screenshot-panels {
@@ -405,6 +363,7 @@
     width: 100%;
     gap: 1.25rem;
     overflow-x: auto;
+    scroll-behavior: smooth;
     padding-bottom: 1rem;
     opacity: 0;
     pointer-events: none;
