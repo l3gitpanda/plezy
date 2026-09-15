@@ -105,6 +105,12 @@ enum TranscodeFallbackReason {
 class PlaybackInitializationResult {
   final List<MediaVersion> availableVersions;
   final String? videoUrl;
+
+  /// Audio-only stream the player attaches alongside a video-only
+  /// [videoUrl] (mpv `audio-files`, ExoPlayer `MergingMediaSource`).
+  /// YouTube's full-resolution renditions ship video and audio as separate
+  /// files; media servers never set this.
+  final String? externalAudioUrl;
   final MediaSourceInfo? mediaInfo;
 
   /// Complete sidecar catalog for this source. Callers resolve the active
@@ -114,6 +120,15 @@ class PlaybackInitializationResult {
 
   /// `true` when [videoUrl] points at a backend transcoding stream.
   final bool isTranscoding;
+
+  /// `true` when [videoUrl] is a live HLS manifest — a sliding window with no
+  /// fixed duration — rather than a fixed-length file.
+  ///
+  /// Deliberately distinct from `VideoPlayerScreen.isLive`, which means a
+  /// Plex/Jellyfin tuner session and gates capture-buffer, channel-zapping
+  /// and timeline-heartbeat machinery that has no counterpart here. Only the
+  /// YouTube source sets this; every media-server resolver leaves it false.
+  final bool isLiveStream;
 
   /// Non-null when a non-original preset was requested but fallback kicked in.
   final TranscodeFallbackReason? fallbackReason;
@@ -155,10 +170,12 @@ class PlaybackInitializationResult {
   PlaybackInitializationResult({
     required this.availableVersions,
     this.videoUrl,
+    this.externalAudioUrl,
     this.mediaInfo,
     this.subtitleSidecars = const [],
     this.isOffline = false,
     this.isTranscoding = false,
+    this.isLiveStream = false,
     this.fallbackReason,
     this.activeAudioStreamId,
     this.playSessionId,

@@ -356,6 +356,22 @@ ResolveFrontendServer() {
   printf '%s\n' "$frontend_server"
 }
 
+# Dart defines the tvOS build needs beyond the per-mode ones.
+#
+# tvOS does not go through `flutter build`, so the --dart-define flags the
+# other platforms pass (build.yml, the fastlane lanes, scripts/release) never
+# reach this compile — they have to be handed to frontend_server directly.
+#
+# GIT_COMMIT is the one that matters off the release path: Settings > Logs
+# prints it beside the version, and pubspec's version is identical across every
+# build of a branch, so without it a sideloaded .ipa is indistinguishable from
+# the one it replaced.
+CommonDartDefines() {
+  if [[ -n "${GIT_COMMIT:-}" ]]; then
+    printf '%s\n' "-DGIT_COMMIT=$GIT_COMMIT"
+  fi
+}
+
 BuildAppDebug() {
   # Host tools (frontend_server, patched SDK, dartaotruntime) ship in
   # host_release for both debug and release consumers — the frontend_server
@@ -430,6 +446,7 @@ BuildAppDebug() {
     --sdk-root "$HOST_TOOLS/flutter_patched_sdk" \
     --tfa --target=flutter \
     -DTVOS_BUILD=true \
+    $(CommonDartDefines) \
     --output-dill "$OUTDIR/App.framework/flutter_assets/kernel_blob.bin" \
     "$FLUTTER_APPLICATION_PATH/lib/main.dart"
 
@@ -599,6 +616,7 @@ BuildAppRelease() {
     -DFLUTTER_BUILD_MODE=release \
     -DTARGET_PLATFORM=TVOS \
     -DTVOS_BUILD=true \
+    $(CommonDartDefines) \
     --output-dill "$OUTDIR/app.dill" \
     "$FLUTTER_APPLICATION_PATH/lib/main.dart"
 

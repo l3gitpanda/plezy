@@ -17,6 +17,7 @@ import '../media/media_library.dart';
 import '../mixins/mounted_set_state_mixin.dart';
 import '../navigation/navigation_tabs.dart';
 import '../providers/catalog_sources_provider.dart';
+import '../providers/yattee/yattee_account_provider.dart';
 import '../providers/hidden_libraries_provider.dart';
 import '../providers/libraries_provider.dart';
 import '../services/device_performance.dart';
@@ -467,6 +468,7 @@ class SideNavigationRailState extends State<SideNavigationRail> with MountedSetS
 
   static const _kHome = 'home';
   static const _kExplore = 'explore';
+  static const _kYouTube = 'youTube';
   static const _kNowPlaying = 'nowPlaying';
   static const _kLibraries = 'libraries';
   static const _kSearch = 'search';
@@ -614,6 +616,8 @@ class SideNavigationRailState extends State<SideNavigationRail> with MountedSetS
         return _kHome;
       case NavigationTabId.explore:
         return _kExplore;
+      case NavigationTabId.youTube:
+        return _kYouTube;
       case NavigationTabId.libraries:
         final libKey = widget.selectedLibraryKey;
         if (libKey != null && _librariesExpanded) {
@@ -665,12 +669,14 @@ class SideNavigationRailState extends State<SideNavigationRail> with MountedSetS
     required bool hasLiveTv,
     required bool hasNowPlaying,
     required bool hasExplore,
+    required bool hasYouTube,
   }) {
     return {
       _kHome,
       if (hasNowPlaying) _kNowPlaying,
       _kLibraries,
       if (hasExplore) _kExplore,
+      if (hasYouTube) _kYouTube,
       _kSearch,
       if (_showDownloads) _kDownloads,
       _kSettings,
@@ -746,6 +752,7 @@ class SideNavigationRailState extends State<SideNavigationRail> with MountedSetS
     required bool hasLiveTv,
     required bool hasNowPlaying,
     required bool hasExplore,
+    required bool hasYouTube,
     required bool isCollapsed,
   }) {
     return [
@@ -766,6 +773,7 @@ class SideNavigationRailState extends State<SideNavigationRail> with MountedSetS
         ],
         if (hasLiveTv) 'liveTv',
         if (hasExplore) _kExplore,
+        if (hasYouTube) _kYouTube,
         _kSearch,
       ],
       if (_showDownloads) _kDownloads,
@@ -872,6 +880,9 @@ class SideNavigationRailState extends State<SideNavigationRail> with MountedSetS
     // Nullable watch: rail tests (and any host without the profile session
     // scope) simply never show the Explore item.
     final hasExploreSource = context.watch<CatalogSourcesProvider?>()?.hasAnySource ?? false;
+    // Nullable watch for the same reason: hosts without the profile session
+    // scope never show the YouTube item.
+    final hasYouTube = context.watch<YatteeAccountProvider?>()?.isConnected ?? false;
     // Nullable watch: rail tests (and any host without the profile session
     // scope) simply never show the Now Playing item. TV-only — it is the
     // way back into the now-playing screen there; desktop already has the
@@ -915,6 +926,7 @@ class SideNavigationRailState extends State<SideNavigationRail> with MountedSetS
             hasLiveTv: hasLiveTv,
             hasNowPlaying: nowPlayingTrack != null,
             hasExplore: hasExplore,
+            hasYouTube: hasYouTube,
           ),
         );
         final focusOrder = _buildFocusOrder(
@@ -924,6 +936,7 @@ class SideNavigationRailState extends State<SideNavigationRail> with MountedSetS
           hasLiveTv: hasLiveTv,
           hasNowPlaying: nowPlayingTrack != null,
           hasExplore: hasExplore,
+          hasYouTube: hasYouTube,
           isCollapsed: isCollapsed,
         );
         _debugAssertUniqueFocusOrder(focusOrder);
@@ -1049,6 +1062,18 @@ class SideNavigationRailState extends State<SideNavigationRail> with MountedSetS
                                           isSelected: widget.selectedTab == NavigationTabId.explore,
                                           onTap: () => widget.onDestinationSelected(NavigationTabId.explore),
                                           focusNode: _focusTracker.get(_kExplore),
+                                          isCollapsed: isCollapsed,
+                                        ),
+                                        const SizedBox(height: _itemGap),
+                                      ],
+                                      if (hasYouTube) ...[
+                                        _buildNavItem(
+                                          icon: Symbols.smart_display_rounded,
+                                          selectedIcon: Symbols.smart_display_rounded,
+                                          label: Translations.of(context).navigation.youTube,
+                                          isSelected: widget.selectedTab == NavigationTabId.youTube,
+                                          onTap: () => widget.onDestinationSelected(NavigationTabId.youTube),
+                                          focusNode: _focusTracker.get(_kYouTube),
                                           isCollapsed: isCollapsed,
                                         ),
                                         const SizedBox(height: _itemGap),

@@ -73,6 +73,8 @@ class ExoPlayerPlugin :
     var autoPlay: Boolean,
     val isLive: Boolean,
     val externalSubtitles: List<Map<String, Any?>>?,
+    /** Separate audio-only stream to play in sync with a video-only [uri] (YouTube adaptive formats). */
+    val externalAudioUri: String?,
     val contentFrameRate: Float,
     private val result: MethodChannel.Result?
   ) {
@@ -148,6 +150,7 @@ class ExoPlayerPlugin :
   // last configured value or it loses the fork's P7/P5 handling entirely.
   private var dvConversionMode = "auto"
   private var currentExternalSubtitles: List<Map<String, Any?>>? = null
+  private var currentExternalAudioUri: String? = null
 
   // FlutterPlugin
 
@@ -181,6 +184,7 @@ class ExoPlayerPlugin :
     inFlightOpen?.error("NOT_INITIALIZED", "Player session ended before media could open")
     inFlightOpen = null
     currentExternalSubtitles = null
+    currentExternalAudioUri = null
     pendingMpvProperties.clear()
     audioPassthroughRequested = false
     dvConversionMode = "auto"
@@ -398,6 +402,7 @@ class ExoPlayerPlugin :
     val autoPlay = call.argument<Boolean>("autoPlay") ?: true
     val isLive = call.argument<Boolean>("isLive") ?: false
     val externalSubtitles = call.argument<List<Map<String, Any?>>>("externalSubtitles")
+    val externalAudioUri = call.argument<String>("externalAudioUri")?.takeIf { it.isNotBlank() }
     // Server-reported frame rate for this item; -1 when the metadata did not carry one.
     val contentFrameRate = call.argument<Number>("contentFrameRate")?.toFloat() ?: -1f
 
@@ -420,11 +425,13 @@ class ExoPlayerPlugin :
       autoPlay = autoPlay,
       isLive = isLive,
       externalSubtitles = externalSubtitles?.map { it.toMap() },
+      externalAudioUri = externalAudioUri,
       contentFrameRate = contentFrameRate,
       result = result
     )
     terminalEventGeneration = null
     currentExternalSubtitles = request.externalSubtitles
+    currentExternalAudioUri = request.externalAudioUri
 
     if (fallbackInProgress) {
       pendingOpen?.let(::completeSupersededOpen)
@@ -481,6 +488,7 @@ class ExoPlayerPlugin :
         mediaGeneration = request.mediaGeneration,
         isLive = isLive,
         externalSubtitleList = request.externalSubtitles,
+        externalAudioUri = request.externalAudioUri,
         contentFrameRate = request.contentFrameRate
       )
       request.success()
@@ -495,6 +503,7 @@ class ExoPlayerPlugin :
     hasStartPosition: Boolean,
     autoPlay: Boolean,
     externalSubtitles: List<Map<String, Any?>>?,
+    externalAudioUri: String?,
     onComplete: (Boolean) -> Unit
   ) {
     val startSeconds = startPositionMs / 1000.0
@@ -504,6 +513,7 @@ class ExoPlayerPlugin :
     options.add("sid=no")
     options.add("secondary-sid=no")
     appendExternalSubtitleOptions(options, externalSubtitles)
+    appendExternalAudioOption(options, externalAudioUri)
     appendHttpHeaderOptions(options, headers)
     val optionsStr = options.joinToString(",")
     core.command(arrayOf("loadfile", uri, "replace", "-1", optionsStr), onComplete)
@@ -755,7 +765,8 @@ class ExoPlayerPlugin :
         startPositionMs = request.startPositionMs,
         hasStartPosition = request.hasStartPosition,
         autoPlay = request.autoPlay,
-        externalSubtitles = request.externalSubtitles
+        externalSubtitles = request.externalSubtitles,
+        externalAudioUri = request.externalAudioUri
       ) { success ->
         if (!settled.compareAndSet(false, true)) {
           if (!success) source.closeIfUnused()
@@ -1316,6 +1327,17 @@ class ExoPlayerPlugin :
 
   private fun escapeMpvPathListEntry(value: String): String = value.replace("\\", "\\\\").replace(":", "\\:")
 
+  /**
+   * `audio-files=` twin of [appendExternalSubtitleOptions]: a separate audio-only stream mpv
+   * demuxes and plays in sync with the video-only main file. File-local so it cannot leak into
+   * the next open.
+   */
+  private fun appendExternalAudioOption(options: MutableList<String>, externalAudioUri: String?) {
+    val uri = externalAudioUri?.takeIf { it.isNotBlank() } ?: return
+    val escaped = escapeMpvPathListEntry(uri)
+    options.add("audio-files=%${escaped.toByteArray(Charsets.UTF_8).size}%$escaped")
+  }
+
   private fun appendHttpHeaderOptions(options: MutableList<String>, headers: Map<String, String>?) {
     if (headers.isNullOrEmpty()) return
 
@@ -1452,6 +1474,7 @@ class ExoPlayerPlugin :
       autoPlay = playWhenReady,
       isLive = false,
       externalSubtitles = currentExternalSubtitles?.map { it.toMap() },
+      externalAudioUri = currentExternalAudioUri,
       // The mpv fallback core paces frames itself; the rate only gates ExoPlayer tunneling.
       contentFrameRate = -1f,
       result = null
