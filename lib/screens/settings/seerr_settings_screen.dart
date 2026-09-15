@@ -9,6 +9,7 @@ import '../../models/seerr/seerr_session.dart';
 import '../../providers/seerr_account_provider.dart';
 import '../../utils/dialogs.dart';
 import '../../widgets/app_icon.dart';
+import '../../widgets/focusable_list_tile.dart';
 import '../../widgets/settings_page.dart';
 import '../../widgets/settings_section.dart';
 
@@ -50,6 +51,7 @@ class SeerrSettingsScreen extends StatelessWidget {
           SeerrAuthMethod.jellyfin => 'Jellyfin',
           SeerrAuthMethod.emby => 'Emby',
           SeerrAuthMethod.local => t.seerr.email,
+          SeerrAuthMethod.quickConnect => t.auth.quickConnect,
         };
         return SettingsPage(
           title: Text(t.seerr.title),
@@ -71,7 +73,7 @@ class SeerrSettingsScreen extends StatelessWidget {
             const SizedBox(height: 24),
             SettingsGroup(
               children: [
-                ListTile(
+                FocusableListTile(
                   leading: AppIcon(Symbols.link_off_rounded, fill: 1, color: Theme.of(context).colorScheme.error),
                   title: Text(t.common.disconnect, style: TextStyle(color: Theme.of(context).colorScheme.error)),
                   onTap: () => unawaited(_disconnect(context, account)),

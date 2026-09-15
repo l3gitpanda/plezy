@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../../../i18n/strings.g.dart';
 import '../../../media/media_item.dart';
+import '../../../media/media_item_labels.dart';
 import '../../../media/media_item_types.dart';
 import '../../../providers/playback_state_provider.dart';
 import '../../../services/settings_service.dart';
@@ -52,14 +53,19 @@ class _QueueSheetState extends State<QueueSheet> {
 
           Widget content;
           if (items.isEmpty) {
-            content = Center(
-              child: Text(t.videoControls.noQueueItems, style: TextStyle(color: tokens(context).textMuted)),
+            content = Padding(
+              padding: const EdgeInsets.symmetric(vertical: 32),
+              child: Center(
+                heightFactor: 1,
+                child: Text(t.videoControls.noQueueItems, style: TextStyle(color: tokens(context).textMuted)),
+              ),
             );
           } else {
             final currentIndex = items.indexWhere((item) => playbackState.playQueueItemIdFor(item) == currentItemID);
             _initialScroll.maybeScrollTo(currentIndex);
 
             content = ListView.builder(
+              shrinkWrap: true,
               controller: _initialScroll.controller,
               itemCount: items.length,
               itemBuilder: (context, index) {
@@ -80,7 +86,7 @@ class _QueueSheetState extends State<QueueSheet> {
                     overflow: .ellipsis,
                   ),
                   subtitle: Text(
-                    _buildSubtitle(item),
+                    formatQueueItemSubtitle(item),
                     style: TextStyle(
                       color: isCurrent ? primaryColor.withValues(alpha: 0.7) : tokens(context).textMuted,
                       fontSize: 12,
@@ -126,19 +132,5 @@ class _QueueSheetState extends State<QueueSheet> {
       borderColor: Theme.of(context).colorScheme.primary,
       blurThumbnail: hideSpoilers && item.shouldHideSpoiler,
     );
-  }
-
-  String _buildSubtitle(MediaItem item) {
-    if (item.grandparentTitle != null && item.parentIndex != null && item.index != null) {
-      return '${item.grandparentTitle} \u00b7 S${item.parentIndex}E${item.index}';
-    }
-    if (item.grandparentTitle != null) {
-      return item.grandparentTitle!;
-    }
-    if (item.year != null) {
-      final edition = item.editionTitle;
-      return edition != null ? '${item.year} · $edition' : '${item.year}';
-    }
-    return item.kind.name;
   }
 }

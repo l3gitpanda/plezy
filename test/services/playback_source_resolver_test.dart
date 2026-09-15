@@ -3,7 +3,7 @@ import 'package:plezy/media/ids.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:plezy/database/app_database.dart';
 import 'package:plezy/media/media_backend.dart';
-import 'package:plezy/media/media_item.dart';
+
 import 'package:plezy/media/media_kind.dart';
 import 'package:plezy/media/media_server_client.dart';
 import 'package:plezy/models/transcode_quality_preset.dart';
@@ -11,6 +11,7 @@ import 'package:plezy/services/multi_server_manager.dart';
 import 'package:plezy/services/playback_context.dart';
 import 'package:plezy/services/playback_initialization_types.dart';
 import 'package:plezy/services/playback_source_resolver.dart';
+import '../test_helpers/media_items.dart';
 
 class _PlaybackClient implements MediaServerClient {
   _PlaybackClient({this.clientBackend = MediaBackend.plex, PlaybackInitializationResult? result})
@@ -56,15 +57,45 @@ void main() {
     manager.debugRegisterClientForTesting(client, online: false);
 
     final context = await PlaybackSourceResolver(serverManager: manager, database: db).resolve(
-      metadata: MediaItem(id: 'item-1', backend: MediaBackend.plex, kind: MediaKind.movie, serverId: 'srv'),
-      selectedMediaIndex: 0,
+      PlaybackInitializationOptions(
+        metadata: testMediaItem(id: 'item-1', backend: MediaBackend.plex, kind: MediaKind.movie, serverId: 'srv'),
+        selectedMediaIndex: 0,
+        qualityPreset: TranscodeQualityPreset.original,
+      ),
       offlineLibraryMode: false,
-      qualityPreset: TranscodeQualityPreset.original,
     );
 
     expect(context.result.videoUrl, 'https://example.com/video.mp4');
     expect(context.reportingClient, same(client));
     expect(context.reportingMode, PlaybackReportingMode.online);
+  });
+
+  test('offline launch cannot fall through to a live server when the download is missing', () async {
+    final db = AppDatabase.forTesting(NativeDatabase.memory());
+    final manager = MultiServerManager();
+    addTearDown(() async {
+      manager.dispose();
+      await db.close();
+    });
+    manager.debugRegisterClientForTesting(_PlaybackClient(), online: true);
+    await expectLater(
+      PlaybackSourceResolver(serverManager: manager, database: db).resolve(
+        PlaybackInitializationOptions(
+          metadata: testMediaItem(
+            id: 'missing-download',
+            backend: MediaBackend.plex,
+            kind: MediaKind.movie,
+            serverId: 'srv',
+          ),
+          selectedMediaIndex: 0,
+          qualityPreset: TranscodeQualityPreset.original,
+        ),
+        offlineLibraryMode: true,
+      ),
+      throwsA(
+        isA<PlaybackException>().having((error) => error.reason, 'reason', PlaybackFailureReason.noPlayableSource),
+      ),
+    );
   });
 
   test('plex direct playback adds playback session header to stream headers', () async {
@@ -79,11 +110,13 @@ void main() {
     manager.debugRegisterClientForTesting(client, online: true);
 
     final context = await PlaybackSourceResolver(serverManager: manager, database: db).resolve(
-      metadata: MediaItem(id: 'item-1', backend: MediaBackend.plex, kind: MediaKind.movie, serverId: 'srv'),
-      selectedMediaIndex: 0,
+      PlaybackInitializationOptions(
+        metadata: testMediaItem(id: 'item-1', backend: MediaBackend.plex, kind: MediaKind.movie, serverId: 'srv'),
+        selectedMediaIndex: 0,
+        qualityPreset: TranscodeQualityPreset.original,
+        sessionIdentifier: 'playback-session-id',
+      ),
       offlineLibraryMode: false,
-      qualityPreset: TranscodeQualityPreset.original,
-      sessionIdentifier: 'playback-session-id',
     );
 
     expect(context.sourceKind, PlaybackSourceKind.remoteDirect);
@@ -103,11 +136,13 @@ void main() {
     manager.debugRegisterClientForTesting(client, online: true);
 
     final context = await PlaybackSourceResolver(serverManager: manager, database: db).resolve(
-      metadata: MediaItem(id: 'item-1', backend: MediaBackend.jellyfin, kind: MediaKind.movie, serverId: 'srv'),
-      selectedMediaIndex: 0,
+      PlaybackInitializationOptions(
+        metadata: testMediaItem(id: 'item-1', backend: MediaBackend.jellyfin, kind: MediaKind.movie, serverId: 'srv'),
+        selectedMediaIndex: 0,
+        qualityPreset: TranscodeQualityPreset.original,
+        sessionIdentifier: 'playback-session-id',
+      ),
       offlineLibraryMode: false,
-      qualityPreset: TranscodeQualityPreset.original,
-      sessionIdentifier: 'playback-session-id',
     );
 
     expect(context.sourceKind, PlaybackSourceKind.remoteDirect);

@@ -1,10 +1,10 @@
 import 'dart:async';
 import '../media/ids.dart';
-import 'dart:io';
 import 'package:flutter/foundation.dart';
 import '../i18n/strings.g.dart';
 import '../media/media_backend.dart';
 import '../media/media_item.dart';
+import '../media/media_item_merge.dart';
 import '../media/media_item_types.dart';
 import '../media/media_kind.dart';
 import '../media/media_version.dart';
@@ -12,22 +12,30 @@ import '../models/download_models.dart';
 import '../utils/download_version_utils.dart';
 import '../database/app_database.dart';
 import '../database/download_operations.dart';
+import '../services/background_work_diagnostics_service.dart';
 import '../services/download_manager_service.dart';
 import '../services/api_cache.dart';
 import '../services/download_artwork_service.dart';
 import '../services/download_storage_service.dart';
+import '../services/downloaded_video_source.dart';
 import '../services/multi_server_manager.dart';
 import '../services/offline_mode_source.dart';
 import '../services/watch_state_resolver.dart';
+import 'watch_state_store.dart';
 import '../media/media_server_client.dart';
 import '../services/sync_rule_executor.dart';
 import '../utils/app_logger.dart';
 import '../utils/deletion_notifier.dart';
-import '../utils/downloaded_version_match.dart';
 import '../media/episode_collection.dart';
 import '../utils/global_key_utils.dart';
+import '../utils/content_utils.dart';
+import '../utils/notification_permission.dart';
 import '../utils/watch_state_notifier.dart';
 import '../mixins/disposable_change_notifier_mixin.dart';
+
+part 'download_metadata_store.dart';
+
+typedef _QueueOwnership = ({String profileId, int generation});
 
 /// Filter mode for batch downloads (shows/seasons).
 /// Use [all] to download everything, or [unwatched] with an optional maxCount.
@@ -53,14 +61,16 @@ class _RelatedMetadataDownloadContext {
   final ensuredArtworkKeys = <String>{};
 }
 
+typedef _MetadataHydrationResult = ({MediaItem? metadata, bool networkFilled, bool stale});
+
 /// Provider for managing download state and operations.
 class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin {
+  int _batchDeletionDepth = 0;
   final DownloadManagerService _downloadManager;
   final AppDatabase _database;
   final SyncRuleExecutor _syncRuleExecutor;
   StreamSubscription<DownloadProgress>? _progressSubscription;
   StreamSubscription<DeletionProgress>? _deletionProgressSubscription;
-  StreamSubscription<WatchStateEvent>? _watchStateSubscription;
   late final Future<void> _initFuture;
 
   // Track download progress by public globalKey (serverId:ratingKey).
@@ -68,14 +78,13 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
   // watch actions, cache namespaces, and sync-rule ownership.
   final Map<String, DownloadProgress> _downloads = {};
 
-  // Store metadata for display
-  final Map<String, MediaItem> _metadata = {};
-
-  // Store Plex thumb paths for offline display (actual file path computed from hash)
-  final Map<String, DownloadedArtwork> _artworkPaths = {};
+  // Metadata and artwork cache lifecycle is isolated from queue ownership.
+  late final _DownloadMetadataStore _metadataStore;
+  Map<String, MediaItem> get _metadata => _metadataStore.items;
+  Map<String, DownloadedArtwork> get _artworkPaths => _metadataStore.artworkPaths;
 
   // Track items currently being queued (building download queue)
-  final Set<String> _queueing = {};
+  final Map<String, _QueueOwnership> _queueing = {};
 
   // Public download keys owned by the active profile. Physical download rows
   // stay app-wide; this set controls profile-visible state.
@@ -87,26 +96,33 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
   // Persistent sync rules keyed by profile-scoped globalKey
   // (profileId|serverId:ratingKey). Downloads remain public/shared.
   final Map<String, SyncRuleItem> _syncRules = {};
+  final Set<String> _removingSyncRuleKeys = {};
+  bool _syncRuleCleanupInProgress = false;
 
   String? _activeProfileId;
+  int _profileGeneration = 0;
   Future<void>? _profileScopedReloadFuture;
 
+  _QueueOwnership _captureQueueOwnership() => (profileId: _requireActiveProfileId(), generation: _profileGeneration);
+
+  bool _isQueueOwnershipCurrent(_QueueOwnership ownership) =>
+      _activeProfileId == ownership.profileId && _profileGeneration == ownership.generation;
+
   OfflineModeSource? _offlineSource;
+  int _networkStateGeneration = 0;
 
   DownloadProvider({required this._downloadManager, required this._database})
     : _syncRuleExecutor = SyncRuleExecutor(database: _database) {
-    // Listen to progress updates from the download manager
+    _metadataStore = _DownloadMetadataStore(_downloadManager, _database)..addListener(_onMetadataStoreChanged);
     _progressSubscription = _downloadManager.progressStream.listen(_onProgressUpdate);
 
-    // Listen to deletion progress updates
     _deletionProgressSubscription = _downloadManager.deletionProgressStream.listen(_onDeletionProgressUpdate);
 
-    // Keep cached metadata fresh when items get marked watched/unwatched anywhere
-    // in the app, so re-entering a screen reflects the latest state.
-    _watchStateSubscription = WatchStateNotifier().stream.listen(_onWatchStateChanged);
-
-    // Load persisted downloads from database
     _initFuture = _loadPersistedDownloads();
+
+    // Lets the diagnostics service score whether downloads actually advance
+    // while the app is backgrounded, without it reaching into providers.
+    BackgroundWorkDiagnosticsService.instance.bindActivitySource(downloadActivitySnapshot);
   }
 
   /// Test-only constructor that skips the heavy initial load (artwork dir,
@@ -120,9 +136,10 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
     required this._database,
     this._activeProfileId = 'test-profile',
   }) : _syncRuleExecutor = SyncRuleExecutor(database: _database) {
+    _metadataStore = _DownloadMetadataStore(_downloadManager, _database, activeProfileId: _activeProfileId)
+      ..addListener(_onMetadataStoreChanged);
     _progressSubscription = _downloadManager.progressStream.listen(_onProgressUpdate);
     _deletionProgressSubscription = _downloadManager.deletionProgressStream.listen(_onDeletionProgressUpdate);
-    _watchStateSubscription = WatchStateNotifier().stream.listen(_onWatchStateChanged);
     _initFuture = _loadProfileScopedState();
   }
 
@@ -130,18 +147,38 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
   /// the device has no Plex connectivity. Sync-rule execution receives a
   /// snapshot of this state when invoked, keeping this provider as the owner.
   void setOfflineSource(OfflineModeSource? source) {
-    _offlineSource = source;
+    if (!identical(_offlineSource, source)) {
+      _offlineSource?.removeListener(_onOfflineSourceChanged);
+      _offlineSource = source;
+      _offlineSource?.addListener(_onOfflineSourceChanged);
+      _networkStateGeneration++;
+    }
     _downloadManager.setOfflineSource(source);
   }
 
   /// Ensures persisted downloads have been loaded from disk.
   Future<void> ensureInitialized() => _initFuture;
 
+  Future<void> setDownloadLocation({required String path, required String pathType, void Function()? checkCurrent}) {
+    return _downloadManager.setDownloadLocation(path: path, pathType: pathType, checkCurrent: checkCurrent);
+  }
+
+  Future<void> resetDownloadLocation({void Function()? checkCurrent}) {
+    return _downloadManager.resetDownloadLocation(checkCurrent: checkCurrent);
+  }
+
   /// Switch the visible sync-rule scope to [profileId]. Physical downloads are
   /// intentionally not reloaded because they are shared across profiles.
   void setActiveProfileId(String? profileId) {
     if (_activeProfileId == profileId) return;
+    _profileGeneration++;
+    _queueing.clear();
+    _ownedDownloadKeys.clear();
+    _syncRules.clear();
+    _metadata.clear();
     _activeProfileId = profileId;
+    _metadataStore.setActiveProfileId(profileId);
+    safeNotifyListeners();
     final reload = _reloadProfileScopedStateForActiveProfile();
     _profileScopedReloadFuture = reload;
     unawaited(reload);
@@ -149,10 +186,13 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
 
   Future<void> _reloadProfileScopedStateForActiveProfile() async {
     final targetProfileId = _activeProfileId;
+    final targetGeneration = _profileGeneration;
     await _initFuture;
-    if (_activeProfileId != targetProfileId) return;
+    if (_activeProfileId != targetProfileId || _profileGeneration != targetGeneration) return;
     await _loadProfileScopedState();
-    if (_activeProfileId == targetProfileId) {
+    await refreshMetadataFromCache();
+    await _applyOfflineWatchOverlay(expectedProfileGeneration: targetGeneration);
+    if (_activeProfileId == targetProfileId && _profileGeneration == targetGeneration) {
       safeNotifyListeners();
     }
   }
@@ -172,19 +212,53 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
   /// Claim [globalKey] for an explicit [profileId] — sync rules claim for
   /// the RULE'S owner, not whoever is active when the pass lands, so a
   /// mid-run profile switch can't leak ownership across profiles.
-  Future<bool> _claimDownloadForProfile(String globalKey, String profileId) async {
-    if (_activeProfileId == profileId && _ownedDownloadKeys.contains(globalKey)) return false;
-    await _database.addDownloadOwner(profileId: profileId, globalKey: globalKey);
-    // _ownedDownloadKeys mirrors only the active profile's rows.
-    if (_activeProfileId != profileId) return false;
+  Future<bool> _claimDownloadForProfile(String globalKey, _QueueOwnership ownership, MediaServerClient client) async {
+    if (!_isQueueOwnershipCurrent(ownership)) return false;
+    if (_ownedDownloadKeys.contains(globalKey)) return false;
+    await _database.addDownloadOwner(
+      profileId: ownership.profileId,
+      globalKey: globalKey,
+      backendId: client.backend.id,
+      clientScopeId: client.cacheServerId,
+    );
+    if (!_isQueueOwnershipCurrent(ownership)) return false;
     _ownedDownloadKeys.add(globalKey);
     return true;
   }
 
-  Future<bool> _releaseDownloadForActiveProfile(String globalKey) async {
-    final profileId = _requireActiveProfileId();
-    if (!_ownedDownloadKeys.contains(globalKey)) return false;
-    await _database.removeDownloadOwner(profileId: profileId, globalKey: globalKey);
+  Future<bool> _releaseDownloadForProfile(
+    String globalKey,
+    String profileId, {
+    bool onlyIfShared = false,
+    DownloadOwnerItem? ownerHint,
+  }) async {
+    DownloadOwnerItem? owner = ownerHint;
+    if (onlyIfShared) {
+      // Capture the departing cache namespace before the atomic database
+      // release; the ownership row is gone by the time cache cleanup runs.
+      owner ??= await _database.getDownloadOwner(profileId: profileId, globalKey: globalKey);
+      final result = await _database.removeSharedDownloadOwnerAndRebindIncompleteMedia(
+        profileId: profileId,
+        globalKey: globalKey,
+      );
+      if (!result.hasRemainingOwner) return false;
+      owner = result.removedOwner ?? owner;
+    } else {
+      owner ??= await _database.getDownloadOwner(profileId: profileId, globalKey: globalKey);
+      await _database.removeDownloadOwner(profileId: profileId, globalKey: globalKey);
+    }
+
+    final parsed = parseGlobalKey(globalKey);
+    if (parsed != null && owner != null) {
+      await _downloadManager.deleteMetadataForOwner(
+        globalKey: globalKey,
+        serverId: parsed.serverId,
+        itemId: parsed.ratingKey,
+        profileId: profileId,
+        backendId: owner.backend,
+        clientScopeId: owner.clientScopeId,
+      );
+    }
     if (_activeProfileId == profileId) {
       _ownedDownloadKeys.remove(globalKey);
     }
@@ -197,31 +271,6 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
     await _releaseDownloadsForProfileWhere(profileId, (_) => true);
   }
 
-  Future<void> deleteAllDownloads() async {
-    final downloads = await _downloadManager.getAllDownloads();
-    for (final row in downloads) {
-      await _downloadManager.deleteDownload(row.globalKey);
-    }
-    await _database.clearAllDownloadOwners();
-
-    try {
-      final artworkDirectory = await DownloadStorageService.instance.getArtworkDirectory();
-      if (await artworkDirectory.exists()) {
-        await artworkDirectory.delete(recursive: true);
-      }
-    } catch (e, stackTrace) {
-      appLogger.w('Failed to delete shared download artwork directory', error: e, stackTrace: stackTrace);
-    }
-
-    _downloads.clear();
-    _metadata.clear();
-    _artworkPaths.clear();
-    _queueing.clear();
-    _ownedDownloadKeys.clear();
-    _deletionProgress.clear();
-    safeNotifyListeners();
-  }
-
   /// Preserve physical downloads across a full logout while detaching them
   /// from profiles that are about to be deleted. The next selected profile
   /// adopts the ownerless rows through [_loadDownloadOwners].
@@ -230,8 +279,11 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
     // reload may still finish its DB adoption, but cannot repopulate the
     // active-profile view after this point.
     _activeProfileId = null;
+    _metadataStore.setActiveProfileId(null);
+    _profileGeneration++;
     await _initFuture;
     await _profileScopedReloadFuture;
+    await _downloadManager.preparePlexMetadataForLogoutTransfer();
     await _database.clearAllDownloadOwners();
     _ownedDownloadKeys.clear();
     _syncRules.clear();
@@ -256,16 +308,17 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
     for (final globalKey in ownedKeys) {
       if (!shouldRelease(globalKey)) continue;
       final meta = _metadata[globalKey];
-      await _database.removeDownloadOwner(profileId: profileId, globalKey: globalKey);
-      if (_activeProfileId == profileId) {
-        _ownedDownloadKeys.remove(globalKey);
-      }
-      if (await _database.hasDownloadOwner(globalKey)) {
+      final releasedAsShared = await _releaseDownloadForProfile(globalKey, profileId, onlyIfShared: true);
+      if (releasedAsShared) {
         changed = true;
         continue;
       }
 
+      // Keep the final durable owner until physical deletion succeeds. A
+      // retry can then resume cleanup without orphaning the shared row.
+      final finalOwner = await _database.getDownloadOwner(profileId: profileId, globalKey: globalKey);
       await _downloadManager.deleteDownload(globalKey);
+      await _releaseDownloadForProfile(globalKey, profileId, ownerHint: finalOwner);
       _downloads.remove(globalKey);
       _metadata.remove(globalKey);
       _artworkPaths.remove(globalKey);
@@ -298,7 +351,12 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
     if (downloads != null) _downloads.addAll(downloads);
     if (metadata != null) _metadata.addAll(metadata);
     if (artwork != null) _artworkPaths.addAll(artwork);
-    if (queueing != null) _queueing.addAll(queueing);
+    if (queueing != null) {
+      final ownership = _captureQueueOwnership();
+      for (final globalKey in queueing) {
+        _queueing[globalKey] = ownership;
+      }
+    }
     if (deletionProgress != null) _deletionProgress.addAll(deletionProgress);
     if (ownedDownloadKeys != null) {
       _ownedDownloadKeys.addAll(ownedDownloadKeys);
@@ -306,6 +364,17 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
       _ownedDownloadKeys.addAll(downloads.keys);
     }
   }
+
+  @visibleForTesting
+  Future<void> debugHydrateOfflineWatchOverlay() => _applyOfflineWatchOverlay();
+
+  @visibleForTesting
+  Future<void> debugWaitForProfileScopedReload() async {
+    await _profileScopedReloadFuture;
+  }
+
+  @visibleForTesting
+  Future<void> debugWaitForWatchStateWrites() => _metadataStore.waitForWatchStateWrites();
 
   /// Load all persisted downloads and metadata from the database/cache
   Future<void> _loadPersistedDownloads() async {
@@ -321,18 +390,18 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
       _queueing.clear();
       _deletionProgress.clear();
       _ownedDownloadKeys.clear();
+      await _loadDownloadOwners();
 
       final storageService = DownloadStorageService.instance;
 
       // Initialize artwork directory path for synchronous access
       await storageService.getArtworkDirectory();
 
-      // Load all downloads from database
       final downloads = await _downloadManager.getAllDownloads();
 
-      // Bulk-load all pinned metadata across both backends in a single pass
+      // Bulk-load all pinned metadata across every backend in a single pass
       // instead of per-item DB calls.
-      final allMetadata = await _downloadManager.getAllPinnedMetadata(preferActiveScope: true);
+      final pinned = await _downloadManager.getAllPinnedMetadata(activeProfileId: _activeProfileId);
 
       for (final item in downloads) {
         _downloads[item.globalKey] = DownloadProgress(
@@ -346,30 +415,12 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
 
         _artworkPaths[item.globalKey] = DownloadedArtwork(thumbPath: item.thumbPath);
 
-        // Look up metadata from the bulk-loaded map (O(1) instead of DB query per item)
-        // Falls back to individual query for any unpinned entries (e.g., legacy data).
-        // The fallback dispatches by backend.
-        final cached =
-            allMetadata[item.globalKey] ??
-            await _downloadManager.lookupMetadata(ServerId(item.serverId), item.ratingKey, preferActiveScope: true);
-        if (cached != null) {
-          _metadata[item.globalKey] = cached;
-
-          // For episodes (show/season) and tracks (artist/album), also load
-          // parent metadata from the same map.
-          if (cached.isEpisode || cached.kind == MediaKind.track) {
-            _loadParentMetadataFromMap(
-              cached,
-              allMetadata,
-              clientScopeId:
-                  _downloadManager.activeClientScopeIdForServer(ServerId(item.serverId)) ?? item.clientScopeId,
-            );
-          }
+        if (_ownsDownloadKey(item.globalKey)) {
+          await _hydrateDownloadMetadata(item.globalKey, pinned);
         }
       }
 
-      // Load sync rules from database
-      await _loadProfileScopedState();
+      await _loadSyncRules();
 
       // Apply queued offline watch actions on top of the server-time metadata
       // we just loaded, so re-entries reflect locally-marked watched/unwatched
@@ -386,146 +437,121 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
     }
   }
 
-  /// Patch `_metadata` viewCount/viewOffsetMs from queued OfflineWatchProgress
-  /// actions. Idempotent and cheap (one batched DB read).
-  Future<void> _applyOfflineWatchOverlay() async {
-    if (_metadata.isEmpty) return;
-    try {
-      final keys = _metadata.keys.toSet();
-      final scopes = <String, String?>{};
-      for (final key in keys) {
-        scopes[key] = await _offlineWatchScopeForGlobalKey(key);
-      }
-      final profileId = _activeProfileId;
-      final actions = await _database.getWatchActionsForKeys(
-        keys,
-        profileId: profileId,
-        filterProfile: profileId != null,
-        clientScopeIdsByGlobalKey: scopes,
-      );
-      if (actions.isEmpty) return;
-      for (final entry in actions.entries) {
-        final base = _metadata[entry.key];
-        if (base == null) continue;
-        final snapshot = WatchStateResolver.fromActions(entry.value);
-        if (snapshot.isEmpty) continue;
-        _metadata[entry.key] = snapshot.apply(base);
-      }
-    } catch (e) {
-      appLogger.w('Failed to apply offline watch overlay', error: e);
-    }
-  }
-
-  Future<String?> _offlineWatchScopeForGlobalKey(String globalKey) async {
-    final parsed = parseGlobalKey(globalKey);
-    if (parsed == null) return null;
-    final activeScope = _downloadManager.activeClientScopeIdForServer(parsed.serverId);
-    if (activeScope != null && activeScope.isNotEmpty) return activeScope;
-    final downloaded = await _database.getDownloadedMedia(globalKey);
-    final downloadedScope = downloaded?.clientScopeId;
-    return downloadedScope == null || downloadedScope.isEmpty ? null : downloadedScope;
+  /// Hydrate queued OfflineWatchProgress actions into the canonical
+  /// hierarchy-aware watch-state layer.
+  Future<void> _applyOfflineWatchOverlay({int? expectedProfileGeneration}) {
+    return _metadataStore.hydrateOfflineWatchOverlay(
+      isStale: expectedProfileGeneration == null
+          ? null
+          : () => isDisposed || expectedProfileGeneration != _profileGeneration,
+    );
   }
 
   /// Load parent metadata (show + season for episodes, artist + album for
   /// tracks) from a pre-loaded map (no DB I/O). Used during bulk
   /// initialization to avoid per-item DB queries.
   void _loadParentMetadataFromMap(MediaItem leaf, Map<String, MediaItem> allMetadata, {String? clientScopeId}) {
-    final serverId = leaf.serverId;
-    if (serverId == null) return;
+    _metadataStore.loadParentMetadataFromMap(leaf, allMetadata, clientScopeId: clientScopeId);
+  }
 
-    MediaItem? lookupParent(String ratingKey) {
-      if (clientScopeId != null && clientScopeId.isNotEmpty) {
-        final scoped = allMetadata[buildGlobalKey(ServerId(clientScopeId), ratingKey)];
-        if (scoped != null) return scoped;
-      }
-      return allMetadata[buildGlobalKey(ServerId(serverId), ratingKey)];
+  Future<_MetadataHydrationResult> _hydrateDownloadMetadata(
+    String globalKey,
+    ({Map<String, MediaItem> items, Map<String, String?> scopesByServer}) pinned, {
+    bool fetchOnMiss = false,
+    bool Function()? isStale,
+  }) async {
+    final parsed = parseGlobalKey(globalKey);
+    if (parsed == null) return (metadata: null, networkFilled: false, stale: false);
+
+    // MediaBrowser bulk keys are compound-scoped (`machine/user:item`); Plex
+    // keys are public. Try the exact profile namespace first, then the public
+    // key, then the per-item lookup (which also finds cached-but-unpinned rows).
+    final clientScopeId = pinned.scopesByServer[parsed.serverId];
+    var cached =
+        (clientScopeId == null ? null : pinned.items[buildGlobalKey(ServerId(clientScopeId), parsed.ratingKey)]) ??
+        pinned.items[globalKey] ??
+        await _downloadManager.lookupMetadata(
+          parsed.serverId,
+          parsed.ratingKey,
+          preferActiveScope: true,
+          activeProfileId: _activeProfileId,
+        );
+    if (isStale?.call() ?? false) return (metadata: null, networkFilled: false, stale: true);
+
+    var networkFilled = false;
+    if (cached == null && fetchOnMiss && _downloads.containsKey(globalKey)) {
+      cached = await _downloadManager.fetchAndPinMetadata(
+        parsed.serverId,
+        parsed.ratingKey,
+        preferActiveScope: true,
+        activeProfileId: _activeProfileId,
+      );
+      if (isStale?.call() ?? false) return (metadata: null, networkFilled: false, stale: true);
+      networkFilled = cached != null;
     }
 
-    void loadParent(String? ratingKey) {
-      if (ratingKey == null) return;
-      final parentGlobalKey = buildGlobalKey(ServerId(serverId), ratingKey);
-      if (_metadata.containsKey(parentGlobalKey)) return;
-      final parentMetadata = lookupParent(ratingKey);
-      if (parentMetadata == null) return;
-      _metadata[parentGlobalKey] = parentMetadata;
-      if (parentMetadata.thumbPath != null) {
-        _artworkPaths[parentGlobalKey] = DownloadedArtwork(thumbPath: parentMetadata.thumbPath);
+    if (cached == null) {
+      // Parent rows can be shared by multiple downloaded siblings. A missing
+      // leaf invalidates only that leaf; profile changes clear the whole store.
+      _metadata.remove(globalKey);
+    }
+    if (cached != null) {
+      _metadata[globalKey] = cached;
+      if (cached.isEpisode || cached.kind == MediaKind.track) {
+        _loadParentMetadataFromMap(cached, pinned.items, clientScopeId: clientScopeId);
       }
     }
-
-    loadParent(leaf.grandparentId); // show / artist
-    loadParent(leaf.parentId); // season / album
+    return (metadata: cached, networkFilled: networkFilled, stale: false);
   }
 
   void _onProgressUpdate(DownloadProgress progress) {
     appLogger.d('Progress update received: ${progress.globalKey} - ${progress.status} - ${progress.progress}%');
+    final ownedByActiveProfile = _ownsDownloadKey(progress.globalKey);
+    final previous = _downloads[progress.globalKey];
+    final terminalUpdateOmittedBytes =
+        previous != null &&
+        progress.downloadedBytes == 0 &&
+        previous.downloadedBytes > 0 &&
+        switch (progress.status) {
+          DownloadStatus.completed ||
+          DownloadStatus.failed ||
+          DownloadStatus.cancelled ||
+          DownloadStatus.partial => true,
+          DownloadStatus.queued || DownloadStatus.downloading || DownloadStatus.paused => false,
+        };
+    // Terminal status-only events omit byte fields. Preserve only those omitted
+    // counters; live progress and explicit retry resets must remain authoritative.
+    final merged = terminalUpdateOmittedBytes
+        ? progress.copyWith(
+            progress: progress.progress == 0 ? previous.progress : progress.progress,
+            downloadedBytes: previous.downloadedBytes,
+            totalBytes: progress.totalBytes == 0 ? previous.totalBytes : progress.totalBytes,
+          )
+        : progress;
+    _downloads[progress.globalKey] = merged;
 
-    _downloads[progress.globalKey] = progress;
-
-    // Sync artwork paths when they are available
-    if (progress.hasArtworkPaths) {
-      _artworkPaths[progress.globalKey] = DownloadedArtwork(thumbPath: progress.thumbPath);
+    // Sync artwork paths when they are available.
+    if (merged.hasArtworkPaths) {
+      _artworkPaths[merged.globalKey] = DownloadedArtwork(thumbPath: merged.thumbPath);
     }
 
-    appLogger.d('Notifying listeners for ${progress.globalKey}');
-    safeNotifyListeners();
+    if (ownedByActiveProfile) safeNotifyListeners();
   }
 
   @override
   void dispose() {
+    BackgroundWorkDiagnosticsService.instance.unbindActivitySource(downloadActivitySnapshot);
+    _offlineSource?.removeListener(_onOfflineSourceChanged);
     _progressSubscription?.cancel();
     _deletionProgressSubscription?.cancel();
-    _watchStateSubscription?.cancel();
+    _metadataStore
+      ..removeListener(_onMetadataStoreChanged)
+      ..dispose();
     super.dispose();
   }
 
-  void _onWatchStateChanged(WatchStateEvent event) {
-    final snapshot = WatchStateResolver.fromEvent(event);
-    if (snapshot.isEmpty) return;
-
-    final globalKey = buildGlobalKey(ServerId(event.serverId), event.itemId);
-    final base = _metadata[globalKey];
-    if (base == null) return;
-    final eventScope = event.cacheServerId;
-    final activeScope = _downloadManager.activeClientScopeIdForServer(ServerId(event.serverId));
-    if (eventScope != null && eventScope.isNotEmpty && eventScope != event.serverId && eventScope != activeScope) {
-      return;
-    }
-
-    _metadata[globalKey] = snapshot.apply(base);
-
-    final isWatched = snapshot.isWatched;
-    // Sub-threshold progress ticks are frequent; offline reloads re-apply them
-    // from queued watch actions, so only durable watch flips hit the cache here.
-    final shouldPersistToCache =
-        isWatched != null && (event.changeType != WatchStateChangeType.progressUpdate || event.isNowWatched == true);
-
-    // Persist into the per-backend pinned cache so the patch survives reloads
-    // (`_loadPersistedDownloads` rehydrates `_metadata` from the cache).
-    if (shouldPersistToCache) {
-      unawaited(
-        () async {
-          // Jellyfin cache rows are per-user (cacheServerId embeds the user);
-          // Plex rows are keyed by server only, so persisting one user's flip
-          // into a download SHARED with another profile would surface as that
-          // profile's watch state too. Skip the shared case — each profile's
-          // own queued watch actions still re-apply its state on reload.
-          if (base.backend == MediaBackend.plex &&
-              await _database.hasDownloadOwner(globalKey, excludingProfileId: _activeProfileId)) {
-            return;
-          }
-          await ApiCache.forBackend(base.backend).applyWatchState(
-            serverId: ServerId(event.cacheServerId ?? event.serverId),
-            itemId: event.itemId,
-            isWatched: isWatched,
-          );
-        }().catchError((Object e) {
-          appLogger.w('Failed to apply watch state to cache for $globalKey', error: e);
-        }),
-      );
-    }
-    safeNotifyListeners();
-  }
+  void _onMetadataStoreChanged() => safeNotifyListeners();
+  void _onOfflineSourceChanged() => _networkStateGeneration++;
 
   /// Ensure metadata has a serverId, falling back to a parent's serverId.
   MediaItem _ensureServerId(MediaItem metadata, String? fallbackServerId) =>
@@ -535,8 +561,51 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
   Map<String, DownloadProgress> get downloads =>
       Map.unmodifiable(Map.fromEntries(_downloads.entries.where(_ownsProgressEntry)));
 
+  /// Aggregate transfer activity for [BackgroundWorkDiagnosticsService].
+  ///
+  /// Deliberately unfiltered by profile: the OS restricts the process, not a
+  /// profile. Byte and percentage totals are merged monotonically per row;
+  /// status counters distinguish a drained queue from a killed task.
+  ///
+  /// A method rather than a getter so the tear-off handed to
+  /// [BackgroundWorkDiagnosticsService.bindActivitySource] compares equal at
+  /// unbind time.
+  DownloadActivitySnapshot downloadActivitySnapshot() {
+    var activeTasks = 0;
+    var completedTasks = 0;
+    var failedTasks = 0;
+    var downloadedBytes = 0;
+    var progressUnits = 0;
+    for (final progress in _downloads.values) {
+      switch (progress.status) {
+        case DownloadStatus.downloading:
+          activeTasks++;
+        case DownloadStatus.completed:
+          completedTasks++;
+        case DownloadStatus.failed:
+          failedTasks++;
+        case DownloadStatus.queued:
+        case DownloadStatus.paused:
+        case DownloadStatus.cancelled:
+        case DownloadStatus.partial:
+          break;
+      }
+      downloadedBytes += progress.downloadedBytes;
+      progressUnits += progress.progress;
+    }
+    return (
+      activeTasks: activeTasks,
+      completedTasks: completedTasks,
+      failedTasks: failedTasks,
+      downloadedBytes: downloadedBytes,
+      progressUnits: progressUnits,
+      networkAvailable: _offlineSource == null ? null : !_offlineSource!.isOffline,
+      networkStateGeneration: _networkStateGeneration,
+    );
+  }
+
   /// All metadata for downloads
-  Map<String, MediaItem> get metadata => Map.unmodifiable(_metadata);
+  Map<String, MediaItem> get metadata => _metadataStore.resolvedItems;
 
   /// Get unique TV shows that have downloaded episodes
   /// Returns stored show metadata, or synthesizes from episode metadata as fallback
@@ -546,7 +615,7 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
     for (final entry in _metadata.entries) {
       final globalKey = entry.key;
       if (!_ownsDownloadKey(globalKey)) continue;
-      final meta = entry.value;
+      final meta = _metadataStore.applyWatchState(entry.value);
       final progress = _downloads[globalKey];
 
       if (progress?.status == DownloadStatus.completed && meta.isEpisode) {
@@ -554,7 +623,7 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
         if (showRatingKey != null && !shows.containsKey(showRatingKey)) {
           // Try to get stored show metadata first
           final showGlobalKey = buildGlobalKey(ServerId(meta.serverId!), showRatingKey);
-          final storedShow = _metadata[showGlobalKey];
+          final storedShow = _resolvedMetadata(showGlobalKey);
 
           if (storedShow != null && storedShow.isShow) {
             // Use stored show metadata (has year, summary, clearLogo)
@@ -563,10 +632,11 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
             // Fallback: synthesize from episode metadata (missing year, summary)
             // Only Plex consumers read `raw['key']` (library-section + folder
             // navigation), so we synthesize the Plex URI for Plex shows and
-            // emit a Jellyfin-shaped item for Jellyfin (Id + Type=Series).
+            // emit a MediaBrowser-shaped item for Jellyfin or Emby
+            // (`Id` + `Type=Series`).
             final synthesizedRaw = switch (meta.backend) {
               MediaBackend.plex => <String, dynamic>{'key': '/library/metadata/$showRatingKey'},
-              MediaBackend.jellyfin => <String, dynamic>{'Id': showRatingKey, 'Type': 'Series'},
+              MediaBackend.jellyfin || MediaBackend.emby => <String, dynamic>{'Id': showRatingKey, 'Type': 'Series'},
             };
             shows[showRatingKey] = MediaItem(
               id: showRatingKey,
@@ -594,7 +664,7 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
           final progress = _downloads[entry.key];
           return progress?.status == DownloadStatus.completed && entry.value.isMovie;
         })
-        .map((entry) => entry.value)
+        .map((entry) => _metadataStore.applyWatchState(entry.value))
         .toList();
   }
 
@@ -607,7 +677,7 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
     for (final entry in _metadata.entries) {
       final globalKey = entry.key;
       if (!_ownsDownloadKey(globalKey)) continue;
-      final meta = entry.value;
+      final meta = _metadataStore.applyWatchState(entry.value);
       if (meta.kind != MediaKind.track) continue;
       if (_downloads[globalKey]?.status != DownloadStatus.completed) continue;
 
@@ -615,7 +685,7 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
       if (albumRatingKey == null || albums.containsKey(albumRatingKey)) continue;
 
       final albumGlobalKey = buildGlobalKey(ServerId(meta.serverId!), albumRatingKey);
-      final storedAlbum = _metadata[albumGlobalKey];
+      final storedAlbum = _resolvedMetadata(albumGlobalKey);
       if (storedAlbum != null && storedAlbum.kind == MediaKind.album) {
         albums[albumRatingKey] = storedAlbum;
       } else {
@@ -652,7 +722,7 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
               meta.parentId == albumRatingKey &&
               _downloads[entry.key]?.status == DownloadStatus.completed;
         })
-        .map((entry) => entry.value)
+        .map((entry) => _metadataStore.applyWatchState(entry.value))
         .toList();
     tracks.sort((a, b) {
       final byDisc = (a.discNumber ?? 1).compareTo(b.discNumber ?? 1);
@@ -663,7 +733,9 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
   }
 
   /// Get metadata for a specific download
-  MediaItem? getMetadata(String globalKey) => _metadata[globalKey];
+  MediaItem? _resolvedMetadata(String globalKey) => _metadataStore.resolved(globalKey);
+
+  MediaItem? getMetadata(String globalKey) => _resolvedMetadata(globalKey);
 
   /// Get artwork paths for a specific download (for offline display)
   DownloadedArtwork? getArtworkPaths(String globalKey) => _artworkPaths[globalKey];
@@ -684,7 +756,7 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
           final meta = entry.value;
           return progress?.status == DownloadStatus.completed && meta.isEpisode && meta.grandparentId == showRatingKey;
         })
-        .map((entry) => entry.value)
+        .map((entry) => _metadataStore.applyWatchState(entry.value))
         .toList();
   }
 
@@ -767,7 +839,6 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
       return null;
     }
 
-    // Calculate aggregate statistics
     int completedCount = 0;
     int downloadingCount = 0;
     int queuedCount = 0;
@@ -790,7 +861,6 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
       }
     }
 
-    // Determine overall status
     final DownloadStatus overallStatus;
     if (completedCount == totalEpisodes) {
       overallStatus = DownloadStatus.completed;
@@ -835,22 +905,18 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
   /// For shows/seasons, returns aggregate progress of all child episodes
   /// For episodes/movies, returns direct progress
   DownloadProgress? getProgress(String globalKey) {
-    // First check if we have direct progress (for episodes/movies)
     final directProgress = _downloads[globalKey];
     if (directProgress != null) {
       if (!_ownsDownloadKey(globalKey)) return null;
       return directProgress;
     }
 
-    // If no direct progress, check if this is a show or season
-    // and calculate aggregate progress from episodes
     final parsed = parseGlobalKey(globalKey);
     if (parsed == null) return null;
 
     final serverId = parsed.serverId;
     final ratingKey = parsed.ratingKey;
 
-    // Try to get metadata to determine type
     final meta = _metadata[globalKey];
     if (meta == null) {
       // No metadata stored yet, might be a container (show/season/artist/
@@ -895,13 +961,14 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
 
   /// Check if an item is in the queue
   /// For shows/seasons, checks if any episodes are queued
+  @visibleForTesting
   bool isQueued(String globalKey) {
     final progress = getProgress(globalKey);
     return progress?.status == DownloadStatus.queued;
   }
 
   /// Check if an item is currently being queued (building download queue)
-  bool isQueueing(String globalKey) => _queueing.contains(globalKey);
+  bool isQueueing(String globalKey) => _queueing.containsKey(globalKey);
 
   /// Get the completed download record for an item, or null when the item
   /// isn't fully downloaded or isn't owned by the active profile. Callers use
@@ -930,46 +997,13 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
       appLogger.w('No downloaded item found for globalKey: $globalKey');
       return null;
     }
-    if (downloadedItem.status != DownloadStatus.completed.index) {
-      appLogger.w('Download not complete. Status: ${downloadedItem.status}');
-      return null;
-    }
-    if (!downloadedVersionMatches(
+
+    final source = await resolveDownloadedVideoSource(
       downloadedItem,
       requestedMediaIndex: mediaIndex,
       requestedMediaSourceId: mediaSourceId,
-    )) {
-      appLogger.w(
-        'Downloaded version mismatch for $globalKey: have index ${downloadedItem.mediaIndex} '
-        '(source ${downloadedItem.mediaSourceId}), expected index $mediaIndex '
-        '(source ${mediaSourceId?.trim()})',
-      );
-      return null;
-    }
-    if (downloadedItem.videoFilePath == null) {
-      appLogger.w('Video file path is null for globalKey: $globalKey');
-      return null;
-    }
-
-    final storedPath = downloadedItem.videoFilePath!;
-    final storageService = DownloadStorageService.instance;
-
-    // SAF URIs (content://) are already valid - don't transform them
-    if (storageService.isSafUri(storedPath)) {
-      appLogger.d('Found SAF video path: $storedPath');
-      return storedPath;
-    }
-
-    // Convert stored path (may be relative) to absolute path
-    final absolutePath = await storageService.ensureAbsolutePath(storedPath);
-
-    // Verify file exists
-    final file = File(absolutePath);
-    if (!await file.exists()) {
-      appLogger.w('Offline video file not found: $absolutePath');
-      return null;
-    }
-    return absolutePath;
+    );
+    return source?.path;
   }
 
   /// Queue a download for a media item.
@@ -987,130 +1021,161 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
   }) async {
     if (!_downloadManager.downloadsSupported) return 0;
 
+    final ownership = _captureQueueOwnership();
     final globalKey = metadata.globalKey;
     final config = versionConfig ?? DownloadVersionConfig();
-
-    // Check if downloads are blocked on cellular
-    if (await DownloadManagerService.shouldBlockDownloadOnCellular()) {
-      throw CellularDownloadBlockedException();
-    }
+    if (_queueing.containsKey(globalKey)) return 0;
+    _queueing[globalKey] = ownership;
+    safeNotifyListeners();
 
     try {
-      // Mark as queueing to show loading state in UI
-      _queueing.add(globalKey);
-      safeNotifyListeners();
+      // Claim the operation before the first await so a second tap cannot
+      // launch a duplicate container expansion.
+      if (await DownloadManagerService.shouldBlockDownloadOnCellular()) {
+        throw CellularDownloadBlockedException();
+      }
+      if (!_isQueueOwnershipCurrent(ownership)) return 0;
+      // The queueing claim above remains held while Android's permission
+      // dialog is open, so a second tap cannot launch duplicate expansion.
+      await NotificationPermission.ensure();
+      if (!_isQueueOwnershipCurrent(ownership)) return 0;
 
       if (metadata.isMovie || metadata.isEpisode || metadata.kind == MediaKind.track) {
-        final queued = await _queueSingleDownload(metadata, client, mediaIndex: config.mediaIndex);
+        final queued = await _queueSingleDownload(
+          metadata,
+          client,
+          ownership: ownership,
+          mediaIndex: config.mediaIndex,
+        );
         return queued ? 1 : 0;
       } else if (metadata.kind == MediaKind.album || metadata.kind == MediaKind.artist) {
-        final hadMetadata = _metadata.containsKey(globalKey);
-        _metadata[globalKey] = metadata;
-        try {
-          return await _queueMusicContainerDownload(metadata, client);
-        } catch (_) {
-          if (!hadMetadata) _metadata.remove(globalKey);
-          rethrow;
-        }
-      } else if (metadata.isShow) {
-        // Stash metadata pre-queue so the UI can render the queueing state;
-        // roll back if expansion throws so the orphan doesn't linger.
-        final hadMetadata = _metadata.containsKey(globalKey);
-        _metadata[globalKey] = metadata;
-        try {
-          return await _queueShowDownload(
-            metadata,
-            client,
+        return await _withStashedMetadata(
+          metadata,
+          ownership,
+          () => _queueMusicContainerDownload(metadata, client, ownership),
+        );
+      } else if (metadata.isShow || metadata.isSeason) {
+        return await _withStashedMetadata(
+          metadata,
+          ownership,
+          () => _expandAndQueue(
+            container: metadata,
+            client: client,
+            ownership: ownership,
             versionConfig: config,
             filter: filter,
             maxCount: maxCount,
+            skipExisting: false,
             includeSpecials: includeSpecials,
-          );
-        } catch (_) {
-          if (!hadMetadata) _metadata.remove(globalKey);
-          rethrow;
-        }
-      } else if (metadata.isSeason) {
-        final hadMetadata = _metadata.containsKey(globalKey);
-        _metadata[globalKey] = metadata;
-        try {
-          return await _queueSeasonDownload(
-            metadata,
-            client,
-            versionConfig: config,
-            filter: filter,
-            maxCount: maxCount,
-            includeSpecials: includeSpecials,
-          );
-        } catch (_) {
-          if (!hadMetadata) _metadata.remove(globalKey);
-          rethrow;
-        }
+          ),
+        );
       } else {
         throw Exception('Cannot download ${metadata.kind.id}');
       }
     } finally {
-      _queueing.remove(globalKey);
-      safeNotifyListeners();
+      if (_queueing[globalKey] == ownership) {
+        _queueing.remove(globalKey);
+        safeNotifyListeners();
+      }
+    }
+  }
+
+  Future<T> _withStashedMetadata<T>(
+    MediaItem metadata,
+    _QueueOwnership ownership,
+    Future<T> Function() operation,
+  ) async {
+    if (!_isQueueOwnershipCurrent(ownership)) {
+      throw StateError('Queue ownership is stale');
+    }
+    final globalKey = metadata.globalKey;
+    final previous = _metadata[globalKey];
+    _metadata[globalKey] = metadata;
+    try {
+      return await operation();
+    } catch (_) {
+      if (_isQueueOwnershipCurrent(ownership)) {
+        if (previous == null) {
+          _metadata.remove(globalKey);
+        } else {
+          _metadata[globalKey] = previous;
+        }
+      }
+      rethrow;
     }
   }
 
   /// Queue every playable item from a collection/playlist for download.
   ///
-  /// Movies, episodes, and tracks are queued directly. Shows and seasons are
-  /// expanded into their episodes and albums/artists into their tracks (when
-  /// [expandShows] is true). Nested collections/playlists and unknown types
-  /// are skipped.
+  /// Expansion follows [collectListLeaves] so a one-shot list download queues
+  /// exactly what a sync rule on the same list would.
+  ///
+  /// When [syncRule] is given, the rule's membership — the unfiltered leaves of
+  /// the list, not just the ones this pass queues — is linked to the rule so a
+  /// later "delete rule and its downloads" pass can find every associated row.
   Future<int> queueListDownload(
     List<MediaItem> items,
     MediaServerClient client, {
     DownloadFilter filter = DownloadFilter.all,
-    bool expandShows = true,
+    SyncRuleItem? syncRule,
   }) async {
     if (!_downloadManager.downloadsSupported) return 0;
 
+    final ownership = _captureQueueOwnership();
     if (await DownloadManagerService.shouldBlockDownloadOnCellular()) {
       throw CellularDownloadBlockedException();
     }
+    if (!_isQueueOwnershipCurrent(ownership)) return 0;
 
     final unwatchedOnly = filter == DownloadFilter.unwatched;
-    final relatedContext = _RelatedMetadataDownloadContext();
-    int count = 0;
+    final membership = <MediaItem>[];
+    final candidates = <MediaItem>[];
+    // Expand one list entry at a time so a cancelled queue stops before the
+    // next container is fetched.
+    for (final item in items) {
+      if (!_isQueueOwnershipCurrent(ownership)) return 0;
+      final leaves = <MediaItem>[];
+      await collectListLeaves(client, [item], unwatchedOnly: unwatchedOnly, out: leaves);
+      candidates.addAll(leaves);
+      if (syncRule != null) {
+        if (unwatchedOnly) {
+          // Rule membership spans the whole list; only the queue is filtered.
+          await collectListLeaves(client, [item], unwatchedOnly: false, out: membership);
+        } else {
+          membership.addAll(leaves);
+        }
+      }
+    }
+    if (!_isQueueOwnershipCurrent(ownership)) return 0;
 
-    Future<void> queueItem(MediaItem item) async {
-      if (unwatchedOnly && !item.isUnwatchedOrInProgress) return;
-      final queued = await _queueSingleDownload(item, client, relatedContext: relatedContext);
-      if (queued) count++;
+    if (syncRule != null) {
+      for (final item in membership) {
+        final withServer = _ensureServerId(item, client.serverId);
+        if (_hasActiveOwnedDownload(withServer.globalKey)) {
+          await _associateSyncRuleDownload(syncRule, withServer.globalKey, ownership);
+        }
+      }
     }
 
-    for (final item in items) {
-      if (item.isMovie || item.isEpisode || item.kind == MediaKind.track) {
-        await queueItem(item);
-      } else if (item.isShow || item.isSeason) {
-        if (!expandShows) continue;
-        // One-shot recursive expansion (Plex /grandchildren, Jellyfin
-        // Recursive=true) — the per-season walk that used to live here
-        // was the same pattern as collectEpisodes*, just inlined.
-        final episodes = <MediaItem>[];
-        if (item.isShow) {
-          await collectEpisodesForShow(client, item.id, unwatchedOnly: unwatchedOnly, out: episodes, fallback: item);
-        } else {
-          await collectEpisodesForSeason(client, item.id, unwatchedOnly: unwatchedOnly, out: episodes, fallback: item);
-        }
-        for (final ep in episodes) {
-          await queueItem(ep);
-        }
-      } else if (item.kind == MediaKind.album || item.kind == MediaKind.artist) {
-        if (!expandShows) continue;
-        // Same one-shot expansion for music containers (album/artist →
-        // tracks) via the shared recursive-leaves call.
-        for (final track in await client.fetchPlayableDescendants(item.id)) {
-          await queueItem(_ensureServerId(track, item.serverId));
-        }
-      } else {
-        // Skip clips, nested collections/playlists, unknown types.
-        continue;
+    final relatedContext = _RelatedMetadataDownloadContext();
+    var count = 0;
+    for (final item in candidates) {
+      if (!_isQueueOwnershipCurrent(ownership)) return count;
+      final withServer = _ensureServerId(item, client.serverId);
+      if (_hasActiveOwnedDownload(withServer.globalKey)) continue;
+      final queued = await _queueSingleDownload(
+        withServer,
+        client,
+        ownership: ownership,
+        relatedContext: relatedContext,
+      );
+      if (syncRule != null) {
+        await _associateSyncRuleDownload(syncRule, withServer.globalKey, ownership);
       }
+      if (queued) count++;
+    }
+    if (syncRule != null && _isQueueOwnershipCurrent(ownership)) {
+      await markSyncRuleDownloadLinksInitialized(syncRule.globalKey);
     }
     return count;
   }
@@ -1120,15 +1185,16 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
   Future<bool> _queueSingleDownload(
     MediaItem metadata,
     MediaServerClient client, {
+    required _QueueOwnership ownership,
     int mediaIndex = 0,
     DownloadVersionConfig? versionConfig,
     _RelatedMetadataDownloadContext? relatedContext,
-    String? claimForProfileId,
   }) async {
     if (!_downloadManager.downloadsSupported) return false;
 
-    final ownerProfileId = claimForProfileId ?? _requireActiveProfileId();
-    final globalKey = metadata.globalKey;
+    if (!_isQueueOwnershipCurrent(ownership)) return false;
+    var metadataToStore = metadata.serverId == null ? metadata.copyWith(serverId: client.serverId) : metadata;
+    final globalKey = metadataToStore.globalKey;
 
     // Don't duplicate the physical download. If another profile already owns
     // the shared row, claiming it makes it visible for the owning profile.
@@ -1138,7 +1204,16 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
           existing.status == DownloadStatus.completed ||
           existing.status == DownloadStatus.queued ||
           existing.status == DownloadStatus.paused) {
-        final claimed = await _claimDownloadForProfile(globalKey, ownerProfileId);
+        try {
+          await _downloadManager.saveMetadata(metadataToStore, client);
+        } catch (e) {
+          // Claiming an already-present physical download must also work
+          // offline. Cache enrichment is best effort; ownership is durable.
+          appLogger.w('Failed to pin metadata while claiming $globalKey', error: e);
+        }
+        if (!_isQueueOwnershipCurrent(ownership)) return false;
+        final claimed = await _claimDownloadForProfile(globalKey, ownership, client);
+        if (!_isQueueOwnershipCurrent(ownership)) return false;
         if (claimed) safeNotifyListeners();
         return claimed;
       }
@@ -1152,24 +1227,23 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
     // Skip the fetch when offline — it would just fail. The partial metadata
     // from whatever hub/grid invoked the queue is good enough to enqueue; the
     // actual video URL resolves later when we're back online.
-    MediaItem metadataToStore = metadata;
     if (_offlineSource?.isOffline ?? false) {
       appLogger.d('Offline — using partial metadata for ${metadata.id}');
     } else {
       try {
         final fullMetadata = await client.fetchItem(metadata.id);
         if (fullMetadata != null) {
-          metadataToStore = fullMetadata.copyWith(
-            serverId: metadata.serverId ?? fullMetadata.serverId,
-            serverName: metadata.serverName ?? fullMetadata.serverName,
-            libraryId: fullMetadata.libraryId ?? metadata.libraryId,
-            libraryTitle: fullMetadata.libraryTitle ?? metadata.libraryTitle,
+          metadataToStore = mergeFetchedMediaItem(
+            fetched: fullMetadata,
+            existing: metadataToStore,
+            fallbackServerId: client.serverId,
           );
         }
       } catch (e) {
         appLogger.w('Failed to fetch full metadata for ${metadata.id}, using partial', error: e);
       }
     }
+    if (!_isQueueOwnershipCurrent(ownership)) return false;
 
     // Smart version matching for series/season downloads
     var resolvedIndex = mediaIndex;
@@ -1181,8 +1255,10 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
           resolvedIndex = matchedIndex;
         } else if (versionConfig.onVersionMismatch != null) {
           final pickedIndex = await versionConfig.onVersionMismatch!(metadataToStore, versions);
+          if (!_isQueueOwnershipCurrent(ownership)) return false;
           if (pickedIndex == null) return false;
           resolvedIndex = pickedIndex;
+          if (!_isQueueOwnershipCurrent(ownership)) return false;
           versionConfig.acceptedSignatures.add(versions[pickedIndex].signature);
         }
       }
@@ -1194,20 +1270,23 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
       await _fetchAndStoreParentMetadata(
         metadataToStore,
         client,
+        ownership: ownership,
         context: relatedContext ?? _RelatedMetadataDownloadContext(),
       );
+      if (!_isQueueOwnershipCurrent(ownership)) return false;
     }
 
     // Store full metadata for display
+    if (!_isQueueOwnershipCurrent(ownership)) return false;
     _metadata[globalKey] = metadataToStore;
 
-    await _claimDownloadForProfile(globalKey, ownerProfileId);
+    await _claimDownloadForProfile(globalKey, ownership, client);
+    if (!_isQueueOwnershipCurrent(ownership)) return false;
 
-    // Update local state immediately for UI feedback
     _downloads[globalKey] = DownloadProgress(globalKey: globalKey, status: DownloadStatus.queued);
     safeNotifyListeners();
 
-    // Actually trigger download via DownloadManagerService
+    if (!_isQueueOwnershipCurrent(ownership)) return false;
     await _downloadManager.queueDownload(metadata: metadataToStore, client: client, mediaIndex: resolvedIndex);
     return true;
   }
@@ -1218,6 +1297,7 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
   Future<void> _fetchAndStoreParentMetadata(
     MediaItem leaf,
     MediaServerClient client, {
+    required _QueueOwnership ownership,
     required _RelatedMetadataDownloadContext context,
   }) async {
     final serverId = leaf.serverId;
@@ -1227,12 +1307,15 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
       serverId: ServerId(serverId),
       ratingKey: leaf.grandparentId,
       client: client,
+      ownership: ownership,
       context: context,
     );
+    if (!_isQueueOwnershipCurrent(ownership)) return;
     await _fetchAndStoreRelatedMetadata(
       serverId: ServerId(serverId),
       ratingKey: leaf.parentId,
       client: client,
+      ownership: ownership,
       context: context,
     );
   }
@@ -1242,9 +1325,10 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
     required ServerId serverId,
     required String? ratingKey,
     required MediaServerClient client,
+    required _QueueOwnership ownership,
     required _RelatedMetadataDownloadContext context,
   }) async {
-    if (ratingKey == null) return;
+    if (ratingKey == null || !_isQueueOwnershipCurrent(ownership)) return;
     final globalKey = buildGlobalKey(ServerId(serverId), ratingKey);
 
     MediaItem? metadata = _metadata[globalKey];
@@ -1253,13 +1337,7 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
       try {
         final fetched = await client.fetchItem(ratingKey);
         if (fetched != null) {
-          final existing = metadata;
-          metadata = fetched.copyWith(
-            serverId: existing?.serverId ?? fetched.serverId ?? serverId,
-            serverName: existing?.serverName ?? fetched.serverName,
-            libraryId: fetched.libraryId ?? existing?.libraryId,
-            libraryTitle: fetched.libraryTitle ?? existing?.libraryTitle,
-          );
+          metadata = mergeFetchedMediaItem(fetched: fetched, existing: metadata, fallbackServerId: serverId);
           context.hydratedMetadataKeys.add(globalKey);
           fetchedFreshMetadata = true;
         }
@@ -1267,73 +1345,48 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
         appLogger.w('Failed to fetch metadata for $ratingKey', error: e);
       }
     }
-    if (metadata == null) return;
+    if (metadata == null || !_isQueueOwnershipCurrent(ownership)) return;
 
     final withServer = metadata.copyWith(serverId: serverId);
     _metadata[globalKey] = withServer;
+    if (!_isQueueOwnershipCurrent(ownership)) return;
     await _downloadManager.saveMetadata(withServer, client);
+    if (!_isQueueOwnershipCurrent(ownership)) return;
 
     final thumbPath = withServer.thumbPath;
     if (fetchedFreshMetadata || context.ensuredArtworkKeys.add(globalKey)) {
+      if (!_isQueueOwnershipCurrent(ownership)) return;
       await _downloadManager.downloadArtworkForMetadata(withServer, client);
+      if (!_isQueueOwnershipCurrent(ownership)) return;
     }
     _artworkPaths[globalKey] = DownloadedArtwork(thumbPath: thumbPath);
   }
 
   /// Queue every track under an album/artist. Expansion is one
   /// recursive-leaves call ([MediaServerClient.fetchPlayableDescendants]) on
-  /// both backends — Plex branches album→/children, Jellyfin retries
+  /// every backend — Plex branches album→/children, while MediaBrowser retries
   /// tag-only artists by album-artist credit.
-  Future<int> _queueMusicContainerDownload(MediaItem container, MediaServerClient client) async {
+  Future<int> _queueMusicContainerDownload(
+    MediaItem container,
+    MediaServerClient client,
+    _QueueOwnership ownership,
+  ) async {
     final tracks = await client.fetchPlayableDescendants(container.id);
+    if (!_isQueueOwnershipCurrent(ownership)) return 0;
     final relatedContext = _RelatedMetadataDownloadContext();
     int count = 0;
     for (final track in tracks) {
+      if (!_isQueueOwnershipCurrent(ownership)) return count;
       final trackWithServer = _ensureServerId(track, container.serverId);
-      final queued = await _queueSingleDownload(trackWithServer, client, relatedContext: relatedContext);
+      final queued = await _queueSingleDownload(
+        trackWithServer,
+        client,
+        ownership: ownership,
+        relatedContext: relatedContext,
+      );
       if (queued) count++;
     }
     return count;
-  }
-
-  /// Queue all episodes from a TV show for download
-  Future<int> _queueShowDownload(
-    MediaItem show,
-    MediaServerClient client, {
-    DownloadVersionConfig? versionConfig,
-    DownloadFilter filter = DownloadFilter.all,
-    int? maxCount,
-    bool includeSpecials = true,
-  }) async {
-    return _expandAndQueue(
-      container: show,
-      client: client,
-      versionConfig: versionConfig,
-      filter: filter,
-      maxCount: maxCount,
-      skipExisting: false,
-      includeSpecials: includeSpecials,
-    );
-  }
-
-  /// Queue all episodes from a season for download
-  Future<int> _queueSeasonDownload(
-    MediaItem season,
-    MediaServerClient client, {
-    DownloadVersionConfig? versionConfig,
-    DownloadFilter filter = DownloadFilter.all,
-    int? maxCount,
-    bool includeSpecials = true,
-  }) async {
-    return _expandAndQueue(
-      container: season,
-      client: client,
-      versionConfig: versionConfig,
-      filter: filter,
-      maxCount: maxCount,
-      skipExisting: false,
-      includeSpecials: includeSpecials,
-    );
   }
 
   /// Queue only the missing (not downloaded) episodes for a show/season.
@@ -1346,9 +1399,11 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
     if (!metadata.isShow && !metadata.isSeason) {
       throw Exception('queueMissingEpisodes only supports shows/seasons');
     }
+    final ownership = _captureQueueOwnership();
     final queued = await _expandAndQueue(
       container: metadata,
       client: client,
+      ownership: ownership,
       versionConfig: versionConfig,
       filter: DownloadFilter.all,
       maxCount: null,
@@ -1366,6 +1421,7 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
   Future<int> _expandAndQueue({
     required MediaItem container,
     required MediaServerClient client,
+    required _QueueOwnership ownership,
     required DownloadVersionConfig? versionConfig,
     required DownloadFilter filter,
     required int? maxCount,
@@ -1379,28 +1435,19 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
         includeSpecials || (container.kind == MediaKind.season && isSpecialSeasonNumber(container.index));
     final relatedContext = _RelatedMetadataDownloadContext();
     final episodes = <MediaItem>[];
-    if (container.kind == MediaKind.show) {
-      await collectEpisodesForShow(
-        client,
-        container.id,
-        unwatchedOnly: unwatchedOnly,
-        out: episodes,
-        fallback: container,
-        includeSpecials: effectiveIncludeSpecials,
-      );
-    } else {
-      await collectEpisodesForSeason(
-        client,
-        container.id,
-        unwatchedOnly: unwatchedOnly,
-        out: episodes,
-        fallback: container,
-        includeSpecials: effectiveIncludeSpecials,
-      );
-    }
+    await collectEpisodes(
+      client,
+      container.id,
+      unwatchedOnly: unwatchedOnly,
+      out: episodes,
+      fallback: container,
+      includeSpecials: effectiveIncludeSpecials,
+    );
+    if (!_isQueueOwnershipCurrent(ownership)) return 0;
 
     int count = 0;
     for (final episode in episodes) {
+      if (!_isQueueOwnershipCurrent(ownership)) return count;
       if (maxCount != null && count >= maxCount) break;
 
       final episodeWithServer = _ensureServerId(episode, container.serverId);
@@ -1419,6 +1466,7 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
       final queued = await _queueSingleDownload(
         episodeWithServer,
         client,
+        ownership: ownership,
         versionConfig: versionConfig,
         relatedContext: relatedContext,
       );
@@ -1460,12 +1508,13 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
     if (!_ownsDownloadKey(globalKey)) return;
     final progress = _downloads[globalKey];
     if (progress != null) {
-      final released = await _releaseDownloadForActiveProfile(globalKey);
-      final hasOtherOwners = await _database.hasDownloadOwner(globalKey);
+      final profileId = _requireActiveProfileId();
       final removedMeta = _metadata[globalKey];
-      if (!hasOtherOwners) {
-        await _downloadManager.cancelDownload(globalKey);
-        await _database.deleteDownload(globalKey);
+      var released = await _releaseDownloadForProfile(globalKey, profileId, onlyIfShared: true);
+      if (!released) {
+        final finalOwner = await _database.getDownloadOwner(profileId: profileId, globalKey: globalKey);
+        await _downloadManager.cancelAndRemoveDownload(globalKey);
+        released = await _releaseDownloadForProfile(globalKey, profileId, ownerHint: finalOwner);
         _downloads.remove(globalKey);
         _metadata.remove(globalKey);
         _artworkPaths.remove(globalKey);
@@ -1479,8 +1528,10 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
     }
   }
 
-  /// Delete a downloaded item
-  Future<void> deleteDownload(String globalKey) async {
+  /// Delete a downloaded item.
+  Future<void> deleteDownload(String globalKey) => _deleteDownload(globalKey, notify: true);
+
+  Future<void> _deleteDownload(String globalKey, {required bool notify}) async {
     try {
       final meta = _metadata[globalKey];
       if (meta != null &&
@@ -1490,43 +1541,44 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
       }
       if (!_ownsDownloadKey(globalKey)) return;
 
-      final released = await _releaseDownloadForActiveProfile(globalKey);
-      final hasOtherOwners = await _database.hasDownloadOwner(globalKey);
-      if (hasOtherOwners) {
-        if (meta != null) {
+      final profileId = _requireActiveProfileId();
+      final releasedAsShared = await _releaseDownloadForProfile(globalKey, profileId, onlyIfShared: true);
+      if (releasedAsShared) {
+        if (notify && meta != null) {
           DeletionNotifier().notifyDeletedItem(item: meta, isDownloadOnly: true);
         }
-        if (released) safeNotifyListeners();
+        if (notify) safeNotifyListeners();
         return;
       }
 
-      // Start deletion (progress will be tracked via stream)
+      final finalOwner = await _database.getDownloadOwner(profileId: profileId, globalKey: globalKey);
       await _downloadManager.deleteDownload(globalKey);
-
-      // Remove from local state
+      await _releaseDownloadForProfile(globalKey, profileId, ownerHint: finalOwner);
       _downloads.remove(globalKey);
       _metadata.remove(globalKey);
       _artworkPaths.remove(globalKey);
 
-      // Notify any open screens so they can drop the item from their lists
-      // immediately instead of waiting for an exit/re-enter.
-      if (meta != null) {
+      if (notify && meta != null) {
         DeletionNotifier().notifyDeletedItem(item: meta, isDownloadOnly: true);
       }
-
-      safeNotifyListeners();
+      if (notify) safeNotifyListeners();
     } catch (e) {
-      // Remove from deletion tracking on error
       _deletionProgress.remove(globalKey);
-      safeNotifyListeners();
+      if (notify) safeNotifyListeners();
       rethrow;
     }
   }
 
   Future<void> _deleteOwnedContainerDownloads(String globalKey, MediaItem container) async {
     final descendants = _ownedDescendantEntries(container).toList();
-    for (final entry in descendants) {
-      await deleteDownload(entry.key);
+    _batchDeletionDepth++;
+    try {
+      for (final entry in descendants) {
+        await _deleteDownload(entry.key, notify: false);
+        DeletionNotifier().notifyDeletedItem(item: entry.value, isDownloadOnly: true);
+      }
+    } finally {
+      _batchDeletionDepth--;
     }
 
     DeletionNotifier().notifyDeletedItem(item: container, isDownloadOnly: true);
@@ -1547,16 +1599,16 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
     });
   }
 
-  /// Handle deletion progress updates
+  /// Handle deletion progress updates.
   void _onDeletionProgressUpdate(DeletionProgress progress) {
     if (progress.isComplete) {
-      // Deletion complete - remove from tracking
       _deletionProgress.remove(progress.globalKey);
     } else {
-      // Update progress
       _deletionProgress[progress.globalKey] = progress;
     }
-    safeNotifyListeners();
+    if (_batchDeletionDepth == 0 && _ownsDownloadKey(progress.globalKey)) {
+      safeNotifyListeners();
+    }
   }
 
   /// Get deletion progress for an item
@@ -1577,68 +1629,55 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
   /// Backend-aware metadata lookup for offline UI. Routes through
   /// [DownloadManagerService] which dispatches to [PlexApiCache] or
   /// [JellyfinApiCache] based on the connection's `kind`.
+  ///
+  /// Resolves via the active profile's persisted scope — never the download
+  /// creator's `clientScopeId` — so a shared download can't leak another
+  /// user's cached watch state or token-stamped URLs. A profile with no
+  /// persisted scope (or no cached row under its own namespace) gets null and
+  /// the caller falls back to its lightweight seed metadata.
   Future<MediaItem?> lookupOfflineMetadata(ServerId serverId, String itemId) =>
-      _downloadManager.lookupMetadata(serverId, itemId);
+      _downloadManager.lookupMetadata(serverId, itemId, preferActiveScope: true, activeProfileId: _activeProfileId);
 
   /// Refresh only metadata from API cache (after watch state sync).
   ///
   /// This is more lightweight than full refresh() - only updates metadata
   /// without reloading download progress from database.
   Future<void> refreshMetadataFromCache() async {
+    final profileGeneration = _profileGeneration;
+    bool isStale() => isDisposed || profileGeneration != _profileGeneration;
     // The initial load runs in the constructor and may still be in flight
     // when callers (e.g. `onServersConnected`) trigger this. Wait for it so
     // `_downloads` is populated before we walk it — otherwise an early call
     // sees an empty map and does nothing useful.
     await ensureInitialized();
+    if (isStale()) return;
 
     // Walk every download — not just keys we already have metadata for. The
     // initial `_loadPersistedDownloads` may have raced with connection setup
     // (Jellyfin's cache reads need a [Connections] row) and skipped entries;
     // this lets a later refresh actually populate them.
-    final keys = <String>{..._metadata.keys, ..._downloads.keys};
-    if (keys.isEmpty) return;
+    final keys = <String>{..._downloads.keys.where(_ownsDownloadKey)};
+    if (keys.isEmpty) {
+      await _applyOfflineWatchOverlay(expectedProfileGeneration: profileGeneration);
+      return;
+    }
 
-    final allMetadata = await _downloadManager.getAllPinnedMetadata(preferActiveScope: true);
+    final pinned = await _downloadManager.getAllPinnedMetadata(activeProfileId: _activeProfileId);
+    if (isStale()) return;
     int cacheHits = 0;
     int networkFills = 0;
     int misses = 0;
 
     for (final globalKey in keys) {
-      final parsed = parseGlobalKey(globalKey);
-      if (parsed == null) continue;
-
       try {
-        final downloadRecord = await _downloadManager.getDownloadedMedia(globalKey);
-        var cached =
-            allMetadata[globalKey] ??
-            await _downloadManager.lookupMetadata(parsed.serverId, parsed.ratingKey, preferActiveScope: true);
-        if (cached != null) {
-          cacheHits++;
-        } else if (_downloads.containsKey(globalKey)) {
-          // Cache miss for an item we know is downloaded — pull from the
-          // live server. Repairs profiles where the per-backend cache row
-          // was never written or got cleared, the case that produces
-          // empty-title sync rules and a missing-downloads list.
-          cached = await _downloadManager.fetchAndPinMetadata(
-            parsed.serverId,
-            parsed.ratingKey,
-            preferActiveScope: true,
-          );
-          if (cached != null) networkFills++;
-        }
-
-        if (cached != null) {
-          _metadata[globalKey] = cached;
-          if (cached.isEpisode || cached.kind == MediaKind.track) {
-            _loadParentMetadataFromMap(
-              cached,
-              allMetadata,
-              clientScopeId:
-                  _downloadManager.activeClientScopeIdForServer(parsed.serverId) ?? downloadRecord?.clientScopeId,
-            );
-          }
-        } else {
+        final result = await _hydrateDownloadMetadata(globalKey, pinned, fetchOnMiss: true, isStale: isStale);
+        if (result.stale) return;
+        if (result.metadata == null) {
           misses++;
+        } else if (result.networkFilled) {
+          networkFills++;
+        } else {
+          cacheHits++;
         }
       } catch (e) {
         appLogger.d('Failed to refresh metadata for $globalKey: $e');
@@ -1647,7 +1686,8 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
 
     // Re-apply offline overlay so locally-queued watch actions aren't clobbered
     // by stale per-backend caches that haven't yet seen the server roundtrip.
-    await _applyOfflineWatchOverlay();
+    await _applyOfflineWatchOverlay(expectedProfileGeneration: profileGeneration);
+    if (isStale()) return;
 
     final updatedCount = cacheHits + networkFills;
     appLogger.i(
@@ -1659,11 +1699,30 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
     }
   }
 
+  /// Deletes [globalKey] if it is a completed episode/movie download; returns
+  /// the deleted item's display title, or null when it is not an auto-remove
+  /// candidate.
+  ///
+  /// Shared core of the auto-remove-watched rule. The watched judgment stays
+  /// with the caller: the sweep in [autoDeleteWatchedDownloads] trusts server
+  /// metadata, while [OfflineWatchProvider] fires right after a local
+  /// mark-watched that metadata cannot reflect yet.
+  Future<String?> deleteWatchedDownloadCandidate(String globalKey, {required String logContext}) async {
+    final meta = _resolvedMetadata(globalKey);
+    if (meta == null) return null;
+    if (!meta.isEpisode && !meta.isMovie) return null;
+    if (_downloads[globalKey]?.status != DownloadStatus.completed) return null;
+
+    appLogger.i('Auto-deleting $logContext download: ${meta.title} ($globalKey)');
+    await deleteDownload(globalKey);
+    return meta.title ?? t.common.unknown;
+  }
+
   /// Auto-delete downloaded episodes/movies that are now marked as watched.
   ///
   /// Only deletes individual episodes and movies, never show/season containers.
-  /// [activeId] is excluded from deletion to protect the currently playing item.
-  Future<List<String>> autoDeleteWatchedDownloads({String? activeId}) async {
+  /// [activeGlobalKey] is excluded from deletion to protect the currently playing item.
+  Future<List<String>> autoDeleteWatchedDownloads({String? activeGlobalKey}) async {
     final deletedTitles = <String>[];
 
     final completedKeys = _downloads.entries
@@ -1672,18 +1731,16 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
         .toList();
 
     for (final globalKey in completedKeys) {
-      final meta = _metadata[globalKey];
+      final meta = _resolvedMetadata(globalKey);
       if (meta == null) continue;
-      if (!meta.isEpisode && !meta.isMovie) continue;
       if (!meta.isWatched) continue;
 
       // Don't delete the episode that's currently playing
-      if (activeId != null && meta.id == activeId) continue;
+      if (activeGlobalKey != null && meta.globalKey == activeGlobalKey) continue;
 
       try {
-        appLogger.i('Auto-deleting watched download: ${meta.title} ($globalKey)');
-        await deleteDownload(globalKey);
-        deletedTitles.add(meta.title ?? 'Unknown');
+        final title = await deleteWatchedDownloadCandidate(globalKey, logContext: 'watched');
+        if (title != null) deletedTitles.add(title);
       } catch (e) {
         appLogger.w('Failed to auto-delete watched download $globalKey: $e');
       }
@@ -1695,20 +1752,12 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
   /// All sync rules for the active profile (profile-scoped globalKey -> SyncRuleItem).
   Map<String, SyncRuleItem> get syncRules => Map.unmodifiable(_syncRules);
 
+  bool get syncRulesSupported => _downloadManager.downloadsSupported;
+
   String syncRuleKeyFor(ServerId serverId, String ratingKey, {String? profileId}) {
     final owner = profileId ?? _activeProfileId;
     if (owner == null || owner.isEmpty) return buildGlobalKey(ServerId(serverId), ratingKey);
     return buildProfileScopedGlobalKey(owner, ServerId(serverId), ratingKey);
-  }
-
-  String syncRuleKeyForGlobalKey(String globalKey) {
-    final scoped = parseProfileScopedGlobalKey(globalKey);
-    if (scoped != null) {
-      return syncRuleKeyFor(scoped.serverId, scoped.ratingKey, profileId: scoped.profileId);
-    }
-    final parsed = parseGlobalKey(globalKey);
-    if (parsed == null) return globalKey;
-    return syncRuleKeyFor(parsed.serverId, parsed.ratingKey);
   }
 
   String syncRuleKeyForClient(MediaServerClient client, String ratingKey, {ServerId? serverId}) {
@@ -1736,6 +1785,56 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
 
   /// Get a sync rule for the given item
   SyncRuleItem? getSyncRule(String globalKey) => _syncRules[globalKey];
+
+  bool _hasActiveOwnedDownload(String globalKey) {
+    if (!_ownsDownloadKey(globalKey)) return false;
+    final progress = _downloads[globalKey];
+    return progress != null &&
+        (progress.status == DownloadStatus.downloading ||
+            progress.status == DownloadStatus.completed ||
+            progress.status == DownloadStatus.queued ||
+            progress.status == DownloadStatus.paused);
+  }
+
+  Future<void> _associateSyncRuleDownload(
+    SyncRuleItem rule,
+    String downloadGlobalKey,
+    _QueueOwnership ownership,
+  ) async {
+    if (!_isQueueOwnershipCurrent(ownership) ||
+        _removingSyncRuleKeys.contains(rule.globalKey) ||
+        !_hasActiveOwnedDownload(downloadGlobalKey)) {
+      return;
+    }
+    final currentRule = _syncRules[rule.globalKey];
+    if (currentRule == null) return;
+    await _database.associateSyncRuleDownload(currentRule, downloadGlobalKey);
+  }
+
+  Future<bool> _queueSyncRuleDownload(
+    MediaItem item,
+    MediaServerClient client, {
+    required _QueueOwnership ownership,
+    required _RelatedMetadataDownloadContext relatedContext,
+    int mediaIndex = 0,
+  }) async {
+    if (!_isQueueOwnershipCurrent(ownership)) return false;
+    return _queueSingleDownload(
+      item,
+      client,
+      ownership: ownership,
+      mediaIndex: mediaIndex,
+      relatedContext: relatedContext,
+    );
+  }
+
+  Future<void> markSyncRuleDownloadLinksInitialized(String globalKey) async {
+    await _database.markSyncRuleDownloadLinksInitialized(globalKey);
+    final existing = _syncRules[globalKey];
+    if (existing != null) {
+      _syncRules[globalKey] = existing.copyWith(downloadLinksInitialized: true);
+    }
+  }
 
   /// Create (or upsert) a sync rule for a show, season, collection, or playlist.
   ///
@@ -1785,46 +1884,210 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
     );
   }
 
-  /// Update the episode count for an existing show/season sync rule.
-  Future<void> updateSyncRuleCount(String globalKey, int episodeCount) async {
-    _requireActiveProfileId();
-    await _database.updateSyncRuleCount(globalKey, episodeCount);
-    final existing = _syncRules[globalKey];
-    if (existing != null) {
-      _syncRules[globalKey] = existing.copyWith(episodeCount: episodeCount);
-      safeNotifyListeners();
+  /// Validate the options actually consumed by each sync-rule kind.
+  static void validateSyncRuleOptions(
+    SyncRuleItem rule, {
+    int? episodeCount,
+    String? downloadFilter,
+    bool? includeSpecials,
+    int? mediaIndex,
+  }) {
+    final isList = rule.targetType == ContentTypes.collection || rule.targetType == ContentTypes.playlist;
+    if (episodeCount != null) {
+      if (isList) throw UnsupportedError('List rules do not use episode counts');
+      if (episodeCount < 0) throw ArgumentError('Episode count must be nonnegative');
     }
-    appLogger.i('Updated sync rule $globalKey: keep $episodeCount');
+    if (downloadFilter != null) {
+      if (!isList) throw UnsupportedError('Episode rules always select unwatched episodes');
+      if (downloadFilter != SyncRuleFilter.all && downloadFilter != SyncRuleFilter.unwatched) {
+        throw ArgumentError('Invalid sync rule filter');
+      }
+    }
+    if (includeSpecials != null && rule.targetType != ContentTypes.show) {
+      throw UnsupportedError('Only show rules use includeSpecials');
+    }
+    if (mediaIndex != null) {
+      if (isList) throw UnsupportedError('List rules always use the default version');
+      if (mediaIndex < 0) throw ArgumentError('Version index must be nonnegative');
+    }
   }
 
-  /// Update the download filter for an existing collection/playlist sync rule.
-  Future<void> updateSyncRuleFilter(String globalKey, String downloadFilter) async {
-    _requireActiveProfileId();
-    await _database.updateSyncRuleFilter(globalKey, downloadFilter);
-    final existing = _syncRules[globalKey];
-    if (existing != null) {
-      _syncRules[globalKey] = existing.copyWith(downloadFilter: downloadFilter);
-      safeNotifyListeners();
+  /// Edit existing configuration only; this never executes or creates a rule.
+  Future<SyncRuleItem> updateSyncRuleOptions(
+    String globalKey, {
+    int? episodeCount,
+    String? downloadFilter,
+    bool? enabled,
+    bool? includeSpecials,
+    int? mediaIndex,
+    void Function()? checkCurrent,
+  }) async {
+    final profileId = _requireActiveProfileId();
+    final generation = _profileGeneration;
+    final expected = _syncRules[globalKey];
+    if (expected == null || expected.profileId != profileId) throw StateError('Sync rule is not owned by this profile');
+    validateSyncRuleOptions(
+      expected,
+      episodeCount: episodeCount,
+      downloadFilter: downloadFilter,
+      includeSpecials: includeSpecials,
+      mediaIndex: mediaIndex,
+    );
+    void guard({bool requireIdle = true}) {
+      checkCurrent?.call();
+      if (isDisposed || _activeProfileId != profileId || _profileGeneration != generation) {
+        throw StateError('Download profile changed');
+      }
+      if (requireIdle &&
+          (_syncRuleCleanupInProgress || _syncRuleExecutor.isExecuting || _removingSyncRuleKeys.contains(globalKey))) {
+        throw const SyncRuleCleanupBusyException();
+      }
+      if (_syncRules[globalKey]?.id != expected.id) throw StateError('Sync rule no longer exists');
     }
-    appLogger.i('Updated sync rule $globalKey: filter=$downloadFilter');
-  }
 
-  /// Toggle a sync rule's enabled state.
-  Future<void> setSyncRuleEnabled(String globalKey, bool enabled) async {
-    _requireActiveProfileId();
-    await _database.updateSyncRuleEnabled(globalKey, enabled);
-    final existing = _syncRules[globalKey];
-    if (existing != null) {
-      _syncRules[globalKey] = existing.copyWith(enabled: enabled);
-      safeNotifyListeners();
-    }
-    appLogger.i('${enabled ? 'Enabled' : 'Disabled'} sync rule: $globalKey');
+    guard();
+    final updated = await _database.updateSyncRuleOptions(
+      expected,
+      episodeCount: episodeCount,
+      downloadFilter: downloadFilter,
+      enabled: enabled,
+      includeSpecials: includeSpecials,
+      mediaIndex: mediaIndex,
+      checkCurrent: guard,
+    );
+    guard(requireIdle: false);
+    _syncRules[globalKey] = updated;
+    safeNotifyListeners();
+    return updated;
   }
 
   /// Delete a sync rule. Downloaded episodes are kept.
   Future<void> deleteSyncRule(String globalKey) async {
     _requireActiveProfileId();
     final existing = _syncRules[globalKey] ?? await _database.getSyncRule(globalKey);
+    await _deleteSyncRuleRecord(globalKey, existing);
+    safeNotifyListeners();
+  }
+
+  /// Delete a list sync rule and every active-profile download associated only
+  /// with that rule. Other rules and profile owners keep their copies.
+  Future<void> deleteSyncRuleAndDownloads(String globalKey, MultiServerManager serverManager) async {
+    final profileId = _requireActiveProfileId();
+    if (_syncRuleCleanupInProgress || _syncRuleExecutor.isExecuting) {
+      throw const SyncRuleCleanupBusyException();
+    }
+
+    final ownership = _captureQueueOwnership();
+    final existing = await _database.getSyncRule(globalKey);
+    if (existing == null || existing.profileId != profileId) return;
+    if (existing.targetType != ContentTypes.collection && existing.targetType != ContentTypes.playlist) {
+      throw ArgumentError.value(existing.targetType, 'targetType', 'Only collection/playlist rules support cleanup');
+    }
+
+    var stateChanged = false;
+    _syncRuleCleanupInProgress = true;
+    try {
+      await _backfillUninitializedRuleLinksForServer(existing, serverManager, ownership);
+      if (!_isQueueOwnershipCurrent(ownership)) {
+        throw const SyncRuleCleanupBusyException();
+      }
+
+      final trackedRule = await _database.getSyncRule(globalKey);
+      if (trackedRule == null || !trackedRule.downloadLinksInitialized) {
+        throw SyncRuleCleanupUnavailableException(globalKey);
+      }
+
+      _removingSyncRuleKeys.add(globalKey);
+      await _database.updateSyncRuleEnabled(globalKey, false);
+      final cachedRule = _syncRules[globalKey];
+      if (cachedRule != null) {
+        _syncRules[globalKey] = cachedRule.copyWith(enabled: false, downloadLinksInitialized: true);
+      }
+      stateChanged = true;
+
+      final downloadKeys = await _database.getExclusiveSyncRuleDownloadKeys(trackedRule);
+      _batchDeletionDepth++;
+      try {
+        for (final downloadKey in downloadKeys) {
+          if (!_isQueueOwnershipCurrent(ownership)) {
+            throw const SyncRuleCleanupBusyException();
+          }
+          final wasOwned = _ownsDownloadKey(downloadKey);
+          final metadata = _metadata[downloadKey];
+          await _deleteDownload(downloadKey, notify: false);
+          if (wasOwned && metadata != null) {
+            DeletionNotifier().notifyDeletedItem(item: metadata, isDownloadOnly: true);
+          }
+        }
+      } finally {
+        _batchDeletionDepth--;
+      }
+
+      await _deleteSyncRuleRecord(globalKey, trackedRule);
+      appLogger.i('Deleted sync rule and ${downloadKeys.length} associated downloads: $globalKey');
+    } finally {
+      _removingSyncRuleKeys.remove(globalKey);
+      _syncRuleCleanupInProgress = false;
+      if (stateChanged) safeNotifyListeners();
+    }
+  }
+
+  Future<void> _backfillUninitializedRuleLinksForServer(
+    SyncRuleItem target,
+    MultiServerManager serverManager,
+    _QueueOwnership ownership,
+  ) async {
+    final rules = await _database.getUninitializedSyncRulesForServer(
+      profileId: target.profileId,
+      serverId: ServerId(target.serverId),
+    );
+    final requiredRules = rules.where((rule) => rule.enabled || rule.globalKey == target.globalKey);
+    for (final rule in requiredRules) {
+      if (!_isQueueOwnershipCurrent(ownership)) {
+        throw const SyncRuleCleanupBusyException();
+      }
+      switch (rule.targetType) {
+        case ContentTypes.show:
+        case ContentTypes.season:
+          final downloadKeys = await _database.getOwnedDownloadKeysForAncestorRule(
+            profileId: rule.profileId,
+            serverId: ServerId(rule.serverId),
+            ratingKey: rule.ratingKey,
+            matchGrandparent: rule.targetType == ContentTypes.show,
+          );
+          for (final downloadKey in downloadKeys) {
+            await _database.associateSyncRuleDownload(rule, downloadKey);
+          }
+          await _database.markSyncRuleDownloadLinksInitialized(rule.globalKey);
+          break;
+        case ContentTypes.collection:
+        case ContentTypes.playlist:
+          final backfilled = await _syncRuleExecutor.backfillListRuleDownloadLinks(
+            rule: rule,
+            serverManager: serverManager,
+            downloads: downloads,
+            metadata: Map.unmodifiable(_metadata),
+            associateDownload: (resolvedRule, downloadKey) async {
+              if (_isQueueOwnershipCurrent(ownership) && _hasActiveOwnedDownload(downloadKey)) {
+                await _database.associateSyncRuleDownload(resolvedRule, downloadKey);
+              }
+            },
+          );
+          if (!backfilled) {
+            throw SyncRuleCleanupUnavailableException(rule.globalKey);
+          }
+          break;
+        default:
+          throw SyncRuleCleanupUnavailableException(rule.globalKey);
+      }
+      final cachedRule = _syncRules[rule.globalKey];
+      if (cachedRule != null) {
+        _syncRules[rule.globalKey] = cachedRule.copyWith(downloadLinksInitialized: true);
+      }
+    }
+  }
+
+  Future<void> _deleteSyncRuleRecord(String globalKey, SyncRuleItem? existing) async {
     final publicGlobalKey = existing == null
         ? globalKey
         : buildGlobalKey(ServerId(existing.serverId), existing.ratingKey);
@@ -1835,7 +2098,6 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
     if (!_downloads.containsKey(publicGlobalKey)) {
       _metadata.remove(publicGlobalKey);
     }
-    safeNotifyListeners();
     appLogger.i('Deleted sync rule: $globalKey');
   }
 
@@ -1848,9 +2110,11 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
   /// Returns titles of newly queued items (for snackbar display).
   Future<List<String>> executeSyncRules(MultiServerManager serverManager, {bool force = false}) async {
     if (!_downloadManager.downloadsSupported) return [];
+    if (_syncRuleCleanupInProgress) return [];
 
     final profileId = _activeProfileId;
     if (profileId == null || profileId.isEmpty) return [];
+    final ownership = _captureQueueOwnership();
     if (_syncRules.isEmpty) return [];
 
     final relatedContext = _RelatedMetadataDownloadContext();
@@ -1859,17 +2123,17 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
       serverManager: serverManager,
       downloads: downloads,
       metadata: Map.unmodifiable(_metadata),
-      queueSingleDownload: (episode, client, {int mediaIndex = 0}) async {
-        // A profile switch mid-pass must not keep queueing the old
-        // profile's rules; whatever does get queued is claimed for the
-        // rule's owner, never the new active profile.
-        if (_activeProfileId != profileId) return false;
-        return _queueSingleDownload(
+      associateDownload: (rule, downloadGlobalKey) => _associateSyncRuleDownload(rule, downloadGlobalKey, ownership),
+      queueSingleDownload: (episode, client, {int mediaIndex = 0}) {
+        // A profile switch mid-pass must not keep queueing the old profile's
+        // rules; whatever does get queued is claimed for the rule's owner,
+        // never the new active profile.
+        return _queueSyncRuleDownload(
           episode,
           client,
-          mediaIndex: mediaIndex,
+          ownership: ownership,
           relatedContext: relatedContext,
-          claimForProfileId: profileId,
+          mediaIndex: mediaIndex,
         );
       },
       isOffline: _offlineSource?.isOffline ?? false,
@@ -1877,7 +2141,7 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
     );
 
     return results.where((r) => r.queuedCount > 0).map((r) {
-      final title = r.title ?? 'Unknown';
+      final title = r.title ?? t.common.unknown;
       return '$title (${r.queuedCount})';
     }).toList();
   }
@@ -1886,9 +2150,11 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
   /// `addToCollection`). Bypasses the cooldown.
   Future<SyncRuleResult?> executeSyncRuleFor(String globalKey, MultiServerManager serverManager) async {
     if (!_downloadManager.downloadsSupported) return null;
+    if (_syncRuleCleanupInProgress) return null;
 
     final profileId = _activeProfileId;
     if (profileId == null || profileId.isEmpty) return null;
+    final ownership = _captureQueueOwnership();
     if (!_syncRules.containsKey(globalKey)) return null;
 
     final relatedContext = _RelatedMetadataDownloadContext();
@@ -1898,31 +2164,32 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
       serverManager: serverManager,
       downloads: downloads,
       metadata: Map.unmodifiable(_metadata),
-      queueSingleDownload: (episode, client, {int mediaIndex = 0}) async {
-        if (_activeProfileId != profileId) return false;
-        return _queueSingleDownload(
-          episode,
-          client,
-          mediaIndex: mediaIndex,
-          relatedContext: relatedContext,
-          claimForProfileId: profileId,
-        );
-      },
+      associateDownload: (rule, downloadGlobalKey) => _associateSyncRuleDownload(rule, downloadGlobalKey, ownership),
+      queueSingleDownload: (episode, client, {int mediaIndex = 0}) => _queueSyncRuleDownload(
+        episode,
+        client,
+        ownership: ownership,
+        relatedContext: relatedContext,
+        mediaIndex: mediaIndex,
+      ),
       isOffline: _offlineSource?.isOffline ?? false,
     );
   }
 
   Future<void> _loadSyncRules() async {
     try {
-      _syncRules.clear();
       final profileId = _activeProfileId;
-      if (profileId == null || profileId.isEmpty) return;
+      if (profileId == null || profileId.isEmpty) {
+        _syncRules.clear();
+        return;
+      }
       await _database.adoptLegacySyncRulesForProfile(profileId);
       if (_activeProfileId != profileId) return;
       final rules = await _database.getSyncRules(profileId: profileId);
-      for (final rule in rules) {
-        _syncRules[rule.globalKey] = rule;
-      }
+      if (_activeProfileId != profileId) return;
+      _syncRules
+        ..clear()
+        ..addEntries(rules.map((rule) => MapEntry(rule.globalKey, rule)));
     } catch (e) {
       appLogger.w('Failed to load sync rules', error: e);
     }
@@ -1930,16 +2197,35 @@ class DownloadProvider extends ChangeNotifier with DisposableChangeNotifierMixin
 
   Future<void> _loadDownloadOwners() async {
     try {
-      _ownedDownloadKeys.clear();
       final profileId = _activeProfileId;
-      if (profileId == null || profileId.isEmpty) return;
-      await _database.adoptLegacyDownloadsForProfile(profileId);
-      if (_activeProfileId != profileId) return;
-      _ownedDownloadKeys.addAll(await _database.getDownloadOwnerKeysForProfile(profileId));
+      final generation = _profileGeneration;
+      if (profileId == null || profileId.isEmpty) {
+        _ownedDownloadKeys.clear();
+        return;
+      }
+      bool isStillActive() => _activeProfileId == profileId && _profileGeneration == generation;
+      await _database.adoptLegacyDownloadsForProfile(profileId, isStillActive: isStillActive);
+      await _downloadManager.adoptTransferredPlexMetadataForProfile(profileId, isStillActive: isStillActive);
+      if (!isStillActive()) return;
+      final ownedKeys = await _database.getDownloadOwnerKeysForProfile(profileId);
+      if (!isStillActive()) return;
+      _ownedDownloadKeys
+        ..clear()
+        ..addAll(ownedKeys);
     } catch (e) {
       appLogger.w('Failed to load download ownership', error: e);
     }
   }
+}
+
+class SyncRuleCleanupBusyException implements Exception {
+  const SyncRuleCleanupBusyException();
+}
+
+class SyncRuleCleanupUnavailableException implements Exception {
+  final String ruleGlobalKey;
+
+  const SyncRuleCleanupUnavailableException(this.ruleGlobalKey);
 }
 
 /// Exception thrown when download is blocked due to cellular-only setting

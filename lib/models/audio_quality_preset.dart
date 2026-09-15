@@ -18,18 +18,4 @@ enum AudioQualityPreset {
   final int? bitrateKbps;
 
   bool get isOriginal => this == AudioQualityPreset.original;
-
-  String get storageKey => name;
-
-  static AudioQualityPreset fromStorage(String? stored) {
-    if (stored == null) return AudioQualityPreset.original;
-    for (final v in AudioQualityPreset.values) {
-      if (v.name == stored) return v;
-    }
-    return AudioQualityPreset.original;
-  }
-
-  /// Order shared by every picker surface: [original] first, then capped
-  /// presets highest-bitrate first.
-  static final List<AudioQualityPreset> displayOrder = List.unmodifiable(values);
 }

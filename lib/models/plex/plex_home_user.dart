@@ -1,5 +1,6 @@
 import 'package:json_annotation/json_annotation.dart';
 
+import '../../i18n/strings.g.dart';
 import '../../utils/json_utils.dart';
 
 part 'plex_home_user.g.dart';
@@ -9,11 +10,11 @@ part 'plex_home_user.g.dart';
 /// coerce tolerantly instead of hard-casting.
 @JsonSerializable()
 class PlexHomeUser {
-  @JsonKey(fromJson: _intOr0)
+  @JsonKey(fromJson: flexibleIntOrZero)
   final int id;
   @JsonKey(readValue: readStringField, defaultValue: '')
   final String uuid;
-  @JsonKey(readValue: readStringField, defaultValue: 'Unknown')
+  @JsonKey(readValue: readStringField, defaultValue: '')
   final String title;
   @JsonKey(readValue: readStringField)
   final String? username;
@@ -56,12 +57,15 @@ class PlexHomeUser {
 
   Map<String, dynamic> toJson() => _$PlexHomeUserToJson(this);
 
-  String get displayName => friendlyName ?? title;
+  String get displayName {
+    final friendly = friendlyName;
+    if (friendly != null && friendly.trim().isNotEmpty) return friendly;
+    if (title.trim().isNotEmpty) return title;
+    return t.common.unknown;
+  }
 
   bool get isAdminUser => admin;
   bool get isRestrictedUser => restricted;
   bool get isGuestUser => guest;
   bool get requiresPassword => protected;
 }
-
-int _intOr0(Object? v) => flexibleInt(v) ?? 0;

@@ -4,13 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:provider/provider.dart';
 
+import '../../focus/focusable_action_bar.dart';
 import '../../focus/input_mode_tracker.dart';
 import '../../i18n/strings.g.dart';
 import '../../services/music/music_playback_service.dart';
 import '../../theme/mono_tokens.dart';
 import '../../utils/platform_detector.dart';
 import '../../widgets/app_icon.dart';
-import '../../widgets/bottom_sheet_header.dart';
+import '../../widgets/bottom_sheet_page_scaffold.dart';
 import '../../widgets/music/repeat_mode.dart';
 import '../../widgets/music/track_row.dart';
 import '../../widgets/overlay_sheet.dart';
@@ -19,7 +20,7 @@ import '../../widgets/overlay_sheet.dart';
 /// [OverlaySheetHost] ancestor (all now-playing layouts do) so TV back
 /// handling stays centralized in the host.
 Future<void> showQueueSheet(BuildContext context) {
-  return OverlaySheetController.showAdaptive<void>(context, showDragHandle: true, builder: (_) => const QueueSheet());
+  return OverlaySheetController.of(context).show<void>(showDragHandle: true, builder: (_) => const QueueSheet());
 }
 
 /// Sheet chrome around [QueueList]: header with track count, shuffle/repeat
@@ -33,51 +34,46 @@ class QueueSheet extends StatelessWidget {
     final service = context.watch<MusicPlaybackService>();
     final colorScheme = Theme.of(context).colorScheme;
 
-    return Column(
-      mainAxisSize: .min,
-      children: [
-        BottomSheetHeader(
-          title: t.music.queue,
-          action: Row(
-            mainAxisSize: .min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.only(right: 4),
-                child: Text(
-                  t.music.trackCount(n: service.queue.length),
-                  style: TextStyle(fontSize: 13, color: tk.textMuted),
-                ),
-              ),
-              IconButton(
-                icon: AppIcon(
-                  Symbols.shuffle_rounded,
-                  fill: 1,
-                  size: 20,
-                  color: service.shuffled ? colorScheme.primary : tk.textMuted,
-                ),
+    return BottomSheetPageScaffold(
+      title: t.music.queue,
+      action: Row(
+        mainAxisSize: .min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(right: 4),
+            child: Text(
+              t.music.trackCount(n: service.queue.length),
+              style: TextStyle(fontSize: 13, color: tk.textMuted),
+            ),
+          ),
+          FocusableActionBar(
+            actions: [
+              FocusableAction(
+                icon: Symbols.shuffle_rounded,
+                iconColor: service.shuffled ? colorScheme.primary : tk.textMuted,
+                iconSize: 20,
                 tooltip: t.common.shuffle,
                 onPressed: service.toggleShuffle,
               ),
-              IconButton(
-                icon: AppIcon(
-                  repeatModeIcon(service.repeatMode),
-                  fill: 1,
-                  size: 20,
-                  color: service.repeatMode == MusicRepeatMode.off ? tk.textMuted : colorScheme.primary,
-                ),
+              FocusableAction(
+                icon: repeatModeIcon(service.repeatMode),
+                iconColor: service.repeatMode == MusicRepeatMode.off ? tk.textMuted : colorScheme.primary,
+                iconSize: 20,
                 tooltip: repeatModeLabel(service.repeatMode),
                 onPressed: () => service.setRepeatMode(nextRepeatMode(service.repeatMode)),
               ),
-              IconButton(
-                icon: AppIcon(Symbols.clear_all_rounded, fill: 1, size: 20, color: tk.textMuted),
+              FocusableAction(
+                icon: Symbols.clear_all_rounded,
+                iconColor: tk.textMuted,
+                iconSize: 20,
                 tooltip: t.music.clearQueue,
                 onPressed: service.clearUpcoming,
               ),
             ],
           ),
-        ),
-        const Flexible(child: QueueList(autofocusCurrent: true)),
-      ],
+        ],
+      ),
+      child: const QueueList(autofocusCurrent: true),
     );
   }
 }
@@ -126,7 +122,7 @@ class _QueueListState extends State<QueueList> {
     if (widget.autofocusCurrent) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         Timer.run(() {
-          if (!mounted || !InputModeTracker.isKeyboardMode(context)) return;
+          if (!mounted || !InputModeTracker.isKeyboardMode(context, listen: false)) return;
           // Schedule after the overlay host's _autoFocus second callback so
           // we override its focus-first-descendant default.
           WidgetsBinding.instance.addPostFrameCallback((_) {

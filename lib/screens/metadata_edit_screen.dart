@@ -3,8 +3,8 @@ import '../media/ids.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
-import '../focus/focusable_button.dart';
 import '../focus/focusable_wrapper.dart';
+import '../focus/focusable_button.dart';
 import '../i18n/strings.g.dart';
 import '../media/media_item.dart';
 import '../metadata_edit/metadata_edit_adapters.dart';
@@ -13,7 +13,6 @@ import '../services/file_picker_service.dart';
 import '../utils/app_logger.dart';
 import '../utils/dialogs.dart';
 import '../utils/formatters.dart';
-import '../utils/media_image_helper.dart';
 import '../utils/provider_extensions.dart';
 import '../utils/snackbar_helper.dart';
 import '../widgets/app_icon.dart';
@@ -23,6 +22,7 @@ import '../widgets/focused_scroll_scaffold.dart';
 import '../widgets/loading_indicator_box.dart';
 import '../widgets/optimized_media_image.dart';
 import '../widgets/tag_edit_dialog.dart';
+import 'settings/settings_utils.dart';
 
 class MetadataEditScreen extends StatefulWidget {
   final MediaItem metadata;
@@ -37,7 +37,8 @@ class _MetadataEditScreenState extends State<MetadataEditScreen> {
   MetadataEditAdapter? _adapter;
   MetadataEditDraft? _draft;
   bool _isLoading = true;
-  bool _isSaving = false;
+  bool _isCommitting = false;
+  int _loadGeneration = 0;
 
   @override
   void initState() {
@@ -45,20 +46,33 @@ class _MetadataEditScreenState extends State<MetadataEditScreen> {
     _loadMetadata();
   }
 
+  @override
+  void didUpdateWidget(covariant MetadataEditScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_sameMedia(oldWidget.metadata, widget.metadata)) return;
+
+    _adapter = null;
+    _draft = null;
+    _isLoading = true;
+    _loadMetadata();
+  }
+
   Future<void> _loadMetadata() async {
+    final generation = ++_loadGeneration;
+    final metadata = widget.metadata;
     try {
-      final client = context.getMediaClientWithFallback(serverIdOrNull(widget.metadata.serverId));
+      final client = context.getMediaClientWithFallback(serverIdOrNull(metadata.serverId));
       final adapter = metadataEditAdapterFor(client);
-      if (adapter == null || !adapter.supportsKind(widget.metadata.kind)) {
-        if (!mounted) return;
+      if (adapter == null || !adapter.supportsKind(metadata.kind)) {
+        if (!mounted || generation != _loadGeneration || !_sameMedia(widget.metadata, metadata)) return;
         setState(() {
           _adapter = adapter;
           _isLoading = false;
         });
         return;
       }
-      final draft = await adapter.load(widget.metadata);
-      if (!mounted) return;
+      final draft = await adapter.load(metadata);
+      if (!mounted || generation != _loadGeneration || !_sameMedia(widget.metadata, metadata)) return;
       setState(() {
         _adapter = adapter;
         _draft = draft;
@@ -66,7 +80,7 @@ class _MetadataEditScreenState extends State<MetadataEditScreen> {
       });
     } catch (e, st) {
       appLogger.e('Failed to load metadata editor', error: e, stackTrace: st);
-      if (!mounted) return;
+      if (!mounted || generation != _loadGeneration || !_sameMedia(widget.metadata, metadata)) return;
       setState(() => _isLoading = false);
       showErrorSnackBar(context, t.metadataEdit.metadataUpdateFailed);
     }
@@ -81,9 +95,10 @@ class _MetadataEditScreenState extends State<MetadataEditScreen> {
   Future<void> _save() async {
     final adapter = _adapter;
     final draft = _draft;
-    if (adapter == null || draft == null || !_hasChanges || _isSaving) return;
+    final metadata = widget.metadata;
+    if (adapter == null || draft == null || !_hasChanges || _isCommitting) return;
 
-    setState(() => _isSaving = true);
+    setState(() => _isCommitting = true);
     bool success = false;
     try {
       success = await adapter.save(draft);
@@ -92,7 +107,9 @@ class _MetadataEditScreenState extends State<MetadataEditScreen> {
     }
 
     if (!mounted) return;
-    setState(() => _isSaving = false);
+    final ownsCompletion = identical(_draft, draft) && _sameMedia(widget.metadata, metadata);
+    setState(() => _isCommitting = false);
+    if (!ownsCompletion) return;
 
     if (success) {
       showSuccessSnackBar(context, t.metadataEdit.metadataUpdated);
@@ -104,32 +121,25 @@ class _MetadataEditScreenState extends State<MetadataEditScreen> {
 
   Future<void> _editTextField(MetadataEditField field, {bool multiline = false}) async {
     final draft = _draft;
-    if (draft == null) return;
+    if (draft == null || _isCommitting) return;
     final currentValue = draft.value<String>(field.id) ?? '';
-    final result = multiline
-        ? await showMultilineTextInputDialog(
-            context,
-            title: field.label,
-            labelText: field.label,
-            initialValue: currentValue,
-          )
-        : await showTextInputDialog(
-            context,
-            title: field.label,
-            labelText: field.label,
-            hintText: '',
-            initialValue: currentValue,
-            allowEmpty: true,
-          );
+    final result = await showTextInputDialog(
+      context,
+      title: field.label,
+      labelText: field.label,
+      initialValue: currentValue,
+      allowEmpty: true,
+      multiline: multiline,
+    );
 
-    if (result != null && mounted) {
+    if (result != null && mounted && !_isCommitting && identical(_draft, draft)) {
       setState(() => draft.setValue(field.id, result));
     }
   }
 
   Future<void> _editDate(MetadataEditField field) async {
     final draft = _draft;
-    if (draft == null) return;
+    if (draft == null || _isCommitting) return;
     DateTime initial = DateTime.now();
     final current = draft.value<String>(field.id);
     if (current != null && current.isNotEmpty) {
@@ -145,7 +155,7 @@ class _MetadataEditScreenState extends State<MetadataEditScreen> {
       useRootNavigator: false,
     );
 
-    if (picked != null && mounted) {
+    if (picked != null && mounted && !_isCommitting && identical(_draft, draft)) {
       setState(() {
         draft.setValue(field.id, '${picked.year}-${padNumber(picked.month, 2)}-${padNumber(picked.day, 2)}');
       });
@@ -154,12 +164,12 @@ class _MetadataEditScreenState extends State<MetadataEditScreen> {
 
   Future<void> _editStringList(MetadataEditField field) async {
     final draft = _draft;
-    if (draft == null) return;
+    if (draft == null || _isCommitting) return;
     final result = await showScopedDialog<List<String>>(
       context: context,
       builder: (context) => TagEditDialog(title: field.label, initialTags: metadataStringList(draft.values[field.id])),
     );
-    if (result != null && mounted) {
+    if (result != null && mounted && !_isCommitting && identical(_draft, draft)) {
       setState(() => draft.setValue(field.id, result));
     }
   }
@@ -167,49 +177,24 @@ class _MetadataEditScreenState extends State<MetadataEditScreen> {
   Future<void> _editChoice(MetadataEditField field) async {
     final adapter = _adapter;
     final draft = _draft;
-    if (adapter == null || draft == null) return;
+    if (adapter == null || draft == null || _isCommitting) return;
     final current = draft.value<String>(field.id) ?? '';
-    final result = await showScopedDialog<String>(
+    final picked = await showSelectionDialog<String>(
       context: context,
-      builder: (dialogContext) {
-        String selected = current;
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              title: Text(field.label),
-              content: SizedBox(
-                width: double.maxFinite,
-                child: RadioGroup<String>(
-                  groupValue: field.options.any((option) => option.value == selected) ? selected : null,
-                  onChanged: (value) {
-                    if (value == null) return;
-                    setDialogState(() => selected = value);
-                    Navigator.pop(dialogContext, value);
-                  },
-                  child: ListView(
-                    shrinkWrap: true,
-                    children: [
-                      for (final option in field.options)
-                        FocusableRadioListTile<String>(
-                          key: ValueKey(option.value),
-                          title: Text(option.label),
-                          value: option.value,
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-              actions: [DialogActionButton(onPressed: () => Navigator.pop(dialogContext), label: t.common.cancel)],
-            );
-          },
-        );
-      },
+      title: field.label,
+      options: [for (final option in field.options) DialogOption(value: option.value, title: option.label)],
+      currentValue: current,
     );
 
-    if (result == null || !mounted) return;
+    if (picked == null || !mounted || _isCommitting || !identical(_draft, draft)) return;
+    final result = picked.value;
     if (field.saveMode == MetadataEditSaveMode.immediate) {
+      final metadata = widget.metadata;
       final previous = draft.values[field.id];
-      setState(() => draft.setValue(field.id, result));
+      setState(() {
+        draft.setValue(field.id, result);
+        _isCommitting = true;
+      });
       bool success = false;
       try {
         success = await adapter.saveImmediateField(draft, field, result);
@@ -217,10 +202,15 @@ class _MetadataEditScreenState extends State<MetadataEditScreen> {
         appLogger.e('Failed to update metadata field', error: e, stackTrace: st);
       }
       if (!mounted) return;
-      if (!success) {
-        setState(() => draft.setValue(field.id, previous));
-        showErrorSnackBar(context, t.metadataEdit.metadataUpdateFailed);
-      }
+      final ownsCompletion = identical(_draft, draft) && _sameMedia(widget.metadata, metadata);
+      setState(() {
+        _isCommitting = false;
+        if (!success && ownsCompletion && metadataEditValueEquals(draft.values[field.id], result)) {
+          draft.setValue(field.id, previous);
+        }
+      });
+      if (!ownsCompletion) return;
+      if (!success) showErrorSnackBar(context, t.metadataEdit.metadataUpdateFailed);
     } else {
       setState(() => draft.setValue(field.id, result));
     }
@@ -229,13 +219,13 @@ class _MetadataEditScreenState extends State<MetadataEditScreen> {
   Future<void> _openArtworkPicker(MetadataEditField field) async {
     final adapter = _adapter;
     final draft = _draft;
-    if (adapter == null || draft == null) return;
+    if (adapter == null || draft == null || _isCommitting) return;
     final result = await showScopedDialog<bool>(
       context: context,
       builder: (context) => ArtworkPickerDialog(adapter: adapter, draft: draft, field: field),
     );
 
-    if (result == true && mounted) {
+    if (result == true && mounted && !_isCommitting && identical(_draft, draft)) {
       await _reloadArtwork();
     }
   }
@@ -271,24 +261,35 @@ class _MetadataEditScreenState extends State<MetadataEditScreen> {
     }
 
     final sections = adapter.schemaFor(draft).where((section) => section.fields.isNotEmpty).toList();
-    return FocusedScrollScaffold(
-      title: Text(t.metadataEdit.screenTitle),
-      actions: [
-        if (_isSaving)
-          const Padding(padding: .all(12), child: LoadingIndicatorBox(size: 24))
-        else
-          IconButton(onPressed: _hasChanges ? _save : null, icon: const AppIcon(Symbols.check_rounded, fill: 1)),
-      ],
-      slivers: [
-        SliverPadding(
-          padding: const EdgeInsets.all(16),
-          sliver: SliverList.separated(
-            itemCount: sections.length,
-            separatorBuilder: (context, index) => const SizedBox(height: 16),
-            itemBuilder: (context, index) => _buildSectionCard(adapter, draft, sections[index]),
+    return PopScope(
+      canPop: !_isCommitting,
+      child: FocusedScrollScaffold(
+        title: Text(t.metadataEdit.screenTitle),
+        focusableAppBarActions: true,
+        actions: [
+          if (_isCommitting)
+            const Padding(padding: .all(12), child: LoadingIndicatorBox(size: 24))
+          else
+            FocusableButton(
+              onPressed: _hasChanges ? _save : null,
+              child: IconButton(
+                onPressed: _hasChanges ? _save : null,
+                icon: const AppIcon(Symbols.check_rounded, fill: 1),
+                tooltip: t.common.save,
+              ),
+            ),
+        ],
+        slivers: [
+          SliverPadding(
+            padding: const EdgeInsets.all(16),
+            sliver: SliverList.separated(
+              itemCount: sections.length,
+              separatorBuilder: (context, index) => const SizedBox(height: 16),
+              itemBuilder: (context, index) => _buildSectionCard(adapter, draft, sections[index]),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -352,7 +353,8 @@ class _MetadataEditScreenState extends State<MetadataEditScreen> {
             : null,
       ),
       trailing: const AppIcon(Symbols.chevron_right_rounded),
-      onTap: onTap,
+      enabled: !_isCommitting,
+      onTap: _isCommitting ? null : onTap,
       dense: false,
       visualDensity: VisualDensity.standard,
     );
@@ -373,13 +375,14 @@ class _MetadataEditScreenState extends State<MetadataEditScreen> {
             width: artwork.previewWidth,
             height: artwork.previewHeight,
             fit: artwork.fit == MetadataArtworkFit.contain ? BoxFit.contain : BoxFit.cover,
-            imageType: _imageTypeForArtwork(artwork),
+            imageType: artwork.imageType,
           ),
         ),
       ),
       title: Text(field.label),
       trailing: const AppIcon(Symbols.chevron_right_rounded),
-      onTap: () => _openArtworkPicker(field),
+      enabled: !_isCommitting,
+      onTap: _isCommitting ? null : () => _openArtworkPicker(field),
       dense: false,
       visualDensity: VisualDensity.standard,
     );
@@ -391,6 +394,10 @@ class _MetadataEditScreenState extends State<MetadataEditScreen> {
     }
     return value == null || value.isEmpty ? t.metadataEdit.notSet : value;
   }
+}
+
+bool _sameMedia(MediaItem left, MediaItem right) {
+  return left.id == right.id && left.backend == right.backend && left.serverId == right.serverId;
 }
 
 class ArtworkPickerDialog extends StatefulWidget {
@@ -482,37 +489,34 @@ class _ArtworkPickerDialogState extends State<ArtworkPickerDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(_config.selectTitle),
-      content: SizedBox(
-        width: 500,
-        height: 400,
-        child: _isLoading ? const Center(child: CircularProgressIndicator()) : _buildArtworkContent(),
-      ),
-      actions: [
-        if (_isApplying) const Padding(padding: .all(8), child: LoadingIndicatorBox(size: 24)),
-        FocusableButton(
-          onPressed: _addFromUrl,
-          child: TextButton.icon(
-            onPressed: _addFromUrl,
+    return PopScope(
+      canPop: !_isApplying,
+      child: AlertDialog(
+        title: Text(_config.selectTitle),
+        content: SizedBox(
+          width: 500,
+          height: 400,
+          child: _isLoading ? const Center(child: CircularProgressIndicator()) : _buildArtworkContent(),
+        ),
+        actions: [
+          if (_isApplying) const Padding(padding: .all(8), child: LoadingIndicatorBox(size: 24)),
+          DialogActionButton(
+            onPressed: _isApplying ? null : _addFromUrl,
+            label: t.metadataEdit.fromUrl,
             icon: const AppIcon(Symbols.link_rounded, size: 18),
-            label: Text(t.metadataEdit.fromUrl),
           ),
-        ),
-        FocusableButton(
-          onPressed: _uploadFile,
-          child: TextButton.icon(
-            onPressed: _uploadFile,
+          DialogActionButton(
+            onPressed: _isApplying ? null : _uploadFile,
+            label: t.metadataEdit.uploadFile,
             icon: const AppIcon(Symbols.upload_rounded, size: 18),
-            label: Text(t.metadataEdit.uploadFile),
           ),
-        ),
-        FocusableButton(
-          autofocus: true,
-          onPressed: () => Navigator.pop(context),
-          child: TextButton(onPressed: () => Navigator.pop(context), child: Text(t.common.cancel)),
-        ),
-      ],
+          DialogActionButton(
+            autofocus: true,
+            onPressed: _isApplying ? null : () => Navigator.pop(context),
+            label: t.common.cancel,
+          ),
+        ],
+      ),
     );
   }
 
@@ -530,11 +534,16 @@ class _ArtworkPickerDialogState extends State<ArtworkPickerDialog> {
       itemCount: _artworkList!.length,
       itemBuilder: (context, index) {
         final artwork = _artworkList![index];
+        final VoidCallback? onSelect = _isApplying ? null : () => _selectArtwork(artwork);
         return FocusableWrapper(
           borderRadius: 8,
-          onSelect: () => _selectArtwork(artwork),
+          semanticLabel: artwork.selected
+              ? t.metadataEdit.selectedArtworkOption(index: index + 1)
+              : t.metadataEdit.artworkOption(index: index + 1),
+          canRequestFocus: !_isApplying,
+          onSelect: onSelect,
           child: GestureDetector(
-            onTap: () => _selectArtwork(artwork),
+            onTap: onSelect,
             child: Stack(
               fit: StackFit.expand,
               children: [
@@ -549,7 +558,7 @@ class _ArtworkPickerDialogState extends State<ArtworkPickerDialog> {
                       client: widget.adapter.mediaClient,
                       imagePath: artwork.thumbnailPath,
                       fit: _config.fit == MetadataArtworkFit.contain ? BoxFit.contain : BoxFit.cover,
-                      imageType: _imageTypeForArtwork(_config),
+                      imageType: _config.imageType,
                     ),
                   ),
                 ),
@@ -560,7 +569,7 @@ class _ArtworkPickerDialogState extends State<ArtworkPickerDialog> {
                     child: Container(
                       padding: const EdgeInsets.all(4),
                       decoration: BoxDecoration(color: Theme.of(context).colorScheme.primary, shape: BoxShape.circle),
-                      child: Icon(Symbols.check_rounded, size: 16, color: Theme.of(context).colorScheme.onPrimary),
+                      child: AppIcon(Symbols.check_rounded, size: 16, color: Theme.of(context).colorScheme.onPrimary),
                     ),
                   ),
               ],
@@ -570,12 +579,4 @@ class _ArtworkPickerDialogState extends State<ArtworkPickerDialog> {
       },
     );
   }
-}
-
-ImageType _imageTypeForArtwork(MetadataArtworkConfig artwork) {
-  final key = artwork.key.toLowerCase();
-  if (key == 'arts' || key == 'backdrop') return ImageType.art;
-  if (key == 'clearlogos' || key == 'logo') return ImageType.logo;
-  if (key == 'squarearts') return ImageType.avatar;
-  return ImageType.poster;
 }

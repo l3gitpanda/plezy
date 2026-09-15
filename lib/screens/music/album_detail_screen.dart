@@ -19,22 +19,21 @@ import '../../theme/mono_tokens.dart';
 import '../../utils/app_logger.dart';
 import '../../utils/dialogs.dart';
 import '../../utils/formatters.dart';
-import '../../utils/layout_constants.dart';
 import '../../utils/media_image_helper.dart';
 import '../../utils/music_navigation.dart';
 import '../../utils/platform_detector.dart';
 import '../../utils/provider_extensions.dart';
 import '../../utils/snackbar_helper.dart';
 import '../../widgets/app_icon.dart';
+import '../../widgets/background_download_warning_banner.dart';
 import '../../widgets/desktop_app_bar.dart';
 import '../../widgets/download_status_icon.dart';
-import '../../widgets/ios_status_bar_tap_scroll_to_top.dart';
 import '../../widgets/media_context_menu.dart';
 import '../../widgets/music/mini_player.dart';
+import '../../widgets/music/music_detail_header.dart';
 import '../../widgets/music/music_actions.dart';
 import '../../widgets/music/track_row.dart';
 import '../../widgets/optimized_media_image.dart';
-import '../../widgets/overlay_sheet.dart';
 import '../base_media_list_detail_screen.dart';
 import '../focusable_detail_screen_mixin.dart';
 
@@ -87,9 +86,6 @@ class _AlbumDetailScreenState extends BaseMediaListDetailScreen<AlbumDetailScree
   Future<List<MediaItem>> fetchItems() => mediaClient.fetchAlbumTracks(widget.album.id);
 
   @override
-  String getLoadErrorMessage(Object error) => t.messages.errorLoading(error: error.toString());
-
-  @override
   Future<void> loadItems() async {
     await super.loadItems();
     autoFocusFirstItemAfterLoad();
@@ -102,7 +98,7 @@ class _AlbumDetailScreenState extends BaseMediaListDetailScreen<AlbumDetailScree
   }
 
   MusicPlayContext get _playContext =>
-      MusicPlayContext(id: widget.album.id, title: widget.album.displayTitle, kind: MusicPlayContextKind.album);
+      MusicPlayContext(title: widget.album.displayTitle, kind: MusicPlayContextKind.album);
 
   /// Plays the already-fetched track list — no extra server round-trip.
   Future<void> _playAll({bool shuffle = false}) async {
@@ -116,14 +112,7 @@ class _AlbumDetailScreenState extends BaseMediaListDetailScreen<AlbumDetailScree
   Future<void> _openArtist() async {
     final parentId = widget.album.parentId;
     if (parentId == null) return;
-    MediaItem? artist;
-    try {
-      artist = await mediaClient.fetchItem(parentId);
-    } catch (e) {
-      appLogger.w('Failed to fetch artist $parentId for album ${widget.album.id}', error: e);
-    }
-    if (artist == null || !mounted) return;
-    await navigateToArtist(context, artist);
+    await openArtistById(context, mediaClient, parentId);
   }
 
   void _showOverflowMenuAt(BuildContext buttonContext) {
@@ -180,6 +169,8 @@ class _AlbumDetailScreenState extends BaseMediaListDetailScreen<AlbumDetailScree
       if (mounted) showSuccessSnackBar(context, t.downloads.downloadDeleted);
       return;
     }
+
+    if (!await confirmBackgroundDownloadRestrictions(context) || !mounted) return;
 
     // Not downloaded (or partial/failed): queue the album — already-active
     // tracks are skipped inside the provider, so this also fills gaps.
@@ -315,38 +306,13 @@ class _AlbumDetailScreenState extends BaseMediaListDetailScreen<AlbumDetailScree
       onBack: () => Navigator.pop(context),
     );
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final narrow = constraints.maxWidth < ScreenBreakpoints.mobile;
-          if (narrow) {
-            return Column(
-              children: [
-                cover(200),
-                const SizedBox(height: 16),
-                info(centered: true),
-                const SizedBox(height: 16),
-                actionRow,
-              ],
-            );
-          }
-          return Row(
-            crossAxisAlignment: .end,
-            children: [
-              cover(180),
-              const SizedBox(width: 24),
-              Expanded(
-                child: Column(
-                  mainAxisSize: .min,
-                  crossAxisAlignment: .start,
-                  children: [info(centered: false), const SizedBox(height: 16), actionRow],
-                ),
-              ),
-            ],
-          );
-        },
-      ),
+    return MusicDetailHeader(
+      artworkBuilder: cover,
+      infoBuilder: info,
+      actionBar: actionRow,
+      compactArtworkSize: 200,
+      compactArtworkSpacing: 16,
+      wideAlignment: CrossAxisAlignment.end,
     );
   }
 
@@ -416,35 +382,15 @@ class _AlbumDetailScreenState extends BaseMediaListDetailScreen<AlbumDetailScree
 
   @override
   Widget build(BuildContext context) {
-    return PrimaryScrollController(
-      controller: scrollController,
-      child: IosStatusBarTapScrollToTop(
-        controller: scrollController,
-        child: OverlaySheetHost(
-          // Host owns sheet + system back: a back with a sheet open closes it;
-          // otherwise focus the action row first, then pop.
-          canPop: PlatformDetector.isHandheldIOS(context),
-          onSystemBack: () {
-            if (BackKeyCoordinator.consumeIfHandled()) return;
-            if (handleBackNavigation() && mounted) Navigator.pop(context);
-          },
-          child: Scaffold(
-            body: CustomScrollView(
-              primary: true,
-              slivers: [
-                CustomAppBar(title: Text(widget.album.displayTitle)),
-                SliverToBoxAdapter(child: _buildHeader()),
-                ...buildStateSlivers(),
-                if (hasItems) _buildTrackList(),
-                // Keep the last rows reachable above the floating mini-player.
-                SliverToBoxAdapter(
-                  child: SizedBox(height: context.watch<MiniPlayerInsetController?>()?.overlayHeight ?? 0),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
+    return buildDetailScaffold(
+      slivers: [
+        CustomAppBar(title: Text(widget.album.displayTitle)),
+        SliverToBoxAdapter(child: _buildHeader()),
+        ...buildStateSlivers(),
+        if (hasItems) _buildTrackList(),
+        // Keep the last rows reachable above the floating mini-player.
+        SliverToBoxAdapter(child: SizedBox(height: context.watch<MiniPlayerInsetController?>()?.overlayHeight ?? 0)),
+      ],
     );
   }
 }
@@ -477,19 +423,27 @@ class _ArtistLinkState extends State<_ArtistLink> {
     if (widget.onTap == null) return Text(widget.name, style: style);
 
     final showFocus = _focused && InputModeTracker.isKeyboardMode(context);
-    return Focus(
-      focusNode: _focusNode,
-      onFocusChange: (hasFocus) => setState(() => _focused = hasFocus),
-      onKeyEvent: dpadKeyHandler(onSelect: widget.onTap),
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        child: GestureDetector(
-          onTap: widget.onTap,
-          child: AnimatedContainer(
-            duration: FocusTheme.getAnimationDuration(context),
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: FocusTheme.focusBackgroundDecoration(isFocused: showFocus),
-            child: Text(widget.name, style: style),
+    return Semantics(
+      button: true,
+      enabled: true,
+      label: widget.name,
+      onTap: widget.onTap,
+      child: ExcludeSemantics(
+        child: Focus(
+          focusNode: _focusNode,
+          onFocusChange: (hasFocus) => setState(() => _focused = hasFocus),
+          onKeyEvent: dpadKeyHandler(onSelect: widget.onTap),
+          child: MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: GestureDetector(
+              onTap: widget.onTap,
+              child: AnimatedContainer(
+                duration: FocusTheme.getAnimationDuration(context),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: FocusTheme.focusBackgroundDecoration(isFocused: showFocus),
+                child: Text(widget.name, style: style),
+              ),
+            ),
           ),
         ),
       ),
