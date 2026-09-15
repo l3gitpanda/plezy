@@ -19,9 +19,13 @@ import '../libraries/state_messages.dart';
 /// Turns a mixed `/search` answer into the stand-ins the shared card stack
 /// renders: channels first (there are few), then videos. Shared by the
 /// pushed TV search screen and the YouTube tab's inline field.
-List<MediaItem> youTubeSearchResultsToItems(YatteeSearchResults results) => [
+///
+/// Videos go through [YatteeAccountProvider.toMediaItem] so a result the
+/// profile has already watched — or is part-way through — looks the same here
+/// as it does on the tab. Channel hits have no watch state to carry.
+List<MediaItem> youTubeSearchResultsToItems(YatteeSearchResults results, YatteeAccountProvider account) => [
   for (final channel in results.channels) YouTubeMediaItems.fromChannel(channel),
-  for (final video in results.videos) YouTubeMediaItems.fromSummary(video),
+  for (final video in results.videos) account.toMediaItem(video),
 ];
 
 /// Free-text YouTube search, pushed from the tab's TV toolbar —
@@ -42,9 +46,10 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen> with Debounce
 
   @override
   Future<List<MediaItem>> performSearchQuery(String query) async {
-    final client = context.read<YatteeAccountProvider>().client;
+    final account = context.read<YatteeAccountProvider>();
+    final client = account.client;
     if (client == null) return const [];
-    return youTubeSearchResultsToItems(await client.search(query));
+    return youTubeSearchResultsToItems(await client.search(query), account);
   }
 
   @override

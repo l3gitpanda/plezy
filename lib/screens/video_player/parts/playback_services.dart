@@ -434,6 +434,38 @@ extension _VideoPlayerPlaybackServiceMethods on VideoPlayerScreenState {
       }
       unawaited(TrackerCoordinator.instance.startPlayback(metadata, mediaClient, isLive: widget.isLive));
     }
+
+    _bindYouTubeWatchSession();
+  }
+
+  /// Start recording the resume point for a YouTube session.
+  ///
+  /// Bound once per screen rather than per item: a YouTube screen plays one
+  /// video and cannot switch source mid-session (there is no transcoder to
+  /// restart and no quality to renegotiate), and rebinding would reset the
+  /// completion latch that keeps a finished video from being marked twice.
+  void _bindYouTubeWatchSession() {
+    final youtube = widget.youtube;
+    final currentPlayer = player;
+    if (youtube == null || currentPlayer == null || _youTubeWatch != null) return;
+    // A broadcast has no end to finish and no position to resume from, so
+    // there is nothing to record.
+    if (youtube.isLive) return;
+    final account = context.read<YatteeAccountProvider>();
+    final video = youtube.video.summary;
+    final session = YouTubeWatchSession(
+      video: video,
+      isLive: youtube.isLive,
+      positionMs: () => currentPlayer.state.position.inMilliseconds,
+      // The runtime the player reports, not the listing's `lengthSeconds`:
+      // that field is zero on a good number of rows, and a zero duration
+      // reads as "nothing to measure against".
+      durationMs: () => currentPlayer.state.duration.inMilliseconds,
+      onSave: (positionMs, durationMs) => account.recordProgress(video, positionMs: positionMs, durationMs: durationMs),
+      onComplete: () => account.setVideoWatched(video.site, video.videoId, true),
+    );
+    _youTubeWatch = session;
+    session.start();
   }
 
   /// (Re)create the [PlaybackProgressTracker] for the current play session.

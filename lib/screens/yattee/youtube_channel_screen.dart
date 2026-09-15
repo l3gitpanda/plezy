@@ -54,7 +54,8 @@ class _YouTubeChannelScreenState extends State<YouTubeChannelScreen> with Mounte
   int _generation = 0;
   final _subscribeFocus = FocusNode(debugLabel: 'YouTubeChannel:Subscribe');
 
-  YatteeClient? get _client => context.read<YatteeAccountProvider>().client;
+  YatteeAccountProvider get _account => context.read<YatteeAccountProvider>();
+  YatteeClient? get _client => _account.client;
 
   @override
   void initState() {
@@ -86,7 +87,10 @@ class _YouTubeChannelScreenState extends State<YouTubeChannelScreen> with Mounte
         _channel = channel;
         _videos
           ..clear()
-          ..addAll(page.videos.map(YouTubeMediaItems.fromSummary));
+          // Built through the provider, like every other YouTube surface, so
+          // the channel's uploads carry this profile's watched marks and
+          // resume points instead of looking untouched.
+          ..addAll(page.videos.map(_account.toMediaItem));
         _continuation = page.continuation;
         _loading = false;
       });
@@ -111,7 +115,7 @@ class _YouTubeChannelScreenState extends State<YouTubeChannelScreen> with Mounte
       if (!mounted || generation != _generation) return;
       final known = {for (final item in _videos) item.id};
       setState(() {
-        _videos.addAll(page.videos.map(YouTubeMediaItems.fromSummary).where((item) => known.add(item.id)));
+        _videos.addAll(page.videos.map(_account.toMediaItem).where((item) => known.add(item.id)));
         // A backend that echoes the same cursor would page forever; treat it
         // as the end.
         _continuation = page.continuation == continuation ? null : page.continuation;

@@ -7,6 +7,7 @@ import '../../models/yattee/yattee_session.dart';
 import '../../media/media_item.dart';
 import '../../models/yattee/yattee_site.dart';
 import '../../models/yattee/yattee_video.dart';
+import '../../models/yattee/yattee_watch_progress.dart';
 import '../../models/yattee/youtube_media_item.dart';
 import '../../services/yattee/yattee_auth_service.dart';
 import '../../services/yattee/yattee_client.dart';
@@ -84,6 +85,11 @@ class YatteeAccountProvider extends ChangeNotifier with DisposableChangeNotifier
   /// [YatteeStore.maxWatchedEntries]); membership is answered by [_watchedLookup].
   List<String> _watched = const [];
   Set<String> _watchedLookup = const {};
+
+  /// Resume points in order, least recently updated first — the order the
+  /// store trims from. Keyed lookup lives in [_progressLookup].
+  List<YatteeWatchProgress> _progress = const [];
+  Map<String, YatteeWatchProgress> _progressLookup = const {};
   String _activeUserUuid = '';
   int _bindingGeneration = 0;
 
@@ -113,7 +119,7 @@ class YatteeAccountProvider extends ChangeNotifier with DisposableChangeNotifier
 
   YatteeQuality get quality => _quality;
 
-  /// Key for one video's watched mark.
+  /// Key for one video's watched mark and resume point.
   ///
   /// Scoped by site because ids are only unique within one: a Twitch
   /// broadcast id and a YouTube video id could otherwise collide.
@@ -121,47 +127,138 @@ class YatteeAccountProvider extends ChangeNotifier with DisposableChangeNotifier
 
   bool isVideoWatched(YatteeSite site, String videoId) => _watchedLookup.contains(watchedKeyFor(site, videoId));
 
-  /// The card stand-in for [video], carrying this profile's watched mark.
+  /// Videos with a resume point, most recently watched first.
   ///
-  /// Every browse surface builds its items through here so the mark is never
-  /// applied in some rows and not others.
-  MediaItem toMediaItem(YatteeVideoSummary video) =>
-      YouTubeMediaItems.fromSummary(video).withWatchedFlag(isVideoWatched(video.site, video.videoId));
+  /// Marking one watched removes it, so a finished video never lingers here
+  /// — [recordProgress] and [setVideoWatched] both drop the entry rather than
+  /// leaving the row to filter it out.
+  List<YatteeWatchProgress> get continueWatching => _progress.reversed.toList(growable: false);
 
-  /// Re-apply the current marks to items already on screen.
+  /// Where playback of [videoId] should pick up, or null for a video with no
+  /// stored resume point.
+  int? resumePositionMsFor(YatteeSite site, String videoId) =>
+      _progressLookup[watchedKeyFor(site, videoId)]?.positionMs;
+
+  /// The card stand-in for [video], carrying this profile's watched mark and
+  /// resume point.
+  ///
+  /// Every browse surface builds its items through here so neither is applied
+  /// in some rows and not others.
+  MediaItem toMediaItem(YatteeVideoSummary video) => _stampLocalState(YouTubeMediaItems.fromSummary(video));
+
+  /// Re-apply the current marks and resume points to items already on screen.
   ///
   /// Marking one watched must not refetch a row; the flag is the only thing
   /// that changed, and it is derivable from the item itself.
-  List<MediaItem> restampWatched(List<MediaItem> items) => [
-    for (final item in items)
-      if (item.youTubeVideoId case final videoId?)
-        item.withWatchedFlag(isVideoWatched(item.youTubeSite, videoId))
-      else
-        item,
-  ];
+  List<MediaItem> restampWatched(List<MediaItem> items) => [for (final item in items) _stampLocalState(item)];
+
+  /// Applies whatever this profile knows about [item] locally: the watched
+  /// flag, and the view offset the card draws its progress bar from.
+  ///
+  /// The offset goes on `viewOffsetMs` — the same field a server-backed item
+  /// carries it in — so the shared card, the watched indicator and the
+  /// player's own resume resolution all read it without a YouTube special
+  /// case.
+  MediaItem _stampLocalState(MediaItem item) {
+    final videoId = item.youTubeVideoId;
+    if (videoId == null) return item;
+    final site = item.youTubeSite;
+    final stamped = item.withWatchedFlag(isVideoWatched(site, videoId));
+    final progress = _progressLookup[watchedKeyFor(site, videoId)];
+    if (progress == null) return stamped;
+    // The runtime playback reported wins over the listing's `lengthSeconds`,
+    // which is zero on a fair number of rows; without a duration the card has
+    // nothing to draw the bar against.
+    return stamped.copyWith(
+      viewOffsetMs: progress.positionMs,
+      durationMs: stamped.durationMs ?? (progress.durationMs > 0 ? progress.durationMs : null),
+    );
+  }
 
   /// Mark (or unmark) one video.
   ///
   /// Local only. Yattee Server keeps no watch state — it has no history,
   /// progress or mark-watched route — so there is nothing to report this to,
   /// and nothing that could report it back.
+  ///
+  /// Marking watched also drops the resume point: the video is finished, so
+  /// leaving it in Continue Watching would offer to resume something the user
+  /// just said they were done with.
   Future<void> setVideoWatched(YatteeSite site, String videoId, bool watched) async {
     if (isDisposed) return;
     final key = watchedKeyFor(site, videoId);
-    if (_watchedLookup.contains(key) == watched) return;
+    final droppedProgress = watched && _progressLookup.containsKey(key);
+    if (_watchedLookup.contains(key) == watched && !droppedProgress) return;
     _watched = [
       for (final entry in _watched)
         if (entry != key) entry,
       if (watched) key,
     ];
     _watchedLookup = _watched.toSet();
+    if (droppedProgress) _setProgress(_withoutKey(key));
     safeNotifyListeners();
     final userUuid = _activeUserUuid;
     try {
       await _store.saveWatched(userUuid, _watched);
+      if (droppedProgress) await _store.saveProgress(userUuid, _progress);
     } catch (e) {
       _logPersistenceFailure(e);
     }
+  }
+
+  /// Record how far into [video] playback got.
+  ///
+  /// The entry moves to the end of the list so the row reads most-recent-first
+  /// and the store trims the least recently watched. Called from the player on
+  /// a timer and once more when the session ends.
+  Future<void> recordProgress(YatteeVideoSummary video, {required int positionMs, required int durationMs}) async {
+    if (isDisposed) return;
+    final key = watchedKeyFor(video.site, video.videoId);
+    final existing = _progressLookup[key];
+    // Same second, same entry: the player samples far more often than the
+    // position meaningfully changes, and every write is a full re-encode of
+    // the list.
+    if (existing != null && existing.positionMs ~/ 1000 == positionMs ~/ 1000) return;
+    _setProgress([
+      ..._withoutKey(key),
+      YatteeWatchProgress(
+        video: video,
+        positionMs: positionMs,
+        durationMs: durationMs,
+        updatedAtMs: DateTime.now().millisecondsSinceEpoch,
+      ),
+    ]);
+    safeNotifyListeners();
+    try {
+      await _store.saveProgress(_activeUserUuid, _progress);
+    } catch (e) {
+      _logPersistenceFailure(e);
+    }
+  }
+
+  /// Forget one video's resume point without marking it watched — the
+  /// "remove from Continue Watching" action.
+  Future<void> clearProgress(YatteeSite site, String videoId) async {
+    if (isDisposed) return;
+    final key = watchedKeyFor(site, videoId);
+    if (!_progressLookup.containsKey(key)) return;
+    _setProgress(_withoutKey(key));
+    safeNotifyListeners();
+    try {
+      await _store.saveProgress(_activeUserUuid, _progress);
+    } catch (e) {
+      _logPersistenceFailure(e);
+    }
+  }
+
+  List<YatteeWatchProgress> _withoutKey(String key) => [
+    for (final entry in _progress)
+      if (watchedKeyFor(entry.site, entry.videoId) != key) entry,
+  ];
+
+  void _setProgress(List<YatteeWatchProgress> progress) {
+    _progress = progress;
+    _progressLookup = {for (final entry in progress) watchedKeyFor(entry.site, entry.videoId): entry};
   }
 
   void _logPersistenceFailure(Object e) => appLogger.w('Yattee: persistence failed', error: e);
@@ -181,11 +278,13 @@ class YatteeAccountProvider extends ChangeNotifier with DisposableChangeNotifier
     final subscriptions = await _store.loadSubscriptions(userUuid);
     final quality = await _store.loadQuality(userUuid);
     final watched = await _store.loadWatched(userUuid);
+    final progress = await _store.loadProgress(userUuid);
     if (!_isCurrentBinding(userUuid, generation)) return;
     _subscriptions = subscriptions;
     _quality = quality;
     _watched = watched;
     _watchedLookup = watched.toSet();
+    _setProgress(progress);
     _setSessionAndRebind(userUuid, generation, loaded);
     // Nothing stored yet on this device: try the server's channel set so the
     // Subscriptions row is populated without the user re-subscribing by hand.

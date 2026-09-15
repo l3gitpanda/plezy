@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import '../../models/yattee/yattee_session.dart';
+import '../../models/yattee/yattee_watch_progress.dart';
 import '../../profiles/profile.dart';
 import '../../utils/serial_future_queue.dart';
 import '../base_shared_preferences_service.dart';
@@ -20,6 +21,7 @@ class YatteeStore {
   static const String _subscriptionsKey = 'yattee_subscriptions';
   static const String _qualityKey = 'yattee_quality';
   static const String _watchedKey = 'yattee_watched';
+  static const String _progressKey = 'yattee_progress';
 
   // Shared across profile-keyed provider/store lifetimes. Enqueue the entire
   // operation before any preferences/vault await so a new load or clear cannot
@@ -121,6 +123,48 @@ class YatteeStore {
     final prefs = await BaseSharedPreferencesService.sharedCache();
     final bounded = watched.length <= maxWatchedEntries ? watched : watched.sublist(watched.length - maxWatchedEntries);
     await prefs.setString(_scopedKey(userUuid, _watchedKey), jsonEncode(bounded));
+  });
+
+  /// How many resume points are kept per profile. Each carries the video
+  /// summary it needs to draw a card, so entries are much larger than a
+  /// watched mark; a Continue Watching row nobody scrolls past the first
+  /// screen of does not need more than this.
+  static const int maxProgressEntries = 100;
+
+  /// This profile's resume points, most recently updated last.
+  ///
+  /// Local for the same reason [loadWatched] is: Yattee Server stores no
+  /// playback position, so there is nowhere else for one to live.
+  Future<List<YatteeWatchProgress>> loadProgress(String userUuid) => _persistence.run(() async {
+    final prefs = await BaseSharedPreferencesService.sharedCache();
+    final raw = readTolerantString(prefs, _scopedKey(userUuid, _progressKey));
+    if (raw == null) return const [];
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return const [];
+      return [
+        for (final entry in decoded)
+          if (entry is Map)
+            if (YatteeWatchProgress.fromJson(entry.cast<String, Object?>()) case final progress
+                when progress.videoId.isNotEmpty)
+              progress,
+      ];
+    } catch (_) {
+      return const [];
+    }
+  });
+
+  /// Writes the list, keeping only the most recently updated
+  /// [maxProgressEntries].
+  Future<void> saveProgress(String userUuid, List<YatteeWatchProgress> progress) => _persistence.run(() async {
+    final prefs = await BaseSharedPreferencesService.sharedCache();
+    final bounded = progress.length <= maxProgressEntries
+        ? progress
+        : progress.sublist(progress.length - maxProgressEntries);
+    await prefs.setString(
+      _scopedKey(userUuid, _progressKey),
+      jsonEncode([for (final entry in bounded) entry.toJson()]),
+    );
   });
 
   Future<YatteeQuality> loadQuality(String userUuid) => _persistence.run(() async {

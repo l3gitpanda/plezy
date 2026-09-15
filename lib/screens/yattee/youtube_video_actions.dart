@@ -70,6 +70,9 @@ Future<void> showYouTubeVideoActions(BuildContext context, MediaItem item) async
   final canToggleSubscription = channelId != null && (subscribed || site == YatteeSite.youtube);
   // Plezy's own record: Yattee Server keeps no watch state to sync with.
   final watched = videoId != null && account.isVideoWatched(site, videoId);
+  // Partly watched, so this item is in Continue Watching and the sheet offers
+  // the two things that only make sense there.
+  final resumable = videoId != null && account.resumePositionMsFor(site, videoId) != null;
   if (videoId == null && !canOpenChannel && !canToggleSubscription) return;
   final action = await OverlaySheetController.showAdaptive<_YouTubeVideoAction>(
     context,
@@ -83,8 +86,20 @@ Future<void> showYouTubeVideoActions(BuildContext context, MediaItem item) async
             FocusableListTile(
               autofocus: true,
               leading: const AppIcon(Symbols.play_arrow_rounded, fill: 1),
-              title: Text(t.common.play),
+              title: Text(resumable ? t.common.resume : t.common.play),
               onTap: () => OverlaySheetController.closeAdaptive(sheetContext, _YouTubeVideoAction.play),
+            ),
+          if (resumable)
+            FocusableListTile(
+              leading: const AppIcon(Symbols.replay_rounded, fill: 1),
+              title: Text(t.mediaMenu.playFromBeginning),
+              onTap: () => OverlaySheetController.closeAdaptive(sheetContext, _YouTubeVideoAction.playFromStart),
+            ),
+          if (resumable)
+            FocusableListTile(
+              leading: const AppIcon(Symbols.close_rounded, fill: 1),
+              title: Text(t.mediaMenu.removeFromContinueWatching),
+              onTap: () => OverlaySheetController.closeAdaptive(sheetContext, _YouTubeVideoAction.removeProgress),
             ),
           if (videoId != null)
             FocusableListTile(
@@ -115,13 +130,18 @@ Future<void> showYouTubeVideoActions(BuildContext context, MediaItem item) async
   if (action == null || !context.mounted) return;
   switch (action) {
     case _YouTubeVideoAction.play:
+    case _YouTubeVideoAction.playFromStart:
       await navigateToYouTubeVideo(
         context,
         account: account,
         videoId: videoId!,
         site: site,
         videoUrl: youTubePlaybackUrl(item, account),
+        fromStart: action == _YouTubeVideoAction.playFromStart,
       );
+    case _YouTubeVideoAction.removeProgress:
+      await account.clearProgress(site, videoId!);
+      if (context.mounted) showAppSnackBar(context, t.messages.removedFromContinueWatching);
     case _YouTubeVideoAction.channel:
       await openYouTubeChannel(context, channelId: channelId!, channelName: item.youTubeChannelName);
     case _YouTubeVideoAction.toggleWatched:
@@ -180,4 +200,4 @@ Future<void> toggleYouTubeSubscription(
   );
 }
 
-enum _YouTubeVideoAction { play, channel, toggleSubscription, toggleWatched }
+enum _YouTubeVideoAction { play, playFromStart, removeProgress, channel, toggleSubscription, toggleWatched }
