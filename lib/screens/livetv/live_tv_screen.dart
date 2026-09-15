@@ -582,6 +582,7 @@ class _LiveTvScreenState extends State<LiveTvScreen>
   void _showGuideSearch() {
     OverlaySheetController.showAdaptive(
       context,
+      isScrollControlled: true,
       builder: (sheetContext) => GuideSearchSheet(
         channels: _channels,
         onChannelSelected: _jumpToGuideChannel,
