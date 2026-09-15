@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import '../../i18n/strings.g.dart';
 import '../../models/yattee/yattee_site.dart';
 import '../../models/yattee/yattee_video.dart';
-import '../../models/yattee/youtube_media_item.dart';
 import '../../providers/yattee/yattee_account_provider.dart';
 import '../../screens/video_player/youtube_session_args.dart';
 import '../../screens/video_player_screen.dart';
@@ -33,6 +32,7 @@ Future<void> navigateToYouTubeVideo(
   required String videoId,
   YatteeSite site = YatteeSite.youtube,
   String? videoUrl,
+  bool fromStart = false,
 }) async {
   final client = account.client;
   if (client == null || _launchInFlight) return;
@@ -75,7 +75,16 @@ Future<void> navigateToYouTubeVideo(
           ? 'adaptive ${selection.videoCodec}+${selection.audioCodec}'
           : 'muxed'})',
     );
-    final metadata = YouTubeMediaItems.fromSummary(video.summary);
+    // Built through the provider so the item carries this profile's watched
+    // mark and, more to the point, its resume point: the player resolves a
+    // fresh open's start position from `viewOffsetMs` exactly as it does for
+    // a server-backed item, so Continue Watching needs nothing of its own.
+    //
+    // Playing from the beginning is asked for the same way the server-backed
+    // context menu asks for it — by zeroing the offset on the item handed to
+    // the player, rather than by a second start-position channel.
+    final stamped = account.toMediaItem(video.summary);
+    final metadata = fromStart ? stamped.copyWith(viewOffsetMs: 0) : stamped;
     final route = VideoPlayerRoute(
       builder: (_) => VideoPlayerScreen(
         metadata: metadata,

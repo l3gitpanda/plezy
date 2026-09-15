@@ -59,6 +59,8 @@ import '../services/playback_subtitle_resolver.dart';
 import '../services/mpv_sidecar_open_guard.dart';
 import '../services/playback_open_outcome.dart';
 import '../services/playback_progress_tracker.dart';
+import '../services/yattee/youtube_watch_session.dart';
+import '../providers/yattee/yattee_account_provider.dart';
 import '../services/playback_source_resolver.dart';
 import '../services/multi_server_manager.dart';
 import '../services/offline_watch_sync_service.dart';
@@ -802,6 +804,11 @@ class VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindin
   );
   ({bool canControlPlayback, bool canNavigateMediaItems})? _lastMediaControlAuthority;
   PlaybackProgressTracker? _progressTracker;
+
+  /// Records the resume point for a YouTube session. Separate from
+  /// [_progressTracker] because there is no media server behind a YouTube
+  /// item to report to — the record is local (see [YouTubeWatchSession]).
+  YouTubeWatchSession? _youTubeWatch;
   VideoFilterManager? _videoFilterManager;
   bool _pipInitialized = false;
   ShaderService? _shaderService;
@@ -2166,6 +2173,7 @@ class VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindin
     // Disposing the tracker stops producers, not its retained terminal report.
     _progressTracker?.stopTracking();
     _progressTracker?.dispose();
+    _youTubeWatch?.stop();
     _stopLiveTimelineUpdates();
 
     _detachPipStateListener();
@@ -2621,6 +2629,7 @@ class VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindin
     _live.resumeTimelineOnResume = false;
     _stopLiveTimelineUpdates();
     _progressTracker?.stopTracking();
+    _youTubeWatch?.stop();
     _companionRemote.unbind();
     _detachFromWatchTogetherSession(exiting: true);
     _detachPipStateListener();
@@ -2636,10 +2645,14 @@ class VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindin
     // yielding. Native stop may reset them. This also retains offline writes
     // and the tracker's terminal watched-state settlement.
     final stoppedReport = _sendStoppedProgressOnce(positionOverride: currentPlayer?.state.position);
+    // Same reason the stopped report is taken here: the final position has to
+    // be read before the native stop resets it.
+    final youTubeWatch = _flushYouTubeWatch();
     unawaited(() async {
       try {
         await Future.wait<void>([
           stoppedReport,
+          youTubeWatch,
           if (currentPlayer != null)
             pauseForRouteExit ? _pauseAndHidePlayerForRouteExit(currentPlayer) : currentPlayer.stop(),
           ...cancellations,
@@ -2650,6 +2663,18 @@ class VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindin
       }
     }());
     return completer.future;
+  }
+
+  /// Take the terminal reading for a YouTube session, if this is one.
+  ///
+  /// Never fails the shutdown: a resume point that could not be written is
+  /// worth a log line and nothing more.
+  Future<void> _flushYouTubeWatch() {
+    final watch = _youTubeWatch;
+    if (watch == null) return Future<void>.value();
+    return watch.flush().catchError((Object e, StackTrace st) {
+      appLogger.d('YouTube watch flush failed', error: e, stackTrace: st);
+    });
   }
 
   Future<void> _sendStoppedProgressOnce({Duration? positionOverride}) {

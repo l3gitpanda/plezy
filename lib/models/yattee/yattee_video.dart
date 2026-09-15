@@ -19,6 +19,14 @@ class YatteeThumbnail {
 
   static List<YatteeThumbnail> listFromJson(Object? value) => parseFlexibleJsonList(value, YatteeThumbnail.fromJson);
 
+  /// The server's own field names, so [fromJson] reads back what this wrote.
+  Map<String, Object?> toJson() => {
+    'quality': quality,
+    'url': url,
+    if (width != null) 'width': width,
+    if (height != null) 'height': height,
+  };
+
   /// The largest thumbnail no wider than [maxWidth], falling back to the
   /// widest one available. Sizes are absent on some Invidious-sourced lists,
   /// so an unsized entry ranks by its position in the (ascending) list.
@@ -131,6 +139,34 @@ class YatteeVideoSummary {
     site: site,
     videoUrl: this.videoUrl ?? videoUrl,
   );
+
+  /// The server's own field names, so [fromJson] reads back what this wrote.
+  ///
+  /// Only the locally cached Continue Watching list needs this: a resume
+  /// point has to survive a restart with enough of the video to draw its
+  /// card, and re-fetching every partly-watched video at tab open would be a
+  /// request per row entry for something already known.
+  Map<String, Object?> toJson() => {
+    'videoId': videoId,
+    'title': title,
+    if (description != null) 'description': description,
+    'author': author,
+    'authorId': authorId,
+    'lengthSeconds': lengthSeconds,
+    if (published != null) 'published': published,
+    if (publishedText != null) 'publishedText': publishedText,
+    if (viewCount != null) 'viewCount': viewCount,
+    if (viewCountText != null) 'viewCountText': viewCountText,
+    'videoThumbnails': [for (final thumbnail in thumbnails) thumbnail.toJson()],
+    'liveNow': liveNow,
+    'isUpcoming': isUpcoming,
+    'isShort': isShort,
+    // Written under the name the server uses for it, which is also the name
+    // [fromJson] looks for. The site is stated rather than left out: an
+    // absent extractor reads back as YouTube.
+    'extractor': site.id,
+    if (videoUrl != null) 'videoUrl': videoUrl,
+  };
 
   YatteeThumbnail? get thumbnail => YatteeThumbnail.best(thumbnails);
 }

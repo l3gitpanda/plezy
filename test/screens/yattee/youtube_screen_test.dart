@@ -6,8 +6,10 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:plezy/i18n/strings.g.dart';
+import 'package:plezy/media/media_item.dart';
 import 'package:plezy/models/yattee/yattee_session.dart';
 import 'package:plezy/models/yattee/yattee_site.dart';
+import 'package:plezy/models/yattee/yattee_video.dart';
 import 'package:plezy/providers/yattee/yattee_account_provider.dart';
 import 'package:plezy/screens/yattee/youtube_screen.dart';
 import 'package:plezy/services/base_shared_preferences_service.dart';
@@ -195,6 +197,34 @@ void main() {
     final rows = tester.widgetList<HubSection>(find.byType(HubSection)).map((hub) => hub.hub.title).toList();
     expect(rows, [t.yattee.rows.subscriptions, t.yattee.rows.trending, t.yattee.rows.popular]);
     expect(find.text('Feed One'), findsOneWidget);
+  });
+
+  testWidgets('a resume point leads the tab, and finishing the video retires it', (tester) async {
+    final (account, _) = await _pumpYouTube(tester, subscribed: true);
+    expect(find.text(t.discover.continueWatching), findsNothing);
+
+    await tester.runAsync(
+      () => account.recordProgress(
+        YatteeVideoSummary.fromJson(_video('feed1', 'Feed One')),
+        positionMs: 30000,
+        durationMs: 90000,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final rows = tester.widgetList<HubSection>(find.byType(HubSection)).map((hub) => hub.hub.title).toList();
+    expect(rows.first, t.discover.continueWatching);
+    // The card carries the offset the shelf draws its progress bar from —
+    // no separate YouTube path for something every other row already does.
+    final resumed = tester.widgetList<HubSection>(find.byType(HubSection)).first.hub.items.cast<MediaItem>().single;
+    expect(resumed.viewOffsetMs, 30000);
+    expect(resumed.hasActiveProgress, isTrue);
+
+    // Reaching the end is what the player reports; the row empties and the
+    // shelf goes away with it.
+    await tester.runAsync(() => account.setVideoWatched(YatteeSite.youtube, 'feed1', true));
+    await tester.pumpAndSettle();
+    expect(find.text(t.discover.continueWatching), findsNothing);
   });
 
   testWidgets('a Twitch subscription gets its own row, read channel by channel', (tester) async {

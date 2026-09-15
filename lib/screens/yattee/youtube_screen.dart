@@ -40,12 +40,13 @@ import '../libraries/state_messages.dart';
 import 'youtube_search_screen.dart';
 import 'youtube_video_actions.dart';
 
-/// The three shelves of the YouTube tab, in display order.
-/// Rows in display order. [subscriptions] and [twitch] are both subscription
-/// feeds — one per site, because a site is its own category — while
-/// [trending] and [popular] are YouTube-only catalog routes with no
+/// Rows in display order. [continueWatching] is built from Plezy's own
+/// record and needs no request at all; [subscriptions] and [twitch] are both
+/// subscription feeds — one per site, because a site is its own category —
+/// while [trending] and [popular] are YouTube-only catalog routes with no
 /// equivalent anywhere else.
 enum YouTubeRow {
+  continueWatching(null),
   subscriptions(YatteeSite.youtube),
   twitch(YatteeSite.twitch),
   trending(null),
@@ -137,7 +138,7 @@ class YouTubeScreenState extends State<YouTubeScreen>
   Future<List<MediaItem>> performSearchQuery(String query) async {
     final client = _account.client;
     if (client == null) return const [];
-    return youTubeSearchResultsToItems(await client.search(query));
+    return youTubeSearchResultsToItems(await client.search(query), _account);
   }
 
   @override
@@ -163,17 +164,17 @@ class YouTubeScreenState extends State<YouTubeScreen>
   /// A subscribe/unsubscribe (or a reconnect) only invalidates the feed
   /// row; trending and popular are unaffected.
   void _onAccountChanged() {
+    if (!mounted) return;
     final signature = _signatureOf(_account);
-    // A watched mark changes only the flag on items already on screen, so it
-    // is applied in place; refetching a row to learn something the client
-    // already knows would be a network round trip for nothing.
-    if (_rows.isNotEmpty) {
-      setState(() {
-        for (final row in _rows.keys.toList()) {
-          _rows[row] = _account.restampWatched(_rows[row]!);
-        }
-      });
-    }
+    // A watched mark and a resume point both change only what the client
+    // already knows, so both are applied in place; refetching a row to learn
+    // something local would be a network round trip for nothing.
+    setState(() {
+      for (final row in _rows.keys.toList()) {
+        _rows[row] = _account.restampWatched(_rows[row]!);
+      }
+      _syncContinueWatching();
+    });
     if (signature == _subscriptionsSignature) return;
     _subscriptionsSignature = signature;
     if (!mounted) return;
@@ -205,6 +206,26 @@ class YouTubeScreenState extends State<YouTubeScreen>
         ),
   ];
 
+  /// Every video with a resume point, newest first, as cards.
+  ///
+  /// Not a fetch: the resume points and the video summaries behind them are
+  /// Plezy's own record (see [YatteeStore.loadProgress]), so this row costs
+  /// nothing and is never out of date.
+  List<MediaItem> _continueWatchingItems() => [
+    for (final progress in _account.continueWatching) _account.toMediaItem(progress.video),
+  ];
+
+  /// Rebuild the Continue Watching row, dropping it when there is nothing to
+  /// resume. Call inside a `setState`.
+  void _syncContinueWatching() {
+    final items = _continueWatchingItems();
+    if (items.isEmpty) {
+      _rows.remove(YouTubeRow.continueWatching);
+    } else {
+      _rows[YouTubeRow.continueWatching] = items;
+    }
+  }
+
   void _cancelFeedRetries() {
     for (final timer in _feedRetryTimer.values) {
       timer.cancel();
@@ -213,6 +234,9 @@ class YouTubeScreenState extends State<YouTubeScreen>
   }
 
   static String _rowTitle(YouTubeRow row) => switch (row) {
+    // The shelf every other surface in the app calls Continue Watching; the
+    // string is already translated everywhere.
+    YouTubeRow.continueWatching => t.discover.continueWatching,
     YouTubeRow.subscriptions => t.yattee.rows.subscriptions,
     YouTubeRow.twitch => t.yattee.rows.twitch,
     YouTubeRow.trending => t.yattee.rows.trending,
@@ -220,6 +244,7 @@ class YouTubeScreenState extends State<YouTubeScreen>
   };
 
   static IconData _rowIcon(YouTubeRow row) => switch (row) {
+    YouTubeRow.continueWatching => Symbols.resume_rounded,
     YouTubeRow.subscriptions => Symbols.subscriptions_rounded,
     YouTubeRow.twitch => Symbols.sensors_rounded,
     YouTubeRow.trending => Symbols.trending_up_rounded,
@@ -241,10 +266,13 @@ class YouTubeScreenState extends State<YouTubeScreen>
     _cancelFeedRetries();
     _feedRetries.clear();
     setState(() {
+      // Read before the row is (re)built below, so a first load still shows
+      // the spinner rather than a lone Continue Watching shelf.
       _loading = _rows.isEmpty;
       _error = null;
       _feedFetching.clear();
       _feedError.clear();
+      _syncContinueWatching();
     });
     // Every row is independent: one failing endpoint must not blank the
     // others, and a whole-tab error only shows when nothing loaded.
@@ -350,6 +378,8 @@ class YouTubeScreenState extends State<YouTubeScreen>
   /// Runs outside the tab's generation guards — the grid is its own screen
   /// and its own lifetime, so a tab reload underneath must not cancel it.
   Future<List<MediaItem>> _loadAll(YouTubeRow row) async {
+    // The only row with nothing to fetch: it is already everything there is.
+    if (row == YouTubeRow.continueWatching) return _continueWatchingItems();
     final client = _account.client;
     if (client == null) return const [];
     final site = row.feedSite;
