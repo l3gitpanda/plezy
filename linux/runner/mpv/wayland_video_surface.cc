@@ -266,7 +266,7 @@ bool WaylandVideoSurface::InitEgl(std::string* error) {
     EGLint bits;    // per-channel size requested, and the depth then reported
     bool floating;  // half-float rather than unorm
   };
-  for (const ConfigTier tier : {ConfigTier{10, false}, ConfigTier{16, true}, ConfigTier{8, false}}) {
+  for (const ConfigTier tier : std::vector<ConfigTier>{{10, false}, {16, true}, {8, false}}) {
     if (tier.floating && !has_float_configs) continue;
     for (const EGLint renderable : {EGL_OPENGL_ES3_BIT, EGL_OPENGL_ES2_BIT}) {
       const EGLint attributes[] = {
@@ -314,6 +314,25 @@ bool WaylandVideoSurface::Create(GtkWidget* view, std::string* error) {
     Destroy();
     return Fail(error, "Failed to create the video wl_surface");
   }
+  // Which output the plane is on, from the plane itself rather than the
+  // toplevel: GDK tracks the toplevel's outputs but tells nobody when they
+  // change, and both surfaces' enter events arrive in the same batch, so
+  // asking GDK from here could read the previous answer.
+#ifdef WL_SURFACE_PREFERRED_BUFFER_SCALE_SINCE_VERSION
+  static_assert(
+      sizeof(wl_surface_listener) == 4 * sizeof(void (*)()), "wl_surface_listener gained an event; handle it here");
+  static const wl_surface_listener kSurfaceListener = {
+      HandleSurfaceEnter,
+      HandleSurfaceLeave,
+      HandleSurfacePreferredBufferScale,
+      HandleSurfacePreferredBufferTransform,
+  };
+#else
+  static_assert(
+      sizeof(wl_surface_listener) == 2 * sizeof(void (*)()), "wl_surface_listener gained an event; handle it here");
+  static const wl_surface_listener kSurfaceListener = {HandleSurfaceEnter, HandleSurfaceLeave};
+#endif
+  wl_surface_add_listener(surface_, &kSurfaceListener, this);
 
   // Input belongs to the Flutter view, never to the video plane. An empty input
   // region makes the compositor route pointer and touch straight through — the
@@ -663,7 +682,7 @@ void WaylandVideoSurface::ClearStagedDescription() {
 void WaylandVideoSurface::SettleTransition(bool ok) {
   if (!transition_staged_) return;
   // Re-armed, not cancelled. The compositor answering only ends the *first* of
-  // two waits: the plane stays staged - and Present() stays held - until the
+  // two waits: the plane stays staged - and presents stay held - until the
   // caller's mpv leg commits or aborts, which is a longer wait than this one and
   // has no timeout of its own. Cancelling here left exactly that window
   // unbounded, so a silent mpv froze the plane for good.
@@ -722,7 +741,7 @@ void WaylandVideoSurface::BeginHdrTransition(
   }
 
   // Metadata matters only while described; otherwise every SDR source change
-  // would stage a no-op transition that holds Present() and forces a render.
+  // would stage a no-op transition that holds presents and forces a render.
   if (describe == hdr_active_ && (!describe || metadata_ == metadata)) {
     if (on_settled) on_settled(0, true);
     return;
@@ -745,7 +764,7 @@ void WaylandVideoSurface::BeginHdrTransition(
   BuildImageDescription();
 }
 
-// Present() and the plugin's render path are both held while a transition is
+// PreparePresent() and the plugin's render path are both held while a transition is
 // staged, so a compositor that accepts create() and then answers with neither
 // ready nor failed freezes the plane on its last buffer for good, and every
 // queued HDR method call behind it never answers. Everything else in this file
@@ -792,7 +811,7 @@ void WaylandVideoSurface::ArmTransitionWatchdog() {
             "resuming presentation on the description already in force after %d seconds",
             kTransitionTimeoutSeconds);
         self->DiscardTransition();
-        // Present() was held for the whole staged window, so nothing else will
+        // Presents were held for the whole staged window, so nothing else will
         // start it again: no frame callback is outstanding, and mpv - which by
         // definition has gone quiet - will not raise its redraw latch either.
         // That rules out the ordinary frame callback, whose handler skips unless
@@ -982,7 +1001,81 @@ void WaylandVideoSurface::BuildImageDescription() {
   wp_image_description_v1_add_listener(staged_description_, &kDescriptionListener, this);
 }
 
+void WaylandVideoSurface::ArmFrameAckWatchdog() {
+  // One watchdog per outstanding callback. CompletePresent() re-arms after each
+  // acknowledgement or timeout, so a source that is already set means the
+  // previous timer is still waiting on a callback that has not been answered.
+  if (frame_ack_source_ != 0 || !frame_pending_ || !visible_) return;
+  frame_ack_source_ = g_timeout_add(
+      kFrameAckTimeoutMs,
+      +[](gpointer data) -> gboolean {
+        auto* self = static_cast<WaylandVideoSurface*>(data);
+        self->frame_ack_source_ = 0;
+        if (!self->frame_pending_) return G_SOURCE_REMOVE;
+        // A real acknowledgement arriving later cannot retroactively answer
+        // this callback, so the callback has to go; ClearFrameCallback also
+        // clears frame_pending_. Rendering resumes from the same place
+        // HandleFrameDone would have started it - the frame callback fires
+        // once per display refresh and the plugin's handler skips without
+        // either a new mpv frame or a forced render, so calling on_frame_
+        // directly is what makes the next present happen at all.
+        self->ClearFrameCallback();
+        if (++self->consecutive_frame_acks_missed_ > kMaxConsecutiveFrameAckMisses) {
+          // Warn once per stall: the slow timer keeps this branch cycling
+          // until a real acknowledgement resets the count.
+          if (self->consecutive_frame_acks_missed_ == kMaxConsecutiveFrameAckMisses + 1) {
+            g_warning(
+                "MPV video plane: compositor is not acknowledging frames (%d misses); "
+                "backing off to re-presenting every %d ms",
+                self->consecutive_frame_acks_missed_, kStalledRepresentIntervalMs);
+          }
+          self->ArmStalledRepresentTimer();
+          return G_SOURCE_REMOVE;
+        }
+        g_message("MPV video plane: frame not acknowledged within %d ms; re-presenting", kFrameAckTimeoutMs);
+        if (self->on_frame_) self->on_frame_();
+        return G_SOURCE_REMOVE;
+      },
+      this);
+}
+
+void WaylandVideoSurface::CancelFrameAckWatchdog() {
+  if (frame_ack_source_ != 0) {
+    g_source_remove(frame_ack_source_);
+    frame_ack_source_ = 0;
+  }
+}
+
+void WaylandVideoSurface::ArmStalledRepresentTimer() {
+  if (stalled_represent_source_ != 0) return;
+  stalled_represent_source_ = g_timeout_add(
+      kStalledRepresentIntervalMs,
+      +[](gpointer data) -> gboolean {
+        auto* self = static_cast<WaylandVideoSurface*>(data);
+        self->stalled_represent_source_ = 0;
+        // A pending frame means a present happened since this timer was armed;
+        // its own watchdog owns the wait now and lands back here on a miss.
+        if (!self->visible_ || self->frame_pending_) return G_SOURCE_REMOVE;
+        // on_frame_, not on_forced_render_: the plugin's handler presents only
+        // when mpv actually has a new frame or a refresh is owed, so a paused
+        // hidden plane stops here instead of re-committing the same buffer
+        // forever. Nothing is lost by going dormant - the render that consumed
+        // the latch guarantees mpv's next frame arrives as an update edge.
+        if (self->on_frame_) self->on_frame_();
+        return G_SOURCE_REMOVE;
+      },
+      this);
+}
+
+void WaylandVideoSurface::CancelStalledRepresentTimer() {
+  if (stalled_represent_source_ != 0) {
+    g_source_remove(stalled_represent_source_);
+    stalled_represent_source_ = 0;
+  }
+}
+
 void WaylandVideoSurface::ClearFrameCallback() {
+  CancelFrameAckWatchdog();
   if (frame_callback_ != nullptr) {
     wl_callback_destroy(frame_callback_);
     frame_callback_ = nullptr;
@@ -993,7 +1086,7 @@ void WaylandVideoSurface::ClearFrameCallback() {
 void WaylandVideoSurface::HandleFrameDone(void* data, wl_callback* callback, uint32_t time) {
   (void)time;
   auto* self = static_cast<WaylandVideoSurface*>(data);
-  // Always the callback we hold: Present() is the only place one is created and
+  // Always the callback we hold: PreparePresent() is the only place one is created and
   // it early-returns while frame_pending_, so a second is never armed over a
   // live one, and libwayland delivers nothing for a proxy we already destroyed.
   if (self->frame_callback_ == callback) {
@@ -1001,16 +1094,61 @@ void WaylandVideoSurface::HandleFrameDone(void* data, wl_callback* callback, uin
     self->frame_callback_ = nullptr;
   }
   self->frame_pending_ = false;
+  self->consecutive_frame_acks_missed_ = 0;
+  // A real acknowledgement is the watchdog's success case; neither it nor the
+  // stalled-plane backoff has more work to do (this is a static handler, so
+  // the calls go through `self`).
+  self->CancelFrameAckWatchdog();
+  self->CancelStalledRepresentTimer();
   // Rendering resumes from here, not from mpv: its redraw latch is still set
   // from the update we declined to serve, so it will not notify again.
   if (self->on_frame_) self->on_frame_();
 }
 
+void WaylandVideoSurface::HandleSurfaceEnter(void* data, wl_surface* surface, wl_output* output) {
+  (void)surface;
+  auto* self = static_cast<WaylandVideoSurface*>(data);
+  if (!self->on_monitor_entered_ || self->view_ == nullptr || output == nullptr) return;
+  // The proxy in the event is GDK's own bind of that output - one client, one
+  // proxy per global - so it can be matched against GDK's monitors directly.
+  GdkDisplay* display = gtk_widget_get_display(self->view_);
+  const int count = gdk_display_get_n_monitors(display);
+  for (int i = 0; i < count; ++i) {
+    GdkMonitor* monitor = gdk_display_get_monitor(display, i);
+    if (monitor != nullptr && gdk_wayland_monitor_get_wl_output(monitor) == output) {
+      self->on_monitor_entered_(monitor);
+      return;
+    }
+  }
+}
+
+void WaylandVideoSurface::HandleSurfaceLeave(void* data, wl_surface* surface, wl_output* output) {
+  // Nothing to re-evaluate: a plane spanning two outputs reports against the
+  // one it entered last, and leaving the other changes nothing about that.
+  (void)data;
+  (void)surface;
+  (void)output;
+}
+
+void WaylandVideoSurface::HandleSurfacePreferredBufferScale(void* data, wl_surface* surface, int32_t factor) {
+  (void)data;
+  (void)surface;
+  (void)factor;
+}
+
+void WaylandVideoSurface::HandleSurfacePreferredBufferTransform(void* data, wl_surface* surface, uint32_t transform) {
+  (void)data;
+  (void)surface;
+  (void)transform;
+}
+
 void WaylandVideoSurface::Destroy() {
-  // Unconditionally, ahead of everything: the timeout closure captures `this`,
-  // and DiscardTransition below only cancels it when a transition is actually
-  // staged.
+  // Unconditionally, ahead of everything: all three timeout closures capture
+  // `this`, and the transition watchdog is only cancelled below when a
+  // transition is actually staged.
   CancelTransitionWatchdog();
+  CancelFrameAckWatchdog();
+  CancelStalledRepresentTimer();
   if (egl_surface_ != EGL_NO_SURFACE) {
     if (eglGetCurrentSurface(EGL_DRAW) == egl_surface_ || eglGetCurrentSurface(EGL_READ) == egl_surface_) {
       eglMakeCurrent(egl_display_, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
@@ -1024,9 +1162,10 @@ void WaylandVideoSurface::Destroy() {
   }
   ClearFrameCallback();
   on_frame_ = nullptr;
-  // Same rule as on_frame_: the forced-render callback captures the plugin,
-  // and nothing may invoke it once teardown has begun.
+  // Same rule as on_frame_: the forced-render and monitor callbacks capture
+  // the plugin, and nothing may invoke them once teardown has begun.
   on_forced_render_ = nullptr;
+  on_monitor_entered_ = nullptr;
   // Drops the staged description and, importantly, the settled callback: it
   // captures the plugin, which is being torn down alongside this.
   DiscardTransition();
@@ -1094,6 +1233,7 @@ void WaylandVideoSurface::Destroy() {
   visible_ = false;
   rect_valid_ = false;
   first_frame_presented_ = false;
+  consecutive_frame_acks_missed_ = 0;
 }
 
 void WaylandVideoSurface::RequestParentCommit() {
@@ -1168,7 +1308,7 @@ void WaylandVideoSurface::SetRect(int32_t x, int32_t y, int32_t width, int32_t h
   // presented: mesa commits the EGL surface's pre-allocated 1x1 back buffer
   // on the first swap regardless of wl_egl_window_resize, and a 1x1 buffer at
   // scale > 1 is a fatal protocol error (the compositor disconnects us).
-  // Present() flushes the deferred scale right after that first commit. The
+  // CompletePresent() flushes the deferred scale right after that first commit. The
   // gate is the first-frame latch rather than buffer attachment: the committed
   // scale survives a detach, so once a frame has been presented the scale must
   // be updatable with no buffer attached.
@@ -1189,9 +1329,12 @@ void WaylandVideoSurface::DetachBuffer() {
   // on its own: a subsurface has no visibility of its own, so what "hidden"
   // means here is "carrying no buffer", and the content stays up until the
   // compositor is told to drop it. The pending frame callback goes too - it
-  // would otherwise fire against a surface with nothing to present.
+  // would otherwise fire against a surface with nothing to present - and so
+  // does the stalled-plane backoff, which exists to revive exactly that
+  // callback.
   if (surface_ == nullptr) return;
   ClearFrameCallback();
+  CancelStalledRepresentTimer();
   wl_surface_attach(surface_, nullptr, 0, 0);
   wl_surface_commit(surface_);
 }
@@ -1201,11 +1344,11 @@ void WaylandVideoSurface::SetVisible(bool visible) {
   visible_ = visible;
   if (surface_ == nullptr) return;
   if (!visible) DetachBuffer();
-  // Becoming visible needs no action here: the next Present() attaches a buffer.
+  // Becoming visible needs no action here: the next present attaches a buffer.
   RequestParentCommit();
 }
 
-bool WaylandVideoSurface::Present() {
+bool WaylandVideoSurface::PreparePresent() {
   if (!visible_ || egl_surface_ == EGL_NO_SURFACE || frame_pending_) return false;
   // Held while a colour transition is staged. eglSwapBuffers is the child
   // surface's commit, so presenting now would publish a buffer paired with a
@@ -1215,17 +1358,32 @@ bool WaylandVideoSurface::Present() {
   if (transition_staged_) return false;
 
   // Ask for the acknowledgement before the commit that eglSwapBuffers performs,
-  // so the callback belongs to this frame.
+  // so the callback belongs to this frame. The request is issued here, on the
+  // main thread, *before* the render job is posted: libwayland serializes
+  // requests across threads in call order, so the happens-before of the job
+  // handoff is what keeps this frame request ahead of the worker's commit.
   static const wl_callback_listener kFrameListener = {HandleFrameDone};
   frame_callback_ = wl_surface_frame(surface_);
   if (frame_callback_ != nullptr) {
     wl_callback_add_listener(frame_callback_, &kFrameListener, this);
     frame_pending_ = true;
   }
+  return true;
+}
 
-  if (eglSwapBuffers(egl_display_, egl_surface_) != EGL_TRUE) {
+bool WaylandVideoSurface::CompletePresent(bool swapped) {
+  if (!swapped) {
+    // The render job logged why. The frame callback belongs to a commit that
+    // never happened; without this it would wait forever and frame_pending_
+    // would hold off every later present.
     ClearFrameCallback();
-    g_warning("MPV video plane: eglSwapBuffers failed: 0x%x", eglGetError());
+    return false;
+  }
+  // A hide or a rect loss that landed while the swap was in flight already
+  // detached the buffer - and the swap just re-attached one behind its back.
+  // Detach again; the plane is not showing this frame.
+  if (!visible_ || !rect_valid_) {
+    DetachBuffer();
     return false;
   }
   if (!first_frame_presented_) {
@@ -1244,6 +1402,11 @@ bool WaylandVideoSurface::Present() {
     // view of the subsurface is up to date.
     RequestParentCommit();
   }
+  // The acknowledgement for this commit is now owed; bound the wait so a
+  // compositor that never pays it cannot freeze the plane (see
+  // ArmFrameAckWatchdog). If the compositor already acknowledged between the
+  // swap and this call, frame_pending_ is false again and the arm is a no-op.
+  ArmFrameAckWatchdog();
   return true;
 }
 

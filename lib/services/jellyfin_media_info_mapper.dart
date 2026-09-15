@@ -25,6 +25,7 @@ MediaSourceInfo jellyfinMediaSourceToMediaSourceInfo(
   Map<String, dynamic> source, {
   Object? chapters,
   Object? trickplay,
+  int? mediaIndex,
 }) {
   final rawStreams = source['MediaStreams'];
   final parsedStreams = walkStreams(rawStreams is List ? rawStreams : null, const JellyfinFileInfoStreamReader());
@@ -50,6 +51,15 @@ MediaSourceInfo jellyfinMediaSourceToMediaSourceInfo(
 
   final mediaSourceId = source['Id'] as String?;
   final trickplayByWidth = _parseTrickplayManifest(trickplay, mediaSourceId);
+  // BIF tooltip aspect from the video stream's dimensions — the same source
+  // `jellyfinDisplayCriteriaFromStream` reads. Only the Emby BIF path consumes
+  // this today; Jellyfin derives aspect from its tile manifest.
+  final videoStream = parsedStreams.videoStream;
+  final videoWidth = flexibleInt(videoStream?['Width']);
+  final videoHeight = flexibleInt(videoStream?['Height']);
+  final videoAspectRatio = videoWidth != null && videoHeight != null && videoHeight > 0
+      ? videoWidth / videoHeight
+      : null;
 
   return MediaSourceInfo(
     videoUrl: '',
@@ -59,9 +69,11 @@ MediaSourceInfo jellyfinMediaSourceToMediaSourceInfo(
     partId: partId,
     displayCriteria: jellyfinDisplayCriteriaFromStream(source, parsedStreams.videoStream),
     mediaSourceId: mediaSourceId,
+    mediaIndex: mediaIndex,
     defaultAudioStreamIndex: defaultAudioStreamIndex,
     defaultSubtitleStreamIndex: defaultSubtitleStreamIndex,
     trickplayByWidth: trickplayByWidth,
+    videoAspectRatio: videoAspectRatio,
   );
 }
 

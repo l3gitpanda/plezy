@@ -170,12 +170,13 @@ class _RecordOptionsContentState extends State<_RecordOptionsContent> {
     });
   }
 
-  void _setPref(String id, Object? baseline, Object? value) {
+  void _setPref(SubscriptionSetting setting, Object? value) {
     setState(() {
-      if (_compareValues(value, baseline)) {
-        _dirtyPrefs.remove(id);
+      // Clearing a numeric field restores its baseline, not a null patch.
+      if ((setting.type == 'int' && value == null) || _compareValues(value, _baselineFor(setting))) {
+        _dirtyPrefs.remove(setting.id);
       } else {
-        _dirtyPrefs[id] = value;
+        _dirtyPrefs[setting.id] = value;
       }
     });
   }
@@ -199,8 +200,14 @@ class _RecordOptionsContentState extends State<_RecordOptionsContent> {
       _close(RecordOutcome.failed);
       return;
     }
-    final targetSectionId = widget.isEdit ? null : _effectiveSectionId(_eligibleLibraries);
-    if (!widget.isEdit && targetSectionId == null) {
+    final eligible = widget.isEdit ? const <MediaLibrary>[] : _eligibleLibraries;
+    final targetSectionId = widget.isEdit ? null : _effectiveSectionId(eligible);
+    // A target section is a Plex concept — recordings land in a library
+    // section the template names. MediaBrowser templates carry no target (the
+    // server records into its own configured folder), so only fail when the
+    // template actually expects one.
+    final requiresTarget = !widget.isEdit && (_entry.targetLibrarySectionID != null || eligible.isNotEmpty);
+    if (requiresTarget && targetSectionId == null) {
       _close(RecordOutcome.targetMissing);
       return;
     }
@@ -212,7 +219,7 @@ class _RecordOptionsContentState extends State<_RecordOptionsContent> {
           _close(RecordOutcome.failed);
           return;
         }
-        await dvr.updateRecordingRule(id, Map.of(_dirtyPrefs));
+        await dvr.updateRecordingRule(id, _entry.validatePrefs(_dirtyPrefs));
         if (!mounted) return;
         _close(RecordOutcome.updated);
       } else {
@@ -230,11 +237,13 @@ class _RecordOptionsContentState extends State<_RecordOptionsContent> {
       appLogger.e('Failed to save recording rule', error: e);
       if (!mounted) return;
       final code = e is MediaServerHttpException ? e.statusCode : null;
-      final outcome = switch (code) {
-        403 => RecordOutcome.adminRequired,
-        409 => RecordOutcome.alreadyScheduled,
-        _ => RecordOutcome.failed,
-      };
+      final outcome = e is RecordingConflictException
+          ? RecordOutcome.alreadyScheduled
+          : switch (code) {
+              403 => RecordOutcome.adminRequired,
+              409 => RecordOutcome.alreadyScheduled,
+              _ => RecordOutcome.failed,
+            };
       _close(outcome);
     }
   }
@@ -337,7 +346,7 @@ class _RecordOptionsContentState extends State<_RecordOptionsContent> {
                         setting: setting,
                         currentValue: _currentValueFor(setting),
                         autofocus: index == 0,
-                        onChanged: (value) => _setPref(setting.id, _baselineFor(setting), value),
+                        onChanged: (value) => _setPref(setting, value),
                       );
                     },
                   ),

@@ -17,6 +17,7 @@ import '../../../mpv/mpv.dart';
 import '../../../mpv/player/player_native.dart';
 import '../../../providers/shader_provider.dart';
 import '../../../services/file_picker_service.dart';
+import '../../../services/scoped_player_prefs.dart';
 import '../../../services/settings_service.dart';
 import '../../../services/sleep_timer_service.dart';
 import '../../../services/video_filter_manager.dart';
@@ -31,6 +32,7 @@ import '../../../utils/snackbar_helper.dart';
 import '../../../theme/mono_tokens.dart';
 import '../../../widgets/focusable_list_tile.dart';
 import '../../../widgets/overlay_sheet.dart';
+import '../../../watch_together/providers/watch_together_provider.dart';
 import '../models/track_controls_state.dart';
 import '../widgets/sync_offset_control.dart';
 import '../widgets/sleep_timer_content.dart';
@@ -38,19 +40,7 @@ import '../../../i18n/strings.g.dart';
 import 'base_video_control_sheet.dart';
 import 'version_quality_sheet.dart';
 
-enum _SettingsView {
-  menu,
-  speed,
-  zoom,
-  versionQuality,
-  sleep,
-  audioSync,
-  subtitleSync,
-  audioDevice,
-  shader,
-  dvConversion,
-  hdrToneMapping,
-}
+enum _SettingsView { menu, speed, zoom, versionQuality, sleep, audioDevice, shader, dvConversion, hdrToneMapping }
 
 class _SettingsMenuItem extends StatelessWidget {
   final IconData icon;
@@ -168,9 +158,16 @@ class _SettingsToggleItem extends StatefulWidget {
   final Pref<bool> pref;
   final IconData icon;
   final String title;
+  final String? subtitle;
   final FutureOr<void> Function(bool value)? onAfterWrite;
 
-  const _SettingsToggleItem({required this.pref, required this.icon, required this.title, this.onAfterWrite});
+  const _SettingsToggleItem({
+    required this.pref,
+    required this.icon,
+    required this.title,
+    this.subtitle,
+    this.onAfterWrite,
+  });
 
   @override
   State<_SettingsToggleItem> createState() => _SettingsToggleItemState();
@@ -243,6 +240,9 @@ class _SettingsToggleItemState extends State<_SettingsToggleItem> {
         return FocusableListTile(
           leading: AppIcon(widget.icon, fill: 1, color: displayedValue ? Colors.amber : tokens(context).textMuted),
           title: Text(widget.title),
+          subtitle: widget.subtitle == null
+              ? null
+              : Text(widget.subtitle!, style: TextStyle(color: tokens(context).textMuted, fontSize: 12)),
           trailing: Switch(value: displayedValue, onChanged: isPending ? null : _write, activeThumbColor: Colors.amber),
           onTap: isPending ? null : () => _write(!displayedValue),
         );
@@ -509,22 +509,17 @@ class _VideoSettingsSheetState extends State<VideoSettingsSheet> {
   }
 
   void _navigateTo(_SettingsView view) {
-    // Sync views open as a compact top bar instead of a sub-view
-    if (view == _SettingsView.audioSync || view == _SettingsView.subtitleSync) {
-      _openSyncBar(view);
-      return;
-    }
     setState(() {
       _currentView = view;
     });
     OverlaySheetController.maybeOf(context)?.refocus();
   }
 
-  void _openSyncBar(_SettingsView view) {
+  // Sync adjustments open as a compact top bar instead of a sub-view.
+  void _openSyncBar({required bool isSubtitle}) {
     final controller = OverlaySheetController.maybeOf(context);
     if (controller == null) return;
 
-    final isSubtitle = view == _SettingsView.subtitleSync;
     final title = isSubtitle ? t.videoSettings.subtitleSync : t.videoSettings.audioSync;
     final icon = isSubtitle ? Symbols.subtitles_rounded : Symbols.sync_rounded;
     final propertyName = isSubtitle ? 'sub-delay' : 'audio-delay';
@@ -550,13 +545,8 @@ class _VideoSettingsSheetState extends State<VideoSettingsSheet> {
             initialOffset: initialOffset,
             sliderFocusNode: sliderFocusNode,
             onOffsetChanged: (offset) async {
-              final settings = SettingsService.instance;
-              if (isSubtitle) {
-                await settings.write(SettingsService.subtitleSyncOffset, offset);
-              } else {
-                await settings.write(SettingsService.audioSyncOffset, offset);
-              }
-              _state.onSyncOffsetChanged?.call(propertyName, offset);
+              final pref = isSubtitle ? ScopedPlayerPrefs.subtitleSyncOffset : ScopedPlayerPrefs.audioSyncOffset;
+              await ScopedPlayerPrefs.write(pref, _state.metadata, offset);
             },
           ),
         )
@@ -593,10 +583,6 @@ class _VideoSettingsSheetState extends State<VideoSettingsSheet> {
         return _versionQualityTitle();
       case _SettingsView.sleep:
         return t.videoSettings.sleepTimer;
-      case _SettingsView.audioSync:
-        return t.videoSettings.audioSync;
-      case _SettingsView.subtitleSync:
-        return t.videoSettings.subtitleSync;
       case _SettingsView.audioDevice:
         return t.videoSettings.audioOutput;
       case _SettingsView.shader:
@@ -620,10 +606,6 @@ class _VideoSettingsSheetState extends State<VideoSettingsSheet> {
         return Symbols.art_track_rounded;
       case _SettingsView.sleep:
         return Symbols.bedtime_rounded;
-      case _SettingsView.audioSync:
-        return Symbols.sync_rounded;
-      case _SettingsView.subtitleSync:
-        return Symbols.subtitles_rounded;
       case _SettingsView.audioDevice:
         return Symbols.speaker_rounded;
       case _SettingsView.shader:
@@ -700,10 +682,27 @@ class _VideoSettingsSheetState extends State<VideoSettingsSheet> {
   }
 
   String _versionQualityValueText() {
+    final showVersions = _state.availableVersions.length > 1;
     final values = <String>[];
-    if (_state.availableVersions.length > 1) values.add(_selectedVersionLabel());
-    if (_state.serverSupportsTranscoding) values.add(qualityPresetLabel(_state.selectedQualityPreset));
+    if (showVersions) values.add(_selectedVersionLabel());
+    if (_state.serverSupportsTranscoding) {
+      values.add(
+        qualityPresetLabel(
+          _state.selectedQualityPreset,
+          sourceBitrateKbps: showVersions ? null : _selectedSourceBitrateKbps(),
+        ),
+      );
+    }
     return values.join(' / ');
+  }
+
+  int? _selectedSourceBitrateKbps() {
+    final index = _state.selectedMediaIndex;
+    if (index < 0 || index >= _state.availableVersions.length) {
+      return null;
+    }
+    final bitrate = _state.availableVersions[index].bitrate;
+    return bitrate != null && bitrate > 0 ? bitrate : null;
   }
 
   String _selectedVersionLabel() {
@@ -727,7 +726,7 @@ class _VideoSettingsSheetState extends State<VideoSettingsSheet> {
             stream: widget.player.streams.rate,
             initialData: widget.player.state.rate,
             builder: (context, snapshot) {
-              final currentRate = snapshot.data ?? 1.0;
+              final currentRate = _displayedRate(snapshot.data ?? 1.0);
               return _SettingsMenuItem(
                 icon: Symbols.speed_rounded,
                 title: t.videoSettings.playbackSpeed,
@@ -775,7 +774,7 @@ class _VideoSettingsSheetState extends State<VideoSettingsSheet> {
           title: t.videoSettings.audioSync,
           valueText: formatSyncOffset(_audioSyncOffset.toDouble()),
           isHighlighted: _audioSyncOffset != 0,
-          onTap: () => _navigateTo(_SettingsView.audioSync),
+          onTap: () => _openSyncBar(isSubtitle: false),
         ),
 
         _SettingsMenuItem(
@@ -783,7 +782,7 @@ class _VideoSettingsSheetState extends State<VideoSettingsSheet> {
           title: t.videoSettings.subtitleSync,
           valueText: formatSyncOffset(_subtitleSyncOffset.toDouble()),
           isHighlighted: _subtitleSyncOffset != 0,
-          onTap: () => _navigateTo(_SettingsView.subtitleSync),
+          onTap: () => _openSyncBar(isSubtitle: true),
         ),
 
         if (_supportsHdrControl)
@@ -844,6 +843,10 @@ class _VideoSettingsSheetState extends State<VideoSettingsSheet> {
           pref: SettingsService.audioNormalization,
           icon: Symbols.graphic_eq_rounded,
           title: t.videoSettings.audioNormalization,
+          // Normalization wins over passthrough; say so where passthrough exists.
+          subtitle: PlatformDetector.supportsAudioPassthrough()
+              ? t.videoSettings.audioNormalizationDisablesPassthrough
+              : null,
           onAfterWrite: widget.player.setAudioNormalization,
         ),
 
@@ -863,9 +866,7 @@ class _VideoSettingsSheetState extends State<VideoSettingsSheet> {
           _SettingsMenuItem(
             icon: Symbols.auto_fix_high_rounded,
             title: t.shaders.title,
-            valueText: _state.shaderService!.currentPreset.id == ShaderPreset.none.id
-                ? t.common.off
-                : _state.shaderService!.currentPreset.name,
+            valueText: _shaderPresetTitle(_state.shaderService!.currentPreset),
             isHighlighted: _state.shaderService!.currentPreset.isEnabled,
             onTap: () => _navigateTo(_SettingsView.shader),
           ),
@@ -987,12 +988,24 @@ class _VideoSettingsSheetState extends State<VideoSettingsSheet> {
     );
   }
 
+  /// The rate the user chose, as opposed to what the player is momentarily
+  /// running at: a Watch Together drift nudge is not a speed setting.
+  double _displayedRate(double playerRate) {
+    try {
+      final session = context.read<WatchTogetherProvider>();
+      if (session.syncOwnsRate) return session.roomRate ?? playerRate;
+    } catch (_) {
+      // No session provider above this sheet.
+    }
+    return playerRate;
+  }
+
   Widget _buildSpeedView() {
     return StreamBuilder<double>(
       stream: widget.player.streams.rate,
       initialData: widget.player.state.rate,
       builder: (context, snapshot) {
-        final currentRate = snapshot.data ?? 1.0;
+        final currentRate = _displayedRate(snapshot.data ?? 1.0);
         const speeds = <double>[
           0.5,
           0.75,
@@ -1027,9 +1040,9 @@ class _VideoSettingsSheetState extends State<VideoSettingsSheet> {
               title: Text(label, style: TextStyle(color: isSelected ? primary : null)),
               trailing: isSelected ? AppIcon(Symbols.check_rounded, fill: 1, color: primary) : null,
               onTap: () async {
-                await widget.player.setRate(speed);
-                // Save as default playback speed
-                await SettingsService.instance.write(SettingsService.defaultPlaybackSpeed, speed);
+                await (_state.onRateRequested ?? widget.player.setRate)(speed);
+                // Save at the configured persistence scope (global by default).
+                await ScopedPlayerPrefs.write(ScopedPlayerPrefs.playbackSpeed, _state.metadata, speed);
                 if (context.mounted) {
                   OverlaySheetController.of(context).close(); // Close sheet after selection
                 }
@@ -1042,7 +1055,7 @@ class _VideoSettingsSheetState extends State<VideoSettingsSheet> {
   }
 
   Widget _buildZoomView() {
-    const zoomPresets = [0.5, 0.75, 0.9, 1.0, 1.1, 1.2, 1.3, 1.5, 1.75, 2.0];
+    const zoomPresets = [0.5, 0.75, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.75, 2.0];
     final primary = Theme.of(context).colorScheme.primary;
 
     return ListView(
@@ -1071,11 +1084,7 @@ class _VideoSettingsSheetState extends State<VideoSettingsSheet> {
   Widget _buildSleepView() {
     final sleepTimer = SleepTimerService();
 
-    return SleepTimerContent(
-      player: widget.player,
-      sleepTimer: sleepTimer,
-      onCancel: () => OverlaySheetController.of(context).close(),
-    );
+    return SleepTimerContent(sleepTimer: sleepTimer, onCancel: () => OverlaySheetController.of(context).close());
   }
 
   Widget _buildVersionQualityView() {
@@ -1233,7 +1242,7 @@ class _VideoSettingsSheetState extends State<VideoSettingsSheet> {
             final preset = presets[index];
             final isSelected = preset.id == currentPreset.id;
             final isCustom = preset.type == ShaderPresetType.custom;
-            final presetName = preset.id == ShaderPreset.none.id ? t.common.off : preset.name;
+            final presetName = _shaderPresetTitle(preset);
 
             return FocusableListTile(
               title: Text(presetName, style: TextStyle(color: isSelected ? Colors.amber : null)),
@@ -1259,7 +1268,8 @@ class _VideoSettingsSheetState extends State<VideoSettingsSheet> {
                   _state.onToggleAmbientLighting?.call();
                 }
                 await _state.shaderService!.applyPreset(preset);
-                await shaderProvider.setPreset(preset);
+                await ScopedPlayerPrefs.write(ScopedPlayerPrefs.shaderPreset, _state.metadata, preset.id);
+                shaderProvider.setCurrentPreset(preset);
                 if (!context.mounted) return;
                 _state.onShaderChanged?.call();
                 OverlaySheetController.of(context).close();
@@ -1288,7 +1298,8 @@ class _VideoSettingsSheetState extends State<VideoSettingsSheet> {
           _state.onToggleAmbientLighting?.call();
         }
         await _state.shaderService!.applyPreset(preset);
-        await shaderProvider.setPreset(preset);
+        await ScopedPlayerPrefs.write(ScopedPlayerPrefs.shaderPreset, _state.metadata, preset.id);
+        shaderProvider.setCurrentPreset(preset);
         if (!mounted) return;
         _state.onShaderChanged?.call();
       }
@@ -1316,6 +1327,37 @@ class _VideoSettingsSheetState extends State<VideoSettingsSheet> {
     await shaderProvider.deleteCustomShader(preset);
   }
 
+  String _artcnnVariantLabel(ArtCNNVariant variant) => switch (variant) {
+    ArtCNNVariant.neutral => t.shaders.artcnnVariantNeutral,
+    ArtCNNVariant.denoise => t.shaders.artcnnVariantDenoise,
+    ArtCNNVariant.denoiseSharpen => t.shaders.artcnnVariantDenoiseSharpen,
+  };
+
+  String _anime4kQualityLabel(Anime4KQuality quality) =>
+      quality == Anime4KQuality.fast ? t.shaders.qualityFast : t.shaders.qualityHQ;
+
+  /// Localized tile title for [preset]. [ShaderPreset.name] is a stable non-localized identity string, so built-in
+  /// presets are re-composed here with translated variant/quality words; `ArtCNN`/`Anime4K` and the model/mode labels
+  /// are upstream shader identities and stay verbatim.
+  String _shaderPresetTitle(ShaderPreset preset) {
+    switch (preset.type) {
+      case ShaderPresetType.none:
+        return t.common.off;
+      case ShaderPresetType.artcnn:
+        final config = preset.artcnnConfig;
+        if (config == null) return preset.name;
+        if (config.variant == ArtCNNVariant.neutral) return 'ArtCNN ${config.model.label}';
+        return 'ArtCNN ${config.model.label} ${_artcnnVariantLabel(config.variant)}';
+      case ShaderPresetType.anime4k:
+        final config = preset.anime4kConfig;
+        if (config == null) return preset.name;
+        return 'Anime4K ${_anime4kQualityLabel(config.quality)} ${config.mode.label}';
+      case ShaderPresetType.nvscaler:
+      case ShaderPresetType.custom:
+        return preset.name;
+    }
+  }
+
   String? _getShaderSubtitle(ShaderPreset preset) {
     switch (preset.type) {
       case ShaderPresetType.none:
@@ -1324,19 +1366,13 @@ class _VideoSettingsSheetState extends State<VideoSettingsSheet> {
         return t.shaders.nvscalerDescription;
       case ShaderPresetType.artcnn:
         if (preset.artcnnConfig != null) {
-          final variant = switch (preset.artcnnConfig!.variant) {
-            ArtCNNVariant.neutral => t.shaders.artcnnVariantNeutral,
-            ArtCNNVariant.denoise => t.shaders.artcnnVariantDenoise,
-            ArtCNNVariant.denoiseSharpen => t.shaders.artcnnVariantDenoiseSharpen,
-          };
+          final variant = _artcnnVariantLabel(preset.artcnnConfig!.variant);
           return '${preset.artcnnModelDisplayName} - $variant';
         }
         return null;
       case ShaderPresetType.anime4k:
         if (preset.anime4kConfig != null) {
-          final quality = preset.anime4kConfig!.quality == Anime4KQuality.fast
-              ? t.shaders.qualityFast
-              : t.shaders.qualityHQ;
+          final quality = _anime4kQualityLabel(preset.anime4kConfig!.quality);
           final mode = preset.modeDisplayName;
           return '$quality - ${t.shaders.mode} $mode';
         }
@@ -1376,9 +1412,6 @@ class _VideoSettingsSheetState extends State<VideoSettingsSheet> {
             return _buildVersionQualityView();
           case _SettingsView.sleep:
             return _buildSleepView();
-          case _SettingsView.audioSync:
-          case _SettingsView.subtitleSync:
-            return _buildMenuView(); // Sync views open as top bars, fallback to menu
           case _SettingsView.audioDevice:
             return _buildAudioDeviceView();
           case _SettingsView.shader:
@@ -1441,9 +1474,7 @@ class _CompactSyncBarState extends State<_CompactSyncBar> {
             player: widget.player,
             propertyName: widget.propertyName,
             initialOffset: widget.initialOffset,
-            labelText: widget.title,
             onOffsetChanged: widget.onOffsetChanged,
-            compact: true,
             sliderFocusNode: widget.sliderFocusNode,
             resetFocusNode: _resetFocusNode,
             closeFocusNode: _closeFocusNode,

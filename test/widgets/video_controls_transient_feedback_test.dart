@@ -16,6 +16,7 @@ import 'package:plezy/services/settings_service.dart';
 import 'package:plezy/services/video_volume_controller.dart';
 import 'package:plezy/utils/platform_detector.dart';
 import 'package:plezy/watch_together/providers/watch_together_provider.dart';
+import 'package:plezy/focus/transport_keys.dart';
 import 'package:plezy/widgets/video_controls/player_chrome_controller.dart';
 import 'package:plezy/widgets/app_icon.dart';
 import 'package:plezy/widgets/video_controls/desktop_video_controls.dart';
@@ -266,6 +267,59 @@ void main() {
         const Duration(minutes: 10, seconds: 30),
       ]);
       expect(chrome.controlsVisible, isFalse);
+
+      await settleFeedback(tester);
+    });
+
+    testWidgets('a held media fast-forward is consumed whole and commits one skip', (tester) async {
+      // Every event of the press must be consumed here. Whatever escapes
+      // reaches Android's own MediaSession, whose fixed 15-second
+      // fast-forward re-enters the player once per auto-repeat, so the
+      // playhead ends up displaced by how long the key was held (#1375).
+      await pumpControls(tester);
+
+      expect(await tester.sendKeyDownEvent(LogicalKeyboardKey.mediaFastForward), isTrue, reason: 'down');
+      await tester.pump();
+      for (var i = 0; i < 4; i++) {
+        expect(await tester.sendKeyRepeatEvent(LogicalKeyboardKey.mediaFastForward), isTrue, reason: 'repeat $i');
+        await tester.pump();
+      }
+      expect(player.seeks, isEmpty, reason: 'the press is coalesced, not dispatched per event');
+
+      expect(await tester.sendKeyUpEvent(LogicalKeyboardKey.mediaFastForward), isTrue, reason: 'up');
+      await tester.pump();
+
+      expect(player.seeks, [
+        const Duration(minutes: 10, seconds: 10),
+      ], reason: 'one press is one step, however long it is held');
+      expect(find.text('10s'), findsOneWidget);
+
+      await settleFeedback(tester);
+    });
+
+    testWidgets('a rewind burst mirrors a fast-forward burst from the same position', (tester) async {
+      // The hardware symptom of #1375: four rapid fast-forward presses moved
+      // +353s while four rapid rewinds moved -992s, because the leaked
+      // auto-repeats — not the presses — drove the playhead, and the two
+      // holds were not the same length.
+      await pumpControls(tester);
+      const start = Duration(minutes: 10);
+
+      await _holdMediaKey(tester, LogicalKeyboardKey.mediaFastForward);
+      expect(player.seeks, hasLength(1));
+      final forward = player.seeks.single - start;
+
+      // A reload-style jump back retires the pinned target, so the mirrored
+      // hold really does start from where the first one did.
+      player.reopenAt(start);
+      await tester.pump();
+
+      await _holdMediaKey(tester, LogicalKeyboardKey.mediaRewind);
+      expect(player.seeks, hasLength(2));
+      final backward = player.seeks.last - start;
+
+      expect(forward, const Duration(seconds: 10));
+      expect(backward, -forward, reason: 'the same hold each way must move the same distance');
 
       await settleFeedback(tester);
     });
@@ -743,6 +797,11 @@ void main() {
       // is derived from viewport width. Pump the readout at the real viewport
       // size rather than through the harness, whose surface is pinned landscape.
       const narrow = Size(400, 800);
+      // The caller owns the seconds notifier: held-seek updates the count
+      // without rebuilding the controls root, so the widget listens but never
+      // disposes it.
+      final seconds = ValueNotifier<int>(10);
+      addTearDown(seconds.dispose);
       await tester.pumpWidget(
         MediaQuery(
           data: const MediaQueryData(size: narrow),
@@ -752,7 +811,11 @@ void main() {
               child: SizedBox.fromSize(
                 key: const ValueKey('viewport'),
                 size: narrow,
-                child: const Stack(children: [Positioned.fill(child: DoubleTapFeedback(isForward: true, seconds: 10))]),
+                child: Stack(
+                  children: [
+                    Positioned.fill(child: DoubleTapFeedback(isForward: true, seconds: seconds, animate: true)),
+                  ],
+                ),
               ),
             ),
           ),
@@ -1071,6 +1134,22 @@ void main() {
       expect(formatSkipFeedbackLabel(175), '2:55');
     });
   });
+}
+
+/// One remote press: key down, auto-repeats while it is held, release.
+///
+/// Every event of it must be consumed here — whatever leaks reaches the
+/// platform's own MediaSession, which answers with its own fixed skip and
+/// makes the displacement a function of hold length rather than presses.
+Future<void> _holdMediaKey(WidgetTester tester, LogicalKeyboardKey key) async {
+  expect(await tester.sendKeyDownEvent(key), isTrue, reason: '$key down');
+  await tester.pump();
+  for (var i = 0; i < 4; i++) {
+    expect(await tester.sendKeyRepeatEvent(key), isTrue, reason: '$key repeat $i');
+    await tester.pump();
+  }
+  expect(await tester.sendKeyUpEvent(key), isTrue, reason: '$key up');
+  await tester.pump();
 }
 
 /// Minimal [Player] that records transport calls and keeps a settable

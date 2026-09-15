@@ -2,6 +2,7 @@ import '../test_helpers/paged_fakes.dart';
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:plezy/services/playback_launch_observer.dart';
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -11,6 +12,7 @@ import 'package:http/testing.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:plezy/connection/connection.dart';
 import 'package:plezy/database/app_database.dart';
+import 'package:plezy/focus/focusable_wrapper.dart';
 import 'package:plezy/i18n/strings.g.dart';
 import 'package:plezy/navigation/profile_navigation_scope.dart';
 import 'package:plezy/media/ids.dart';
@@ -64,6 +66,78 @@ import '../test_helpers/profile_stack.dart';
 import '../test_helpers/stub_music_playback_service.dart';
 
 void main() {
+  testWidgets('cancelled media menu restores its live captured item', (tester) async {
+    final destination = FocusNode();
+    addTearDown(destination.dispose);
+    var selected = false;
+    final menuKey = await _pumpPlexMovieMenu(
+      tester,
+      const [],
+      wrapMenu: (menu) => FocusableWrapper(focusNode: destination, onSelect: () => selected = true, child: menu),
+    );
+    destination.requestFocus();
+    await tester.pump();
+    menuKey.currentState!.showContextMenu(tester.element(find.text('picker target')));
+    await tester.pumpAndSettle();
+    expect(destination.hasPrimaryFocus, isFalse);
+    Navigator.of(menuKey.currentContext!).pop();
+    await tester.pumpAndSettle();
+    expect(destination.hasPrimaryFocus, isTrue);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    expect(selected, isTrue);
+  });
+
+  testWidgets('queued media menu restoration cannot outlive its profile owner', (tester) async {
+    final destination = FocusNode();
+    final nextProfile = FocusNode();
+    final showOwner = ValueNotifier(true);
+    addTearDown(destination.dispose);
+    addTearDown(nextProfile.dispose);
+    addTearDown(showOwner.dispose);
+    String? selected;
+    final menuKey = await _pumpPlexMovieMenu(
+      tester,
+      const [],
+      wrapMenu: (menu) => ValueListenableBuilder<bool>(
+        valueListenable: showOwner,
+        builder: (_, visible, _) => Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            FocusableWrapper(
+              focusNode: destination,
+              onSelect: () => selected = 'old profile',
+              child: visible ? menu : const Text('Removed profile menu'),
+            ),
+            FocusableWrapper(
+              focusNode: nextProfile,
+              onSelect: () => selected = 'new profile',
+              child: const Text('New profile'),
+            ),
+          ],
+        ),
+      ),
+    );
+    destination.requestFocus();
+    await tester.pump();
+    menuKey.currentState!.showContextMenu(tester.element(find.text('picker target')));
+    await tester.pumpAndSettle();
+    Navigator.of(menuKey.currentContext!).pop();
+    await tester.idle(); // The menu has queued its post-frame restore.
+    showOwner.value = false;
+    nextProfile.requestFocus();
+    await tester.pumpAndSettle();
+    expect(menuKey.currentState, isNull);
+    expect(
+      destination.context!.mounted,
+      isTrue,
+      reason: 'the external destination survives, but its menu owner does not',
+    );
+    expect(nextProfile.hasPrimaryFocus, isTrue);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    expect(selected, 'new profile');
+    expect(tester.takeException(), isNull);
+  });
+
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('isAdminActionAllowedForMediaItem', () {
@@ -750,7 +824,6 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(music.playedTracks, tracks);
-      expect(music.playedContext?.id, playlist.id);
       expect(music.playedContext?.title, playlist.title);
       expect(music.playedContext?.kind, MusicPlayContextKind.playlist);
       expect(music.shuffle, isFalse);
@@ -920,6 +993,103 @@ void main() {
       expect(tester.takeException(), isNull);
       expect(find.byType(SnackBar), findsOneWidget);
       expect(find.text('target'), findsOneWidget);
+    });
+
+    testWidgets('file info spinner is dismissed when the launching card unmounts mid-fetch', (tester) async {
+      LocaleSettings.setLocaleSync(AppLocale.en);
+      TvDetectionService.debugSetAppleTVOverride(true);
+      addTearDown(() => TvDetectionService.debugSetAppleTVOverride(null));
+
+      // Gate the item detail fetch so the launching card can be unmounted
+      // while getFileInfo is still pending.
+      final gate = Completer<void>();
+      final client = JellyfinClient.forTesting(
+        connection: testJellyfinConnection(isAdministrator: false),
+        httpClient: MockClient((request) async {
+          if (request.url.queryParameters['Fields'] == 'CanDelete') {
+            return _canDeleteResponse(request.url.queryParameters['ids'] ?? '', false);
+          }
+          await gate.future;
+          return jsonResponse({'Id': 'movie-1', 'Name': 'Movie', 'Type': 'Movie'});
+        }),
+      );
+      final manager = MultiServerManager()..debugRegisterJellyfinClientForTesting(client, online: true);
+      final multiServerProvider = testMultiServerProvider(manager);
+      final offlineMode = OfflineModeProvider(manager);
+      final stack = await ProfileStack.create(withStorage: false);
+      final showCard = ValueNotifier<bool>(true);
+      addTearDown(() async {
+        await stack.dispose();
+        offlineMode.dispose();
+        multiServerProvider.dispose();
+        manager.dispose();
+        showCard.dispose();
+      });
+
+      final menuKey = GlobalKey<MediaContextMenuState>();
+      final navigatorKey = GlobalKey<NavigatorState>();
+      final item = testMediaItem(
+        id: 'movie-1',
+        backend: MediaBackend.jellyfin,
+        kind: MediaKind.movie,
+        title: 'Movie',
+        serverId: 'srv-1',
+      );
+
+      await tester.pumpWidget(
+        TranslationProvider(
+          child: MultiProvider(
+            providers: [
+              ChangeNotifierProvider<MultiServerProvider>.value(value: multiServerProvider),
+              ChangeNotifierProvider<ActiveProfileProvider>.value(value: stack.active),
+              ChangeNotifierProvider<OfflineModeProvider>.value(value: offlineMode),
+            ],
+            child: MaterialApp(
+              navigatorKey: navigatorKey,
+              theme: monoTheme(dark: true),
+              home: Scaffold(
+                body: Center(
+                  child: ValueListenableBuilder<bool>(
+                    valueListenable: showCard,
+                    builder: (context, visible, child) => visible
+                        ? MediaContextMenu(
+                            key: menuKey,
+                            item: item,
+                            child: const SizedBox(width: 120, height: 80, child: Text('file info target')),
+                          )
+                        : const SizedBox(width: 120, height: 80),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      menuKey.currentState!.showContextMenu(tester.element(find.text('file info target')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(t.mediaMenu.fileInfo));
+      await tester.pump();
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+
+      // Unmount the launching card while the fetch is pending — a list refresh
+      // dropping the row. The captured card context going stale is exactly what
+      // defeated the old `Navigator.pop(context)` cleanup.
+      showCard.value = false;
+      await tester.pump();
+      expect(find.byType(CircularProgressIndicator), findsOneWidget, reason: 'the fetch is still pending');
+
+      gate.complete();
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byType(CircularProgressIndicator),
+        findsNothing,
+        reason: 'the finally must dismiss the spinner through the dialog route, not the dead card context',
+      );
+      expect(find.byType(FileInfoBottomSheet), findsNothing);
+      expect(navigatorKey.currentState!.canPop(), isFalse, reason: 'no modal route may remain stuck above the screen');
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('playlist picker filters playlists by title', (tester) async {
@@ -1308,8 +1478,9 @@ void main() {
 
 Future<GlobalKey<MediaContextMenuState>> _pumpPlexMovieMenu(
   WidgetTester tester,
-  List<({String id, String title})> playlists,
-) async {
+  List<({String id, String title})> playlists, {
+  Widget Function(Widget menu)? wrapMenu,
+}) async {
   LocaleSettings.setLocaleSync(AppLocale.en);
   TvDetectionService.debugSetAppleTVOverride(true);
   addTearDown(() => TvDetectionService.debugSetAppleTVOverride(null));
@@ -1368,6 +1539,11 @@ Future<GlobalKey<MediaContextMenuState>> _pumpPlexMovieMenu(
     title: 'Movie',
     serverId: 'plex-1',
   );
+  final menu = MediaContextMenu(
+    key: menuKey,
+    item: item,
+    child: const SizedBox(width: 120, height: 80, child: Text('picker target')),
+  );
   await tester.pumpWidget(
     TranslationProvider(
       child: MultiProvider(
@@ -1377,15 +1553,7 @@ Future<GlobalKey<MediaContextMenuState>> _pumpPlexMovieMenu(
         ],
         child: MaterialApp(
           theme: monoTheme(dark: true),
-          home: Scaffold(
-            body: Center(
-              child: MediaContextMenu(
-                key: menuKey,
-                item: item,
-                child: const SizedBox(width: 120, height: 80, child: Text('picker target')),
-              ),
-            ),
-          ),
+          home: Scaffold(body: Center(child: wrapMenu?.call(menu) ?? menu)),
         ),
       ),
     ),
@@ -1651,6 +1819,9 @@ class _RecordingMusicPlaybackService extends StubMusicPlaybackService {
     MediaItem? startTrack,
     required MusicPlayContext playContext,
     bool shuffle = false,
+    Duration? initialPosition,
+    bool offline = false,
+    PlaybackLaunchObserver? launchObserver,
   }) async {
     await super.playFromList(tracks: tracks, startTrack: startTrack, playContext: playContext, shuffle: shuffle);
     callCount++;

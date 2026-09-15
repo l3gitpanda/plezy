@@ -4,13 +4,16 @@
 #include <deque>
 #include <functional>
 #include <limits>
+#include <memory>
 #include <new>
 #include <optional>
 
+#include "plane_render_executor.h"
 #include "wayland_video_surface.h"
 
 using PlayerPtr = std::unique_ptr<mpv::MpvPlayer>;
 using VideoSurfacePtr = std::unique_ptr<mpv::WaylandVideoSurface>;
+using ExecutorPtr = std::unique_ptr<mpv::PlaneRenderExecutor>;
 
 // One queued HDR transaction: what to apply, and who to tell when it settles.
 //
@@ -44,6 +47,24 @@ struct _MpvPlugin {
   // stale or absent. Sticky, because the render it asks for may first have to
   // wait out an unacknowledged frame.
   gboolean plane_needs_render;
+  // The worker that runs mpv's render + the plane's eglSwapBuffers off the
+  // GTK main thread (issue #2057: an expensive per-frame render - a 4K HDR
+  // tone-map - on the main thread starves input dispatch and Flutter's
+  // raster). Created with the plane; drained and shut down in
+  // release_video_resources *before* the player is disposed, which is the
+  // ordering RenderToSurface's lock-free render relies on. Null when
+  // PLEZY_PLANE_RENDER_MAIN_THREAD selects the inline fallback.
+  ExecutorPtr render_executor;
+  // A render job is somewhere between PreparePresent() and CompletePresent().
+  // Gates render_video_plane - the flight owns the plane's EGL surface - and
+  // defers rect application and HDR transaction starts to the completion.
+  gboolean render_in_flight;
+  // A rect arrived while a job was in flight. Applied at completion, because
+  // wl_egl_window_resize must not race the swap.
+  gboolean rect_apply_deferred;
+  // An HDR transaction was ready to start while a job was in flight. Started
+  // at completion; see run_next_hdr_transaction for why it must wait.
+  gboolean hdr_start_deferred;
   gboolean visible;
   gboolean initialized;
   gboolean audio_only;
@@ -85,6 +106,11 @@ struct _MpvPlugin {
   // Same purpose for hdr-enabled: a refused request must only hand hdr_wanted
   // back if no newer one has claimed it since.
   uint64_t hdr_enable_request_serial = 0;
+  // Bounds the mpv leg of the in-flight HDR transaction (see apply_hdr_state):
+  // zero when no transaction is waiting on a SetHdrOutput reply. A wedged core
+  // must cost one transaction, not the whole queue. Zero-initialised like every
+  // other scalar here; release_video_resources cancels a live source.
+  guint hdr_mpv_leg_timeout_source_ = 0;
   // Exactly one HDR transaction runs at a time, end to end.
   //
   // A transaction spans staging and validating the image description, switching
@@ -106,6 +132,10 @@ struct _MpvPlugin {
   // against the display's current peak so a move between two HDR outputs is not
   // mistaken for no change at all.
   uint32_t applied_target_peak = 0;
+  // The refresh rate mpv was last told through display-fps-override, in the
+  // millihertz GDK reports, so a move between two outputs of the same rate
+  // writes nothing. 0 until the first write.
+  int applied_display_fps_mhz = 0;
   // Set when a transaction ended in kUnknown: mpv stopped answering partway
   // through being put back, so what the plane emits cannot be named and the
   // surface carries no description. Recorded rather than inferred from the
@@ -131,6 +161,8 @@ G_DEFINE_TYPE(MpvPlugin, mpv_plugin, G_TYPE_OBJECT)
 
 // Forward declarations
 static void mpv_plugin_handle_method_call(FlMethodChannel* channel, FlMethodCall* method_call, gpointer user_data);
+// The texture bootstrap's failure arms call this; it is defined below.
+static void release_video_resources(MpvPlugin* self);
 
 static mpv::HdrMetadata read_source_hdr_metadata(MpvPlugin* self);
 static void apply_hdr_state(MpvPlugin* self, bool allow, mpv::HdrToneMapping mode, std::function<void(int)> done);
@@ -155,6 +187,15 @@ static void observe_event_for_hdr(MpvPlugin* self, FlValue* event) {
   FlValue* name = fl_value_lookup_string(event, "name");
   if (name == nullptr || fl_value_get_type(name) != FL_VALUE_TYPE_STRING) return;
   if (g_strcmp0(fl_value_get_string(name), "playback-restart") != 0) return;
+  // A new source is a fresh chance to name the output. The quarantine from a
+  // previous source must not outlive it: one file that broke the colour
+  // transaction would otherwise keep the plane hidden (or undescribed-and-
+  // quarantined) for every later one. Lifted before the re-apply, so the
+  // transaction that follows can restore visibility in the same pass.
+  if (self->hdr_output_unnameable) {
+    self->hdr_output_unnameable = false;
+    if (self->visible != FALSE) self->video_surface->SetVisible(true);
+  }
   request_hdr_reapply(self);
 }
 
@@ -181,6 +222,12 @@ static void send_named_event(MpvPlugin* self, const char* name) {
 static void release_video_resources(MpvPlugin* self) {
   // Anything still in flight is now answering for a plane that is going away.
   ++self->generation;
+  // The timeout closure holds a raw `this`; without this it would fire into
+  // the torn-down plugin. The destroy-notify frees its context.
+  if (self->hdr_mpv_leg_timeout_source_ != 0) {
+    g_source_remove(self->hdr_mpv_leg_timeout_source_);
+    self->hdr_mpv_leg_timeout_source_ = 0;
+  }
   // Queued transactions will never run, and each may be holding a reference to a
   // Dart method call that has to be answered or it is leaked along with its
   // response.
@@ -190,6 +237,46 @@ static void release_video_resources(MpvPlugin* self) {
   self->hdr_reapply_pending = false;
   for (auto& request : queued) {
     if (request.done) request.done(MPV_ERROR_UNINITIALIZED);
+  }
+  // Drain the render thread before anything a job touches is torn down:
+  // RenderToSurface's lock-free render is safe only because mpv_gl_, the EGL
+  // context and the plane's EGL surface outlive every job, and this is where
+  // that ordering is enforced. The final job unbinds the EGL context on the
+  // worker - the one thread it is current on - so the teardown queue's worker
+  // can bind it (an EGLContext can be current on at most one thread).
+  bool render_thread_wedged = false;
+  if (self->render_executor) {
+    const EGLDisplay unbind_display = self->video_surface ? self->video_surface->egl_display() : EGL_NO_DISPLAY;
+    self->render_executor->Post(
+        [unbind_display]() -> bool {
+          if (unbind_display != EGL_NO_DISPLAY) {
+            eglMakeCurrent(unbind_display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+          }
+          return true;
+        },
+        nullptr);
+    render_thread_wedged = !self->render_executor->ShutdownAndJoin(5000);
+    self->render_executor.reset();
+  }
+  self->render_in_flight = FALSE;
+  self->rect_apply_deferred = FALSE;
+  self->hdr_start_deferred = FALSE;
+  if (render_thread_wedged) {
+    // A job is stuck inside a driver call. Disposing the player frees the
+    // render context under it and destroying the plane frees the EGL surface
+    // it is drawing into - either is a guaranteed crash. Leaking one
+    // session's core and plane keeps the process alive; stop is best-effort,
+    // because the mpv client API is thread-safe and the wedged job holds only
+    // the render API.
+    g_warning("MPV video plane: render thread did not drain; leaking this session's player and plane");
+    if (self->player) {
+      self->player->SetRedrawCallback(nullptr);
+      self->player->SetSourceMetadataCallback(nullptr);
+      self->player->SetEventCallback(nullptr);
+      self->player->Command({"stop"});
+      self->player.release();
+    }
+    if (self->video_surface) self->video_surface.release();
   }
   if (self->player) {
     // The plane is a raw callback target. Revoke every callback path before
@@ -221,6 +308,7 @@ static void release_video_resources(MpvPlugin* self) {
   self->hdr_tone_mapping = mpv::HdrToneMapping::kCompositor;
   self->hdr_tone_mapping_desired = mpv::HdrToneMapping::kCompositor;
   self->applied_target_peak = 0;
+  self->applied_display_fps_mhz = 0;
   // The quarantine belongs to the mpv instance that stopped answering, not to
   // the app. A new plane and a new player have said nothing yet, so nothing
   // about them is unnameable, and leaving this set would hide the next session
@@ -249,6 +337,15 @@ static void apply_pending_rect(MpvPlugin* self) {
   self->video_surface->SetRect(rect.x, rect.y, rect.width, rect.height, rect.scale);
 }
 
+// Runs |job| on the plane render thread and |completion| back on the main
+// thread with the job's result. The inline fallback (PLEZY_PLANE_RENDER_MAIN_THREAD)
+// runs both synchronously, preserving the pre-#2057 single-threaded behaviour.
+static bool post_render_job(MpvPlugin* self, std::function<bool()> job, std::function<void(bool)> completion) {
+  if (self->render_executor) return self->render_executor->Post(std::move(job), std::move(completion));
+  completion(job());
+  return true;
+}
+
 // Renders and presents one frame on the native video plane. Skipped while the
 // plane is hidden or has not been given a rect yet; both of those paths render
 // explicitly once the condition clears, because mpv's redraw latch stays set
@@ -256,14 +353,36 @@ static void apply_pending_rect(MpvPlugin* self) {
 //
 // |force| is for the callers who need pixels regardless of whether mpv has
 // produced a new frame: a resize, or the plane becoming visible again.
+//
+// The render and the swap themselves run on the plane render thread (issue
+// #2057): a frame render that costs a real fraction of the frame budget - a
+// 4K HDR tone-map, say - would otherwise starve input dispatch and Flutter's
+// raster, which share the GTK main thread. Everything up to PreparePresent()
+// and everything from the completion on stays here on the main thread.
 static void render_video_plane(MpvPlugin* self, gboolean force) {
   if (force) self->plane_needs_render = TRUE;
   if (!self->player || !self->video_surface || !self->video_surface->valid()) return;
+  // One job at a time. The flight owns the plane's EGL surface, and a second
+  // prepare would arm a frame callback over a commit that has not happened.
+  // Nothing arriving meanwhile is lost: the completion re-runs this function,
+  // and plane_needs_render and mpv's redraw latch both hold their edge.
+  if (self->render_in_flight) return;
   if (!self->video_surface->visible() || !self->video_surface->has_size()) return;
-  // Present() is held while a colour transition is staged, so a render now would
+  // Presents are held while a colour transition is staged, so a render now would
   // be discarded. The forced render after CommitHdrTransition is what resumes;
   // plane_needs_render stays set meanwhile, so nothing is lost.
   if (self->video_surface->hdr_transition_staged()) return;
+  // Never present an empty buffer as the very first frame. The first commit is
+  // the one a compositor that skips frame callbacks for occluded surfaces is
+  // entitled to ignore forever - the plane's frame-pending latch would then
+  // stall every later render, exactly the black-screen report - and it would
+  // be empty anyway: the first forced render happens at setVideoRect time,
+  // before mpv has decoded anything. Refuse it until mpv actually has a frame
+  // (its redraw latch, which is set when a frame is ready and cleared only by
+  // a render). The sticky plane_needs_render flag keeps the resize/visibility
+  // refresh owed by this call pending, so the first present still happens at
+  // the right size the moment content exists.
+  if (!self->video_surface->first_frame_presented() && !self->player->NeedsRedraw()) return;
   // Skip entirely while the compositor has not acknowledged the last frame:
   // an occluded plane is never acknowledged, and rendering into it anyway
   // would burn GPU work on frames that can never be shown.
@@ -273,15 +392,61 @@ static void render_video_plane(MpvPlugin* self, gboolean force) {
   // 60fps content on a 120Hz output, half of them redrawing the same picture.
   // mpv's redraw latch is what says a new frame actually exists.
   if (!self->plane_needs_render && !self->player->NeedsRedraw()) return;
-  if (self->player->RenderToSurface(
-          self->video_surface->egl_surface(), self->video_surface->width(), self->video_surface->height())) {
-    // Only once a frame has actually been published. Present() returns false on
-    // an eglSwapBuffers failure having already destroyed its frame callback, so
-    // clearing the flag first would drop both the retry and the thing that would
-    // have rescheduled it, and the plane would sit on a stale buffer until an
-    // unrelated event arrived. Its other false returns are all re-tested above
-    // on this same thread, so a swap failure is the only way to get here.
-    if (self->video_surface->Present()) self->plane_needs_render = FALSE;
+  if (!self->video_surface->PreparePresent()) return;
+
+  // Everything the job touches is snapshotted now and stays alive for the
+  // flight's duration: release_video_resources drains the render thread
+  // before the player or the plane is torn down.
+  mpv::MpvPlayer* player = self->player.get();
+  EGLDisplay display = self->video_surface->egl_display();
+  EGLSurface egl_surface = self->video_surface->egl_surface();
+  const int width = self->video_surface->width();
+  const int height = self->video_surface->height();
+  const guint64 generation = self->generation;
+  self->render_in_flight = TRUE;
+  const bool posted = post_render_job(
+      self,
+      [player, display, egl_surface, width, height]() -> bool {
+        if (!player->RenderToSurface(egl_surface, width, height)) return false;
+        // The swap is the child surface's commit. Non-throttled
+        // (eglSwapInterval 0), so it never blocks on the compositor; its cost
+        // is the render's, which is exactly what this thread is for.
+        if (eglSwapBuffers(display, egl_surface) != EGL_TRUE) {
+          g_warning("MPV video plane: eglSwapBuffers failed: 0x%x", eglGetError());
+          return false;
+        }
+        return true;
+      },
+      [self, generation](bool swapped) {
+        // The plane this job rendered for may be gone: release_video_resources
+        // bumps the generation, and completions outlive the executor.
+        if (self->generation != generation) return;
+        self->render_in_flight = FALSE;
+        if (self->video_surface == nullptr) return;
+        // A swap failure leaves plane_needs_render set, so the retry - and the
+        // frame callback CompletePresent just cleared - are both owed to the
+        // next event that moves the plane, exactly as before the split.
+        if (self->video_surface->CompletePresent(swapped)) self->plane_needs_render = FALSE;
+        // Work that had to wait out the flight, in dependency order: geometry
+        // first (wl_egl_window_resize must not race a swap), then the HDR
+        // transaction pump (a transition staged mid-flight would pair an
+        // old-colour buffer with a new description), then the render either
+        // may have asked for.
+        if (self->rect_apply_deferred) {
+          self->rect_apply_deferred = FALSE;
+          apply_pending_rect(self);
+        }
+        if (self->hdr_start_deferred) {
+          self->hdr_start_deferred = FALSE;
+          run_next_hdr_transaction(self);
+        }
+        render_video_plane(self, FALSE);
+      });
+  if (!posted) {
+    // Shutdown has begun; the job will never run. Undo the prepare so the
+    // frame callback does not wait forever on a commit that is not coming.
+    self->render_in_flight = FALSE;
+    self->video_surface->CompletePresent(false);
   }
 }
 
@@ -428,13 +593,45 @@ static void apply_hdr_state(MpvPlugin* self, bool allow, mpv::HdrToneMapping mod
           if (done) done(MPV_ERROR_UNSUPPORTED);
           return;
         }
+        // The mpv leg is the one wait this file does not bound: the surface
+        // watchdog re-arms while it runs, but nothing answers the HDR method
+        // call when mpv never replies, so the transaction queue stays in
+        // flight behind a ghost forever - every later hdr-enabled or
+        // hdr-tone-mapping request queues behind it. A wedged core must cost
+        // one transaction, not the session. The shared latch makes whichever
+        // of the timeout or the late reply fires first the single caller of
+        // `done`; the loser sees a stale token and self-heals through
+        // request_hdr_reapply.
+        auto leg_finished = std::make_shared<bool>(false);
+        auto finish_leg = [done, leg_finished](int error) {
+          if (*leg_finished) return;
+          *leg_finished = true;
+          if (done) done(error);
+        };
         self->player->SetHdrOutput(
             transfer, decision.target_peak_nits,
-            [self, decision, mode, generation, token, done](mpv::MpvPlayer::HdrOutputResult result, int error) {
+            [self, decision, mode, generation, token, leg_finished, finish_leg](
+                mpv::MpvPlayer::HdrOutputResult result, int error) {
               using Result = mpv::MpvPlayer::HdrOutputResult;
+              // Whatever this reply says, the timeout (if any) has no more
+              // work to do. Both run on the GTK main context, so touching the
+              // source id here is single-threaded.
+              if (self->hdr_mpv_leg_timeout_source_ != 0) {
+                g_source_remove(self->hdr_mpv_leg_timeout_source_);
+                self->hdr_mpv_leg_timeout_source_ = 0;
+              }
               // The plane may have been torn down while the property was in flight.
               if (self->generation != generation || self->video_surface == nullptr || self->player == nullptr) {
-                if (done) done(error);
+                finish_leg(error);
+                return;
+              }
+              // The timeout already abandoned this transaction. mpv's colour
+              // state is unknowable; the timeout withdrew the description and
+              // resumed presentation, so the plane shows SDR-claimed pixels
+              // and nothing further may be committed against this token.
+              if (*leg_finished) {
+                self->video_surface->ForceUndescribed();
+                self->applied_target_peak = 0;
                 return;
               }
               // An earlier kUnknown hid the plane rather than show pixels it could
@@ -521,23 +718,85 @@ static void apply_hdr_state(MpvPlugin* self, bool allow, mpv::HdrToneMapping mod
                       mpv_error_string(error));
                   break;
                 case Result::kUnknown:
-                  // Nothing can be said truthfully about these pixels, so nothing is
-                  // said and nothing is shown. A later transaction can recover.
-                  // Recorded, so that a setVisible arriving in between - the app
-                  // going off screen and back, which has nothing to do with colour -
-                  // cannot quietly put the mislabelled plane back on screen.
+                  // Nothing can be said truthfully about these pixels, so no
+                  // description is attached. Whether anything is shown is a
+                  // product decision with two sides: hiding is honest (an
+                  // undescribed plane is sRGB by protocol, so PQ pixels read
+                  // as sRGB are washed out), showing is useful (visible-wrong
+                  // beats invisible — the AV1-transparent report was a plane
+                  // hidden this way while sound kept playing). Hiding is now
+                  // reserved for a core that is genuinely going away; a live
+                  // one presents undescribed instead.
+                  //
+                  // Recorded either way, so that a setVisible arriving in
+                  // between - the app going off screen and back, which has
+                  // nothing to do with colour - cannot quietly put the
+                  // mislabelled plane back on screen without asking mpv
+                  // again; observe_event_for_hdr clears it on the next
+                  // playback-restart so one poisoned source cannot hide
+                  // every later one.
                   self->hdr_output_unnameable = true;
                   self->video_surface->ForceUndescribed();
-                  self->video_surface->SetVisible(false);
+                  if (self->player->IsDisposed() || !self->player->CanCommandOutputProperties()) {
+                    self->video_surface->SetVisible(false);
+                  } else {
+                    render_video_plane(self, TRUE);
+                  }
                   self->applied_target_peak = 0;
                   g_warning(
                       "MPV video plane: mpv's output colour space is no longer commandable; the "
-                      "plane is hidden rather than shown mislabelled: %s",
+                      "plane is shown undescribed rather than hidden: %s",
                       mpv_error_string(error));
                   break;
               }
-              if (done) done(error);
+              finish_leg(error);
             });
+        // The surface's own watchdog bounds this leg too, but it only unstages
+        // the plane - the plugin's transaction state and the queued HDR
+        // method calls stay stuck behind the unanswered reply. This timeout
+        // answers them, and is armed only while the reply is genuinely
+        // outstanding. A synchronous reply - the no-op short-circuit, or a
+        // player that cannot command output properties - has already finished
+        // the leg by this line, and a timer armed for it would be an orphan
+        // nothing removes: the reply callback above ran before the source id
+        // existed. That orphan fired five seconds after every no-op re-apply
+        // (one per playback restart) and withdrew the plane's live HDR
+        // description each time - the HDR/SDR flicker of issue #2016. An
+        // asynchronous reply removes the timer in the reply callback.
+        if (*leg_finished) return;
+        struct MpvLegTimeout {
+          MpvPlugin* self;
+          guint64 generation;
+          uint64_t token;
+          std::function<void(int)> finish_leg;
+        };
+        auto* timeout_ctx = new MpvLegTimeout{self, generation, token, finish_leg};
+        self->hdr_mpv_leg_timeout_source_ = g_timeout_add_seconds_full(
+            G_PRIORITY_DEFAULT, mpv::WaylandVideoSurface::kTransitionTimeoutSeconds,
+            +[](gpointer data) -> gboolean {
+              auto* ctx = static_cast<MpvLegTimeout*>(data);
+              MpvPlugin* self = ctx->self;
+              self->hdr_mpv_leg_timeout_source_ = 0;
+              if (self->generation == ctx->generation && self->video_surface != nullptr) {
+                g_warning(
+                    "MPV video plane: mpv never answered the output colour-space switch within %d "
+                    "seconds; abandoning the transaction and resuming presentation",
+                    mpv::WaylandVideoSurface::kTransitionTimeoutSeconds);
+                // Unstage and drop any description: mpv's state is unknown, so
+                // no claim may stand. The plane resumes presenting
+                // undescribed (sRGB by protocol) rather than staying held.
+                self->video_surface->AbortHdrTransition(ctx->token);
+                self->video_surface->ForceUndescribed();
+                render_video_plane(self, TRUE);
+              }
+              // Answers the transaction (and with it the queued HDR method
+              // calls) exactly once; a late reply from mpv is swallowed by the
+              // shared latch in the callback above. The error code is any
+              // non-success - the timeout's log line is what names the reason.
+              ctx->finish_leg(MPV_ERROR_UNSUPPORTED);
+              return G_SOURCE_REMOVE;
+            },
+            timeout_ctx, +[](gpointer data) { delete static_cast<MpvLegTimeout*>(data); });
       });
 }
 
@@ -550,6 +809,19 @@ static void run_next_hdr_transaction(MpvPlugin* self) {
       self->hdr_reapply_pending = false;
       request_hdr_reapply(self);
     }
+    return;
+  }
+  // A render job in flight was prepared before this transaction's turn came;
+  // let it land first. Staging now would raise the present hold *after* that
+  // job's prepare, so the commit its swap performs would pair an old-colour
+  // buffer with whatever the transaction stages - the exact mismatch the
+  // two-phase dance exists to avoid - and the mpv leg would move the output
+  // properties under a frame mid-render. Setting the in-flight flag keeps the
+  // pump's invariant (a non-empty queue implies a transaction in flight); the
+  // render completion re-enters here.
+  if (self->render_in_flight) {
+    self->hdr_transaction_in_flight = true;
+    self->hdr_start_deferred = TRUE;
     return;
   }
   PendingHdrRequest request = std::move(self->hdr_queue.front());
@@ -651,6 +923,21 @@ static void handle_preferred_changed(MpvPlugin* self) {
   request_hdr_reapply(self);
 }
 
+// Tells mpv the refresh rate of the output the plane is on. vo=libmpv has no
+// window of its own, so its VOCTRL_GET_DISPLAY_FPS goes unanswered: display-fps
+// reads 0 - the performance overlay's "Display FPS: N/A" - and display-sync has
+// no vsync interval to work from. display-fps-override is the embedder's
+// channel for exactly this. Written only when the rate differs from what mpv
+// already holds; GDK reports it in millihertz.
+static void apply_display_fps(MpvPlugin* self, GdkMonitor* monitor) {
+  if (monitor == nullptr || !self->player) return;
+  const int refresh_mhz = gdk_monitor_get_refresh_rate(monitor);
+  if (refresh_mhz <= 0 || refresh_mhz == self->applied_display_fps_mhz) return;
+  self->applied_display_fps_mhz = refresh_mhz;
+  g_message("MPV video plane: display refresh rate %d mHz", refresh_mhz);
+  self->player->SetPropertyAsync("display-fps-override", refresh_mhz / 1000.0, nullptr);
+}
+
 // Brings up the native Wayland video plane, the only way this runner renders
 // video. Returns false with |error| set to the specific reason: there is no
 // second path to fall through to, so the reason is what the user is told.
@@ -695,6 +982,12 @@ static gboolean start_video_plane(MpvPlugin* self, FlView* view, std::string* er
   self->video_surface->SetFrameCallback([self]() { render_video_plane(self, FALSE); });
   self->video_surface->SetForcedRenderCallback([self]() { render_video_plane(self, TRUE); });
   self->video_surface->SetPreferredChangedCallback([self]() { handle_preferred_changed(self); });
+  // The plane reports its output once its first frame is up; until then the
+  // toplevel's monitor is the answer, and thereafter every move re-applies.
+  self->video_surface->SetMonitorEnteredCallback([self](GdkMonitor* monitor) { apply_display_fps(self, monitor); });
+  if (GdkWindow* window = toplevel != nullptr ? gtk_widget_get_window(toplevel) : nullptr) {
+    apply_display_fps(self, gdk_display_get_monitor_at_window(gtk_widget_get_display(widget), window));
+  }
   self->player->SetRedrawCallback([self]() { render_video_plane(self, FALSE); });
   // playback-restart is not ordered against the video reconfigure that gives the
   // source its colour space, so the re-apply observe_event_for_hdr asks for can
@@ -703,6 +996,15 @@ static gboolean start_video_plane(MpvPlugin* self, FlView* view, std::string* er
   // coalesces the two into one transaction when they arrive together, and a late
   // parse converges rather than leaving a wrong description standing.
   self->player->SetSourceMetadataCallback([self]() { request_hdr_reapply(self); });
+  // The worker that runs mpv's render + the plane's eglSwapBuffers off the
+  // GTK main thread (issue #2057). The env var is a temporary escape hatch
+  // for driver surprises: the inline fallback preserves the old
+  // single-threaded behaviour through the same code path.
+  if (g_getenv("PLEZY_PLANE_RENDER_MAIN_THREAD") != nullptr) {
+    g_message("MPV video plane: rendering on the GTK main thread (PLEZY_PLANE_RENDER_MAIN_THREAD)");
+  } else {
+    self->render_executor = std::make_unique<mpv::PlaneRenderExecutor>();
+  }
   // A rect that arrived before this plane existed is the only one Dart may ever
   // offer, since it re-sends solely on change. Hand it over now, before the
   // first frame, so the plane is never left sizeless and blank.
@@ -731,6 +1033,7 @@ static void mpv_plugin_dispose(GObject* object) {
 static void mpv_plugin_finalize(GObject* object) {
   MpvPlugin* self = MPV_PLUGIN(object);
   self->hdr_queue.~HdrQueue();
+  self->render_executor.~ExecutorPtr();
   self->video_surface.~VideoSurfacePtr();
   self->player.~PlayerPtr();
   G_OBJECT_CLASS(mpv_plugin_parent_class)->finalize(object);
@@ -777,8 +1080,8 @@ MpvPlugin* mpv_plugin_new(FlPluginRegistrar* registrar, const gchar* channel_nam
 }
 
 // Static references to keep the plugin instances alive.
-static MpvPlugin* g_mpv_plugin = nullptr;
-static MpvPlugin* g_mpv_audio_plugin = nullptr;
+[[maybe_unused]] static MpvPlugin* g_mpv_plugin = nullptr;
+[[maybe_unused]] static MpvPlugin* g_mpv_audio_plugin = nullptr;
 
 void mpv_plugin_register_with_registrar(FlPluginRegistrar* registrar) {
   g_mpv_plugin = mpv_plugin_new(registrar, "com.plezy/mpv_player", FALSE);
@@ -861,13 +1164,22 @@ static void mpv_plugin_handle_method_call(FlMethodChannel* channel, FlMethodCall
           }
         }
         g_object_ref(method_call);
-        self->player->CommandAsync(command_args, [method_call](int error) {
+        self->player->CommandAsync(command_args, [method_call](int error, const mpv_node* command_result) {
           g_autoptr(FlMethodResponse) async_response = nullptr;
           if (error < 0) {
             async_response =
                 FL_METHOD_RESPONSE(fl_method_error_response_new("COMMAND_FAILED", "MPV command failed", nullptr));
           } else {
-            async_response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
+            // `loadfile` answers with the playlist entry it created so Dart can
+            // tie the load to that source's start-file/playback-restart/end-file
+            // events; every other command answers null.
+            int64_t playlist_entry_id = 0;
+            g_autoptr(FlValue) reply = nullptr;
+            if (plezy::mpv_common::PlaylistEntryIdFromCommandResult(command_result, &playlist_entry_id)) {
+              reply = fl_value_new_map();
+              fl_value_set_string_take(reply, "playlistEntryId", fl_value_new_int(playlist_entry_id));
+            }
+            async_response = FL_METHOD_RESPONSE(fl_method_success_response_new(reply));
           }
           fl_method_call_respond(method_call, async_response, nullptr);
           g_object_unref(method_call);
@@ -919,25 +1231,37 @@ static void mpv_plugin_handle_method_call(FlMethodChannel* channel, FlMethodCall
             // native and Dart - which does not persist on failure - in agreement.
             self->hdr_tone_mapping_desired = requested;
             const uint64_t serial = ++self->hdr_mode_request_serial;
+            // Owned copy: the transaction completes asynchronously, after the
+            // handler's FlValue args are gone.
+            const std::string mode_string = mode;
             g_object_ref(method_call);
-            submit_hdr_transaction(self, self->hdr_wanted != FALSE, requested, [self, method_call, serial](int error) {
-              g_autoptr(FlMethodResponse) async_response = nullptr;
-              if (plezy::mpv_common::SetPropertyStatusSucceeded(error)) {
-                async_response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
-              } else {
-                // Hand the desire back to whatever is actually in force, read
-                // live rather than captured: an intervening request may have
-                // committed since. Skipped if a newer request already claimed
-                // the desire.
-                if (self->hdr_mode_request_serial == serial) {
-                  self->hdr_tone_mapping_desired = self->hdr_tone_mapping;
-                }
-                async_response = FL_METHOD_RESPONSE(fl_method_error_response_new(
-                    plezy::mpv_common::kSetPropertyFailedCode, mpv_error_string(error), nullptr));
-              }
-              fl_method_call_respond(method_call, async_response, nullptr);
-              g_object_unref(method_call);
-            });
+            submit_hdr_transaction(
+                self, self->hdr_wanted != FALSE, requested, [self, method_call, serial, mode_string](int error) {
+                  g_autoptr(FlMethodResponse) async_response = nullptr;
+                  if (plezy::mpv_common::SetPropertyStatusSucceeded(error)) {
+                    async_response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
+                  } else {
+                    // Hand the desire back to whatever is actually in force, read
+                    // live rather than captured: an intervening request may have
+                    // committed since. Skipped if a newer request already claimed
+                    // the desire.
+                    if (self->hdr_mode_request_serial == serial) {
+                      self->hdr_tone_mapping_desired = self->hdr_tone_mapping;
+                    }
+                    // The refused write is named so a failure lands in the log as
+                    // "hdr-tone-mapping=<mode> failed", not as an unattributable
+                    // error string. This transaction has no single property: it
+                    // moves mpv's whole output colour space. The name is still
+                    // worth having - it says which side of the plane refused.
+                    async_response = FL_METHOD_RESPONSE(fl_method_error_response_new(
+                        plezy::mpv_common::kSetPropertyFailedCode,
+                        (std::string("hdr-tone-mapping='") + mode_string + "' failed: " + mpv_error_string(error))
+                            .c_str(),
+                        nullptr));
+                  }
+                  fl_method_call_respond(method_call, async_response, nullptr);
+                  g_object_unref(method_call);
+                });
             return;
           }
           response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
@@ -968,34 +1292,71 @@ static void mpv_plugin_handle_method_call(FlMethodChannel* channel, FlMethodCall
         } else {
           g_object_ref(method_call);
           const uint64_t serial = ++self->hdr_enable_request_serial;
-          submit_hdr_transaction(self, enabled, std::nullopt, [self, method_call, serial, previous_wanted](int error) {
-            g_autoptr(FlMethodResponse) async_response = nullptr;
-            if (plezy::mpv_common::SetPropertyStatusSucceeded(error)) {
-              async_response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
-            } else {
-              // Only if no newer request has claimed the field since, for the
-              // same reason the tone-mapping path checks its serial.
-              if (self->hdr_enable_request_serial == serial) self->hdr_wanted = previous_wanted;
-              async_response = FL_METHOD_RESPONSE(fl_method_error_response_new(
-                  plezy::mpv_common::kSetPropertyFailedCode, mpv_error_string(error), nullptr));
-            }
-            fl_method_call_respond(method_call, async_response, nullptr);
-            g_object_unref(method_call);
-          });
+          submit_hdr_transaction(
+              self, enabled, std::nullopt, [self, method_call, serial, previous_wanted, enabled](int error) {
+                g_autoptr(FlMethodResponse) async_response = nullptr;
+                if (plezy::mpv_common::SetPropertyStatusSucceeded(error)) {
+                  async_response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
+                } else {
+                  // Only if no newer request has claimed the field since, for the
+                  // same reason the tone-mapping path checks its serial.
+                  if (self->hdr_enable_request_serial == serial) self->hdr_wanted = previous_wanted;
+                  // The requested value is named, not the restored one: the
+                  // refusal is about the request that failed.
+                  async_response = FL_METHOD_RESPONSE(fl_method_error_response_new(
+                      plezy::mpv_common::kSetPropertyFailedCode,
+                      (std::string("hdr-enabled='") + (enabled ? "yes" : "no") + "' failed: " + mpv_error_string(error))
+                          .c_str(),
+                      nullptr));
+                }
+                fl_method_call_respond(method_call, async_response, nullptr);
+                g_object_unref(method_call);
+              });
           return;
         }
+      } else if (
+          !self->audio_only && g_strcmp0(fl_value_get_string(name_value), "vo") == 0 &&
+          g_strcmp0(fl_value_get_string(value_value), "libmpv") != 0) {
+        // Embedded rendering is authoritative: the render context was created
+        // against vo=libmpv, and a runtime vo switch makes mpv re-create its
+        // output as a separate window, orphaning the plane. vo=gpu-next is
+        // windowed by construction - the libmpv render API is OpenGL-only -
+        // so there is no embedded alternative worth accepting. This guard is
+        // the native invariant beneath the Dart-side filter: it is the last
+        // line, and it names why.
+        response = FL_METHOD_RESPONSE(fl_method_error_response_new(
+            plezy::mpv_common::kSetPropertyFailedCode,
+            "vo is owned by Plezy: embedded video renders through vo=libmpv and a windowed VO "
+            "(gpu-next) cannot be used inside the app",
+            nullptr));
       } else {
+        // The property name and value travel with the error so a refusal is
+        // attributable: mpv's own text ("unsupported format for accessing
+        // property", MPV_ERROR_PROPERTY_FORMAT) names the failure mode, not
+        // the property, and without this every report of a refused write is
+        // a guessing game. The value is truncated the same way
+        // SetPropertyErrorDescription truncates the description, so a token
+        // or URL that sneaks into a property value is bounded in the log.
+        const std::string property_name = fl_value_get_string(name_value);
+        const std::string property_value = fl_value_get_string(value_value);
         g_object_ref(method_call);
         self->player->SetPropertyAsync(
-            fl_value_get_string(name_value), fl_value_get_string(value_value), [method_call](int error) {
+            property_name, property_value, [method_call, property_name, property_value](int error) {
               g_autoptr(FlMethodResponse) async_response = nullptr;
               if (plezy::mpv_common::SetPropertyStatusSucceeded(error)) {
                 async_response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
               } else {
                 const char* error_code = plezy::mpv_common::SetPropertyErrorCode(error);
-                const std::string description = error == MPV_ERROR_UNINITIALIZED
-                                                    ? std::string("Player not initialized")
-                                                    : plezy::mpv_common::SetPropertyErrorDescription(error);
+                std::string description;
+                if (error == MPV_ERROR_UNINITIALIZED) {
+                  description = "Player not initialized";
+                } else {
+                  description = "setProperty '" + property_name + "'='" + property_value +
+                                "' failed: " + plezy::mpv_common::SetPropertyErrorDescription(error);
+                  if (description.size() > plezy::mpv_common::kSetPropertyErrorDescriptionLimit) {
+                    description.resize(plezy::mpv_common::kSetPropertyErrorDescriptionLimit);
+                  }
+                }
                 async_response =
                     FL_METHOD_RESPONSE(fl_method_error_response_new(error_code, description.c_str(), nullptr));
               }
@@ -1156,10 +1517,18 @@ static void mpv_plugin_handle_method_call(FlMethodChannel* channel, FlMethodCall
         self->pending_rect.scale = scale;
         self->has_pending_rect = TRUE;
         if (self->video_surface) {
-          apply_pending_rect(self);
-          // Re-render at the new size straight away; waiting for the next mpv
-          // frame would leave a stale buffer stretched across the new rect.
-          render_video_plane(self, TRUE);
+          if (self->render_in_flight) {
+            // wl_egl_window_resize must not race the in-flight swap; the
+            // render completion applies the rect. The sticky flag makes it
+            // re-render at the new size, exactly like the immediate path.
+            self->rect_apply_deferred = TRUE;
+            self->plane_needs_render = TRUE;
+          } else {
+            apply_pending_rect(self);
+            // Re-render at the new size straight away; waiting for the next mpv
+            // frame would leave a stale buffer stretched across the new rect.
+            render_video_plane(self, TRUE);
+          }
         }
         response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
       }

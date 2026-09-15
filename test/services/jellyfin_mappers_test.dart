@@ -62,6 +62,8 @@ void main() {
       expect(item.tagline, 'Your mind is the scene of the crime.');
       expect(item.year, 2010);
       expect(item.originallyAvailableAt, '2010-07-16');
+      // DateCreated is what list/hub rows request so recency sorts have a key.
+      expect(item.addedAt, DateTime.utc(2025, 1, 15, 10).millisecondsSinceEpoch ~/ 1000);
       expect(item.contentRating, 'PG-13');
       expect(item.studio, 'Warner Bros');
       expect(item.rating, 8.8);
@@ -553,6 +555,30 @@ void main() {
       expect(video.hdr, isTrue);
       expect(video.dolbyVision, isFalse);
       expect(video.dolbyVisionProfile, isNull);
+    });
+
+    test('never derives library identity from ParentId, SeriesStudio, or ParentLibrary fields', () {
+      // None of these are a library: ParentId resolves to a season or physical
+      // folder, SeriesStudio is a studio, and ParentLibraryId/Name are not
+      // fields either dialect actually sends. Library identity comes only
+      // from explicit stamps (scoped search, the Ancestors lookup).
+      final item = JellyfinMappers.mediaItem(
+        {
+          'Id': 'movie-1',
+          'Type': 'Movie',
+          'Name': 'Movie',
+          'ParentId': 'folder-1',
+          'SeriesStudio': 'Studio X',
+          'ParentLibraryId': 'lib-1',
+          'ParentLibraryName': 'Movies',
+        },
+        serverId: ServerId(_serverId),
+        serverName: 'Home',
+        absolutizer: null,
+      )!;
+
+      expect(item.libraryId, isNull);
+      expect(item.libraryTitle, isNull);
     });
   });
 

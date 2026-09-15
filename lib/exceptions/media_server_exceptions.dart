@@ -38,7 +38,7 @@ class MediaServerAuthException extends MediaServerException {
 /// Auth polling reached a terminal server-side expiry/rejection state before
 /// the user completed the external sign-in flow.
 class MediaServerPinExpiredException extends MediaServerAuthException {
-  const MediaServerPinExpiredException({String? display}) : super('PIN expired before sign-in', display: display);
+  const MediaServerPinExpiredException({super.display}) : super('PIN expired before sign-in');
 }
 
 /// HTTP transport / non-2xx errors. Carries the status code (when known),
@@ -57,11 +57,11 @@ class MediaServerHttpException extends MediaServerException {
   MediaServerHttpException({
     required this.type,
     String? message,
-    String? display,
+    super.display,
     this.statusCode,
     this.responseData,
     this.requestUri,
-  }) : super(message ?? '', display: display);
+  }) : super(message ?? '');
 
   /// Map a caught exception to a [MediaServerHttpException].
   factory MediaServerHttpException.from(Object error, {Uri? uri}) {
@@ -117,4 +117,37 @@ class MediaServerHttpException extends MediaServerException {
     if (uri != null) parts.add('${uri.host}${uri.path}');
     return 'MediaServerHttpException(${parts.join(': ')})';
   }
+}
+
+/// The backend already has a recording scheduled for the requested airing.
+///
+/// Plex signals duplicates with a bare 409, which UI maps by status code.
+/// Jellyfin/Emby answer `POST /LiveTv/Timers` duplicates with a 400 that is
+/// indistinguishable from a malformed request by status alone — only the DVR
+/// adapter knows that call site's semantics, so it rethrows this type and UI
+/// maps it to the "already scheduled" outcome without a backend check.
+class RecordingConflictException extends MediaServerException {
+  const RecordingConflictException(super.message, {super.display});
+}
+
+/// The server explicitly terminated the client's playback session (admin
+/// "stop stream", paused-too-long auto-termination, concurrent-stream limit).
+///
+/// Plex signals this with `terminationCode`/`terminationText` on the
+/// MediaContainer of a timeline report response. The MediaBrowser backends
+/// deliver admin stops as a WebSocket remote-control command Plezy does not
+/// subscribe to, so they never throw this — intentionally unsupported there.
+///
+/// Progress reporting must stop when this is thrown: continuing the heartbeat
+/// loop re-registers the session server-side as a zombie row the admin can no
+/// longer clear (#1916).
+class PlaybackSessionTerminatedException extends MediaServerException {
+  /// Server-defined termination code (e.g. Plex 2006 for an admin stop).
+  final int code;
+
+  /// Human-readable server-supplied reason; may carry an admin message.
+  final String? reason;
+
+  PlaybackSessionTerminatedException({required this.code, this.reason})
+    : super('Server terminated playback session (code $code)${reason == null ? '' : ': $reason'}');
 }

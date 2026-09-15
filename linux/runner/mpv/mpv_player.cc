@@ -22,7 +22,9 @@
 #endif
 
 #include <chrono>
+#include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 
 #include "sanitize_utf8.h"
@@ -47,6 +49,25 @@ bool EnsureProcessNumericLocale() {
 // with those two just as surely, so the scheme already depends on it not
 // happening.
 constexpr uint64_t kVideoParamsUserdata = UINT64_MAX;
+
+// Runner-internal observation of the decode path mpv actually took. The
+// "silent software fallback" is the one hwdec failure mode with no visible
+// symptom, so every transition is logged with a timestamp from the native
+// side rather than inferred from an overlay readout.
+constexpr uint64_t kHwdecCurrentUserdata = UINT64_MAX - 1;
+
+// Parses the string reply of a `time-pos` read: the whole string must be one
+// finite number. Anything else — an empty reply, "inf"/"nan", trailing text —
+// is "no position" rather than a manufactured one. LC_NUMERIC is the C locale
+// process-wide (EnsureProcessNumericLocale), which is also what mpv printed in.
+bool ParseSeconds(const std::string& value, double* seconds) {
+  if (value.empty()) return false;
+  char* end = nullptr;
+  const double parsed = std::strtod(value.c_str(), &end);
+  if (end != value.c_str() + value.size() || !std::isfinite(parsed)) return false;
+  *seconds = parsed;
+  return true;
+}
 
 }  // namespace
 
@@ -164,6 +185,17 @@ class NativeRenderTeardownQueue {
   uint64_t generation_ = 0;
   std::thread worker_;
 };
+
+// Mesa's software rasterizers, as named in GL_RENDERER. The video plane lands
+// on one when the compositor hands clients no GPU device (Muffin 6.6.3 does
+// exactly that), and that session is the one where handing mpv the Wayland
+// display is not merely futile but fatal — see the MPV_RENDER_PARAM_WL_DISPLAY
+// comment in InitRenderContextForSurface.
+bool IsSoftwareGlRenderer(const char* renderer) {
+  if (renderer == nullptr) return false;
+  return strstr(renderer, "llvmpipe") != nullptr || strstr(renderer, "softpipe") != nullptr ||
+         strstr(renderer, "swrast") != nullptr || strstr(renderer, "Software Rasterizer") != nullptr;
+}
 
 }  // namespace
 
@@ -316,23 +348,14 @@ bool MpvPlayer::Initialize() {
     return false;
   }
 
-  if (audio_only_) {
-    // Music core: no VO, no video decode. vid=no keeps embedded cover art
-    // from ever becoming a video track, and force-window/audio-display make
-    // sure mpv never opens a video output for it either.
-    mpv_set_option_string(mpv_, "vid", "no");
-    mpv_set_option_string(mpv_, "force-window", "no");
-    mpv_set_option_string(mpv_, "audio-display", "no");
-    mpv_set_option_string(mpv_, "gapless-audio", "weak");
-  } else {
+  plezy::mpv_common::ApplyCommonStartupOptions(mpv_, audio_only_);
+  mpv_set_option_string(mpv_, "terminal", "no");
+
+  if (!audio_only_) {
     // Configure mpv for embedded playback.
     mpv_set_option_string(mpv_, "vo", "libmpv");
     mpv_set_option_string(mpv_, "hwdec", "auto");
-  }
-  mpv_set_option_string(mpv_, "keep-open", "yes");
-  mpv_set_option_string(mpv_, "audio-fallback-to-null", "yes");
 
-  if (!audio_only_) {
     // hdr-compute-peak is nested under the same predicate as the tone-map pass -
     // it runs exactly when the source's declared peak exceeds target-peak - so it
     // costs nothing while the compositor owns tone mapping and gives
@@ -347,21 +370,15 @@ bool MpvPlayer::Initialize() {
     // `hdr-enabled` write puts here through SetHDREnabled.
     mpv_set_option_string(mpv_, "target-colorspace-hint", plezy::mpv_common::TargetColorspaceHint(hdr_enabled_));
   }
-  mpv_set_option_string(mpv_, "idle", "yes");
-  mpv_set_option_string(mpv_, "input-default-bindings", "no");
-  mpv_set_option_string(mpv_, "input-vo-keyboard", "no");
-  mpv_set_option_string(mpv_, "osc", "no");
-  mpv_set_option_string(mpv_, "terminal", "no");
-  // Every URL Plezy opens is a media-server stream or a local file, never a
-  // site mpv's bundled ytdl_hook could resolve. Loading it costs an on_load
-  // hook per open and, on a failed open, spawns yt-dlp with the full stream
-  // URL — access token included — in its argv, where /proc exposes it. mpv
-  // gates loading the builtin script on this option at mpv_initialize time,
-  // so it has to be set here rather than from Dart.
-  mpv_set_option_string(mpv_, "ytdl", "no");
 
-  // Default to warn-level logging
-  mpv_request_log_messages(mpv_, "warn");
+  // Default to info-level logging. The vaapi hwdec probe and the "Using
+  // software decoding" fallback are MSGL_INFO messages, and both are the only
+  // evidence a silently software-decoding session leaves behind; at "warn"
+  // neither ever reaches the app log (mpv_request_log_messages takes a single
+  // global level - there is no per-module syntax here), so a hwdec regression
+  // is indistinguishable from a working one. Debug logging raises this
+  // further via setLogLevel.
+  mpv_request_log_messages(mpv_, "info");
 
   // Initialize mpv.
   int err = mpv_initialize(mpv_);
@@ -386,6 +403,9 @@ bool MpvPlayer::Initialize() {
     // An audio-only core has no video-params to report, so it is not asked.
     source_hdr_metadata_ = SourceHdrMetadata();
     mpv_observe_property(mpv_, kVideoParamsUserdata, "video-params", MPV_FORMAT_NODE);
+    // Which decode path is in use. mpv only emits on change, so each event is
+    // a real transition worth a log line.
+    mpv_observe_property(mpv_, kHwdecCurrentUserdata, "hwdec-current", MPV_FORMAT_STRING);
   }
 
   g_message("MPV: Initialization successful (%s)", audio_only_ ? "audio-only" : "render context deferred");
@@ -498,12 +518,41 @@ bool MpvPlayer::InitRenderContextForSurface(EGLDisplay display, EGLConfig config
   // What the driver actually gave, and whether mpv will find the entry points
   // its compute path needs. Asking for a version is not the same as getting
   // it, and mpv's own report of "compute shaders=0" says nothing about which
-  // half is missing. Both are cheap and both were needed to diagnose this.
+  // half is missing. All of these are cheap and all were needed to diagnose
+  // this. The renderer name additionally decides the hwdec display handoff
+  // below.
   const GLubyte* gl_version = glGetString(GL_VERSION);
+  const GLubyte* gl_renderer = glGetString(GL_RENDERER);
+  const bool software_renderer = IsSoftwareGlRenderer(reinterpret_cast<const char*>(gl_renderer));
   g_message(
-      "MPV video plane: GL_VERSION='%s' dispatch_compute=%s image_load_store=%s",
+      "MPV video plane: GL_VERSION='%s' GL_RENDERER='%s' dispatch_compute=%s image_load_store=%s",
       gl_version ? reinterpret_cast<const char*>(gl_version) : "(null)",
+      gl_renderer ? reinterpret_cast<const char*>(gl_renderer) : "(null)",
       eglGetProcAddress("glDispatchCompute") ? "yes" : "no", eglGetProcAddress("glBindImageTexture") ? "yes" : "no");
+
+  // Pre-flight the VAAPI dmabuf interop prerequisites. mpv's GL-side probe
+  // (dmabuf_interop_gl_init) is lazy — first hardware decode attempt — and its
+  // failure never fails mpv_render_context_create, so a driver that lacks the
+  // pieces quietly decodes everything in software. Naming which prerequisite
+  // is missing on this display/context turns that into a diagnosable
+  // one-liner. The three extensions are the ones the probe requires;
+  // EGL_EXT_image_dma_buf_import is the display-level one, GL_OES_EGL_image is
+  // context-level. (The VAAPI *device* init is a different story: given a
+  // Wayland display below, mpv opens it eagerly inside
+  // mpv_render_context_create.)
+  const char* egl_exts = eglQueryString(display, EGL_EXTENSIONS);
+  const GLubyte* gl_exts = glGetString(GL_EXTENSIONS);
+  const bool has_dma_buf = egl_exts != nullptr && strstr(egl_exts, "EGL_EXT_image_dma_buf_import") != nullptr;
+  const bool has_image_base = egl_exts != nullptr && strstr(egl_exts, "EGL_KHR_image_base") != nullptr;
+  const bool has_oes_egl_image =
+      gl_exts != nullptr && strstr(reinterpret_cast<const char*>(gl_exts), "GL_OES_EGL_image") != nullptr;
+  if (!has_dma_buf || !has_image_base || !has_oes_egl_image) {
+    g_warning(
+        "MPV video plane: VAAPI dmabuf interop prerequisites missing "
+        "(EGL_EXT_image_dma_buf_import=%d EGL_KHR_image_base=%d GL_OES_EGL_image=%d); "
+        "hardware decoding may silently fall back to software",
+        has_dma_buf, has_image_base, has_oes_egl_image);
+  }
 
   // Now that a context is current, the surface's swap interval can be set.
   // eglSwapBuffers runs on the GTK main thread and must never block: at the
@@ -524,14 +573,27 @@ bool MpvPlayer::InitRenderContextForSurface(EGLDisplay display, EGLConfig config
       {MPV_RENDER_PARAM_INVALID, nullptr},
   };
 
-  // The plane only exists on Wayland, and hwdec interop wants the display handle:
-  // without it VAAPI has to find a device by other means and can quietly end up
-  // on software decoding, on the path that exists for performance.
+  // The plane only exists on Wayland, and hwdec interop wants the display
+  // handle: without it VAAPI has to find a device by other means and can
+  // quietly end up on software decoding, on the path that exists for
+  // performance.
+  //
+  // Never on a software renderer, though. Zero-copy interop into llvmpipe does
+  // not exist, so the handle buys nothing — and the one session that produces
+  // a software renderer on the plane (a compositor that hands clients no GPU
+  // device; Muffin 6.6.3, issue #1963) is also the one where libva-wayland's
+  // vaInitialize segfaults on that handle, inside mpv_render_context_create,
+  // taking the app down before playback starts. Left without a display handle,
+  // mpv's hwdec=auto probes the DRM render nodes instead, which still works on
+  // such a session (the kernel driver is fine; only the compositor's device
+  // handoff is broken).
 #ifdef GDK_WINDOWING_WAYLAND
   GdkDisplay* gdk_display = gdk_display_get_default();
-  if (GDK_IS_WAYLAND_DISPLAY(gdk_display)) {
+  if (GDK_IS_WAYLAND_DISPLAY(gdk_display) && !software_renderer) {
     params[2].type = MPV_RENDER_PARAM_WL_DISPLAY;
     params[2].data = gdk_wayland_display_get_wl_display(gdk_display);
+  } else if (software_renderer) {
+    g_message("MPV video plane: software GL renderer; not handing mpv the Wayland display for VAAPI interop");
   }
 #endif
 
@@ -549,16 +611,42 @@ bool MpvPlayer::InitRenderContextForSurface(EGLDisplay display, EGLConfig config
   surface_depth_bits_ = depth_bits > 0 ? depth_bits : 8;
   mpv_gl_ = candidate_gl;
   mpv_render_context_set_update_callback(mpv_gl_, OnMpvRenderUpdate, callback_context_.get());
+  // Hand the context over unbound: from here on only the plane render thread
+  // makes it current (RenderToSurface), and an EGLContext can be current on at
+  // most one thread. Creation itself had to happen with it current here - mpv
+  // probes GL inside mpv_render_context_create.
+  if (!eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT)) {
+    g_warning("MPV: could not unbind the video-plane EGL context after creation: 0x%x", eglGetError());
+  }
   g_message("MPV: Render context created on the Wayland video plane");
   return true;
 }
 
 bool MpvPlayer::RenderToSurface(EGLSurface surface, int width, int height) {
-  std::lock_guard<std::mutex> lock(native_mutex_);
-  if (disposed_ || !mpv_gl_ || egl_context_ == EGL_NO_CONTEXT || surface == EGL_NO_SURFACE) return false;
-  if (width < 1 || height < 1) return false;
+  // Runs on the plane render thread. Deliberately not holding native_mutex_
+  // across the render: a 4K HDR tone-map takes tens of milliseconds, and the
+  // mutex has main-thread callers on every seek (ReadSourceHdrMetadata,
+  // UpdateSourceHdrMetadata) - holding it here would rebuild the very stall
+  // this thread exists to remove, behind a lock instead of a thread. The
+  // snapshot below is safe without it because of ordering, not locking: the
+  // plugin drains the render thread (release_video_resources) before
+  // Dispose() hands mpv_gl_ and the EGL context to the teardown queue, so
+  // neither can be freed while a job is running.
+  mpv_render_context* render_context = nullptr;
+  EGLDisplay display = EGL_NO_DISPLAY;
+  EGLContext context = EGL_NO_CONTEXT;
+  int depth_bits = 8;
+  {
+    std::lock_guard<std::mutex> lock(native_mutex_);
+    if (disposed_ || !mpv_gl_ || egl_context_ == EGL_NO_CONTEXT || surface == EGL_NO_SURFACE) return false;
+    if (width < 1 || height < 1) return false;
+    render_context = mpv_gl_;
+    display = egl_display_;
+    context = egl_context_;
+    depth_bits = surface_depth_bits_;
+  }
 
-  if (!eglBindAPI(EGL_OPENGL_ES_API) || !eglMakeCurrent(egl_display_, surface, surface, egl_context_)) {
+  if (!eglBindAPI(EGL_OPENGL_ES_API) || !eglMakeCurrent(display, surface, surface, context)) {
     g_warning("MPV: Failed to activate the video-plane EGL context for render: 0x%x", eglGetError());
     return false;
   }
@@ -574,21 +662,21 @@ bool MpvPlayer::RenderToSurface(EGLSurface surface, int width, int height) {
   // Ignored by the render API's OpenGL backend, which reads the depth param
   // instead, but it is what mpv#16818's gpu-next backend will read, so state
   // it truthfully rather than leave a lie in place for that day.
-  mpv_fbo.internal_format = surface_depth_bits_ >= 16 ? GL_RGBA16F : surface_depth_bits_ >= 10 ? GL_RGB10_A2 : GL_RGBA8;
+  mpv_fbo.internal_format = depth_bits >= 16 ? GL_RGBA16F : depth_bits >= 10 ? GL_RGB10_A2 : GL_RGBA8;
 
   // The default framebuffer is bottom-up relative to mpv's image orientation,
   // so this flips.
   int flip_y = 1;
   // Without this mpv assumes 8 bits and dithers a 10-bit PQ plane down to 8,
   // which bands precisely in the dark ramp PQ spends most of its code space on.
-  int depth = surface_depth_bits_;
+  int depth = depth_bits;
   mpv_render_param params[] = {
       {MPV_RENDER_PARAM_OPENGL_FBO, &mpv_fbo},
       {MPV_RENDER_PARAM_FLIP_Y, &flip_y},
       {MPV_RENDER_PARAM_DEPTH, &depth},
       {MPV_RENDER_PARAM_INVALID, nullptr},
   };
-  mpv_render_context_render(mpv_gl_, params);
+  mpv_render_context_render(render_context, params);
   return true;
 }
 
@@ -628,17 +716,24 @@ void MpvPlayer::Dispose() {
   for (auto& callback : cancelled.status) {
     callback(MPV_ERROR_UNINITIALIZED);
   }
+  for (auto& callback : cancelled.commands) {
+    callback(MPV_ERROR_UNINITIALIZED, nullptr);
+  }
   for (auto& callback : cancelled.properties) {
     callback(-1, "");
   }
 
   RemoveTrackedSources();
 
-  // The plane's context is left current on this thread by RenderToSurface and
-  // nothing else releases it before the video surface is destroyed - which the
-  // plugin does *after* this call. An EGLContext can be current to at most one
-  // thread, so handing it to the teardown worker while it is still bound here
-  // makes the worker's eglMakeCurrent fail with EGL_BAD_ACCESS; the pair is then
+  // The plane's context is normally already unbound by the time this runs: the
+  // plane render thread makes it current (RenderToSurface) and the plugin's
+  // teardown posts an unbind there before draining the thread ahead of this
+  // call. This main-thread release covers the two paths that still bind it
+  // here - the PLEZY_PLANE_RENDER_MAIN_THREAD inline fallback, and a context
+  // created but never rendered with, where InitRenderContextForSurface's own
+  // unbind failed. An EGLContext can be current to at most one thread, so
+  // handing it to the teardown worker while it is still bound here makes the
+  // worker's eglMakeCurrent fail with EGL_BAD_ACCESS; the pair is then
   // retained, and by the note below the mpv handle cannot be terminated until
   // every pair drains. Repeated open/close would carry a whole stale mpv core
   // across each gap. Only our own context is released: Flutter's must be left
@@ -676,7 +771,7 @@ void MpvPlayer::Command(const std::vector<std::string>& args) { CommandAsync(arg
 
 void MpvPlayer::CommandAsync(const std::vector<std::string>& args, CommandCallback callback) {
   if (disposed_ || !mpv_) {
-    if (callback) callback(MPV_ERROR_UNINITIALIZED);
+    if (callback) callback(MPV_ERROR_UNINITIALIZED, nullptr);
     return;
   }
 
@@ -705,7 +800,39 @@ void MpvPlayer::SetPropertyAsync(const std::string& name, const std::string& val
     SetHDREnabled(plezy::mpv_common::ParseEnabledFlag(value), std::move(callback));
     return;
   }
-  plezy::mpv_common::SubmitSetPropertyAsync(mpv_, pending_requests_, name, value, std::move(callback));
+  plezy::mpv_common::SubmitSetPropertyAsync(
+      mpv_, pending_requests_, name, value, [this, name, value, cb = std::move(callback)](int error) mutable {
+        // Native-side attribution for the same failure the platform channel
+        // reports: the HDR transaction's property writes never reach the
+        // channel handler, so without this a refused target-* write leaves
+        // only mpv's error string in the log. Values are truncated the same
+        // way the channel error description is, so a token or URL that lands
+        // in a property value stays bounded.
+        if (error < 0 && !disposed_) {
+          std::string logged = value;
+          if (logged.size() > plezy::mpv_common::kSetPropertyErrorDescriptionLimit) {
+            logged.resize(plezy::mpv_common::kSetPropertyErrorDescriptionLimit);
+          }
+          g_warning("MPV: setProperty '%s'='%s' failed: %s", name.c_str(), logged.c_str(), mpv_error_string(error));
+        }
+        if (cb) cb(error);
+      });
+}
+
+void MpvPlayer::SetPropertyAsync(const std::string& name, double value, StatusCallback callback) {
+  if (disposed_ || !mpv_) {
+    if (callback) callback(MPV_ERROR_UNINITIALIZED);
+    return;
+  }
+  plezy::mpv_common::SubmitSetPropertyAsync(
+      mpv_, pending_requests_, name, value, [this, name, value, cb = std::move(callback)](int error) mutable {
+        // Same native-side attribution as the string path: these writes come
+        // from the runner itself, so nothing else would name the property.
+        if (error < 0 && !disposed_) {
+          g_warning("MPV: setProperty '%s'=%g failed: %s", name.c_str(), value, mpv_error_string(error));
+        }
+        if (cb) cb(error);
+      });
 }
 
 bool MpvPlayer::ReadSourceHdrMetadata(SourceHdrMetadata* out) {
@@ -738,6 +865,12 @@ void MpvPlayer::SetSourceMetadataCallback(SourceMetadataCallback callback) {
 }
 
 void MpvPlayer::GetPropertyAsync(const std::string& name, GetPropertyCallback callback) {
+#ifdef PLEZY_MPV_PLAYER_LIFECYCLE_TEST
+  if (test_property_read_) {
+    test_property_read_(name, std::move(callback));
+    return;
+  }
+#endif
   if (disposed_ || !mpv_) {
     if (callback) callback(MPV_ERROR_UNINITIALIZED, "");
     return;
@@ -946,7 +1079,7 @@ void MpvPlayer::TryAudioReload(const char* reason, int attempt, uint64_t request
   LogRecovery("issuing ao-reload (reason=" + std::string(reason) + ", attempt " + std::to_string(attempt) + ")");
   const std::string reason_copy = reason;
   auto callback_context = callback_context_;
-  CommandAsync({"ao-reload"}, [callback_context, reason_copy, attempt, request_generation](int error) {
+  CommandAsync({"ao-reload"}, [callback_context, reason_copy, attempt, request_generation](int error, const mpv_node*) {
     auto lease = callback_context->Acquire();
     if (!lease) return;
     MpvPlayer* player = lease.player();
@@ -962,10 +1095,19 @@ void MpvPlayer::MaybeRunAudioRecovery() {
   if (action.reason == plezy::mpv_common::AudioReloadReason::kNone) {
     return;
   }
+  if (action.reason == plezy::mpv_common::AudioReloadReason::kGiveUp) {
+    // audio-fallback-to-null means the core will never end the file over a
+    // dead device itself, so the outcome is produced here: stop, and let the
+    // END_FILE handler report it as the AO_INIT_FAILED error Dart handles.
+    LogRecovery("audio output failed after " + std::to_string(action.attempt) + " reloads; ending playback");
+    audio_output_failed_ = true;
+    Command({"stop"});
+    return;
+  }
   const char* reason = action.reason == plezy::mpv_common::AudioReloadReason::kResume ? "resume" : "null-fallback";
   TryAudioReload(reason, action.attempt, action.request_generation);
   if (action.exhausted) {
-    LogRecovery("audio recovery budget exhausted; waiting for device list change");
+    LogRecovery("audio recovery budget exhausted; ending playback if this reload fails");
   }
 }
 
@@ -1007,6 +1149,11 @@ void MpvPlayer::HandleMpvEvent(mpv_event* event) {
         UpdateSourceHdrMetadata(&node);
         break;
       }
+      if (event->reply_userdata == kHwdecCurrentUserdata) {
+        const char* value = node.format == MPV_FORMAT_STRING ? node.u.string : nullptr;
+        g_message("MPV: hwdec-current=%s", value && value[0] != '\0' ? value : "(none)");
+        break;
+      }
 
       const auto notice = plezy::mpv_common::ObserveAudioRecoveryProperty(audio_recovery_, event, prop);
       if (notice.message) LogRecovery(notice.message);
@@ -1018,6 +1165,12 @@ void MpvPlayer::HandleMpvEvent(mpv_event* event) {
     }
     case MPV_EVENT_END_FILE: {
       audio_recovery_.SetFileLoaded(false);
+      // The stop that audio recovery issued on giving up ends the file with
+      // reason stop, which Dart would take for the user's own. It is reported
+      // as what it is - the AO_INIT_FAILED error the core would have raised
+      // without audio-fallback-to-null - under the cause tag Dart handles.
+      const bool audio_output_failed = audio_output_failed_;
+      audio_output_failed_ = false;
       // Whatever comes next is a different source until video-params says
       // otherwise, and describing it against this one's colour space is the
       // one failure worth a transient wrong answer to avoid. No re-apply is
@@ -1027,31 +1180,72 @@ void MpvPlayer::HandleMpvEvent(mpv_event* event) {
         std::lock_guard<std::mutex> lock(native_mutex_);
         source_hdr_metadata_ = SourceHdrMetadata();
       }
+      FlushPendingRestartPositions();
       auto* end = static_cast<mpv_event_end_file*>(event->data);
       if (!end) break;
+      const int reason =
+          audio_output_failed ? static_cast<int>(MPV_END_FILE_REASON_ERROR) : static_cast<int>(end->reason);
+      const int error = audio_output_failed ? static_cast<int>(MPV_ERROR_AO_INIT_FAILED) : end->error;
       FlValue* data = fl_value_new_map();
-      fl_value_set_string_take(data, "reason", fl_value_new_int(static_cast<int>(end->reason)));
-      if (end->reason == MPV_END_FILE_REASON_ERROR) {
-        fl_value_set_string_take(data, "error", fl_value_new_int(static_cast<int>(end->error)));
-        fl_value_set_string_take(
-            data, "message", fl_value_new_string(SanitizeUtf8(mpv_error_string(end->error)).c_str()));
+      fl_value_set_string_take(data, "sourceId", fl_value_new_int(end->playlist_entry_id));
+      fl_value_set_string_take(data, "reason", fl_value_new_int(reason));
+      if (reason == MPV_END_FILE_REASON_ERROR) {
+        fl_value_set_string_take(data, "error", fl_value_new_int(error));
+        fl_value_set_string_take(data, "message", fl_value_new_string(SanitizeUtf8(mpv_error_string(error)).c_str()));
+        if (audio_output_failed) {
+          fl_value_set_string_take(data, "cause", fl_value_new_string(plezy::mpv_common::kAudioOutputFailedCause));
+        }
       }
       SendEvent("end-file", data);
       fl_value_unref(data);
       break;
     }
     case MPV_EVENT_START_FILE: {
-      SendEvent("start-file");
+      auto* start = static_cast<mpv_event_start_file*>(event->data);
+      if (!start) break;
+      FlushPendingRestartPositions();
+      active_source_id_ = start->playlist_entry_id;
+      has_active_source_id_ = true;
+      SendActiveSourceEvent("start-file");
       break;
     }
     case MPV_EVENT_FILE_LOADED: {
       audio_recovery_.SetFileLoaded(true);
       EnsureAudioRecoveryTimer();
-      SendEvent("file-loaded");
+      SendActiveSourceEvent("file-loaded");
       break;
     }
     case MPV_EVENT_PLAYBACK_RESTART: {
-      SendEvent("playback-restart");
+      // The position is asked for, not read: a synchronous read hands the
+      // request to the core and parks the GTK main thread on the playloop — the
+      // thread the core's render path is itself waiting on (see the video-params
+      // note in Initialize) — so the envelope follows the reply instead. The
+      // source is captured now so a boundary crossed in the meantime cannot
+      // relabel it; the epoch lets that boundary retire the reply after
+      // delivering the restart itself position-less.
+      const bool has_source_id = has_active_source_id_;
+      const int64_t source_id = active_source_id_;
+      const uint64_t epoch = restart_epoch_;
+      auto on_position = [this, has_source_id, source_id, epoch](int error, const std::string& value) {
+        if (disposed_ || epoch != restart_epoch_) return;
+        --pending_restart_positions_;
+        double seconds = 0.0;
+        const bool has_position = error >= 0 && ParseSeconds(value, &seconds);
+        SendPlaybackRestartEvent(has_source_id, source_id, has_position ? &seconds : nullptr);
+      };
+#ifdef PLEZY_MPV_PLAYER_LIFECYCLE_TEST
+      if (test_property_read_) {
+        ++pending_restart_positions_;
+        test_property_read_("time-pos", std::move(on_position));
+        break;
+      }
+#endif
+      if (!mpv_) {
+        SendPlaybackRestartEvent(has_source_id, source_id, nullptr);
+        break;
+      }
+      ++pending_restart_positions_;
+      plezy::mpv_common::SubmitGetPropertyAsync(mpv_, pending_requests_, "time-pos", std::move(on_position));
       break;
     }
     default:
@@ -1108,6 +1302,11 @@ void MpvPlayer::SendPropertyChange(const char* name, mpv_node* data) {
   } else {
     fl_value_append_take(list, fl_value_new_null());
   }
+  if (has_active_source_id_) {
+    fl_value_append_take(list, fl_value_new_int(active_source_id_));
+  } else {
+    fl_value_append_take(list, fl_value_new_null());
+  }
 
   EventCallback callback;
   {
@@ -1116,6 +1315,41 @@ void MpvPlayer::SendPropertyChange(const char* name, mpv_node* data) {
   }
   if (callback) callback(list);
   fl_value_unref(list);
+}
+
+void MpvPlayer::SendActiveSourceEvent(const std::string& name) {
+  FlValue* data = nullptr;
+  if (has_active_source_id_) {
+    data = fl_value_new_map();
+    fl_value_set_string_take(data, "sourceId", fl_value_new_int(active_source_id_));
+  }
+  SendEvent(name, data);
+  if (data) fl_value_unref(data);
+}
+
+void MpvPlayer::SendPlaybackRestartEvent(bool has_source_id, int64_t source_id, const double* position_seconds) {
+  const bool has_position = position_seconds && std::isfinite(*position_seconds);
+  FlValue* data = nullptr;
+  if (has_source_id || has_position) {
+    data = fl_value_new_map();
+    if (has_source_id) {
+      fl_value_set_string_take(data, "sourceId", fl_value_new_int(source_id));
+    }
+    if (has_position) {
+      fl_value_set_string_take(data, "positionSeconds", fl_value_new_float(*position_seconds));
+    }
+  }
+  SendEvent("playback-restart", data);
+  if (data) fl_value_unref(data);
+}
+
+void MpvPlayer::FlushPendingRestartPositions() {
+  // Every pending restart was dequeued under the source that is now ending, so
+  // the active source is the one each of them captured.
+  for (; pending_restart_positions_ > 0; --pending_restart_positions_) {
+    SendPlaybackRestartEvent(has_active_source_id_, active_source_id_, nullptr);
+  }
+  ++restart_epoch_;
 }
 
 void MpvPlayer::SendEvent(const std::string& name, FlValue* data) {
@@ -1253,6 +1487,10 @@ bool MpvPlayer::CanCommandOutputProperties() const {
 #ifdef PLEZY_MPV_PLAYER_LIFECYCLE_TEST
 void MpvPlayer::ConfigurePropertyWritesForTesting(PropertyWriteForTesting writer) {
   test_property_write_ = std::move(writer);
+}
+
+void MpvPlayer::ConfigurePropertyReadsForTesting(PropertyReadForTesting reader) {
+  test_property_read_ = std::move(reader);
 }
 
 MpvPlayer::AppliedOutputColourSpace MpvPlayer::AppliedOutputColourSpaceForTesting() const {

@@ -281,6 +281,272 @@ Future<void> expectCustomConfigCannotOverrideHdrPreferences(WidgetTester tester)
   );
 }
 
+/// The custom mpv config is applied as runtime mpv_set_property writes, and
+/// vo/gpu-context/gpu-api are owned by the embedded renderer: a vo=gpu-next
+/// line would make mpv re-create its output as a separate window and orphan
+/// the plane (the render API is OpenGL-only, so gpu-next cannot be embedded).
+/// Startup must skip the whole VO family by name - with a key-aware log, not
+/// the HDR-settings pointer - and let ordinary entries through.
+Future<void> expectCustomConfigCannotOverrideEmbeddedVo(WidgetTester tester) async {
+  await SettingsService.instance.write(
+    SettingsService.mpvConfigText,
+    'vo=gpu-next\n'
+    'gpu-context=waylandvk\n'
+    'gpu-api=vulkan\n'
+    'sub-scale=1.5\n',
+  );
+  final calls = <MethodCall>[];
+  final eventCalls = <MethodCall>[];
+
+  await withMockPlayerChannels(
+    methodChannelName: 'com.plezy/mpv_player',
+    eventChannelName: 'com.plezy/mpv_player/events',
+    methodHandler: (call) async {
+      calls.add(call);
+      return call.method == 'initialize' ? true : null;
+    },
+    eventHandler: (call) async {
+      eventCalls.add(call);
+      return null;
+    },
+    testBody: () async {
+      await _mountPlayerScreen(tester, 'Linux embedded VO override video');
+      // `volume-max` is the write immediately after the custom-config pass, so
+      // its arrival is what makes the lists below complete.
+      await pumpUntil(
+        tester,
+        () => _propertyWrites(calls).contains('volume-max'),
+        describe: () => 'writes=${_propertyWrites(calls)} calls=${calls.map((c) => c.method).toList()}',
+      );
+
+      // None of the VO family reached mpv: a vo switch would detach the
+      // embedded render context into a separate window.
+      for (final owned in ['vo', 'gpu-context', 'gpu-api']) {
+        expect(_valueWrites(calls, owned), isEmpty, reason: '$owned is owned by the embedded renderer');
+      }
+      // The rest of the config still reaches mpv: the skip goes by name.
+      expect(_valueWrites(calls, 'sub-scale'), ['1.5']);
+
+      // Same deterministic teardown as [expectCustomConfigCannotOverrideHdrPreferences].
+      await tester.pumpWidget(const SizedBox.shrink());
+      await pumpUntil(
+        tester,
+        () => calls.any((call) => call.method == 'dispose') && eventCalls.any((call) => call.method == 'cancel'),
+        describe: () =>
+            'calls=${calls.map((c) => c.method).toList()} events=${eventCalls.map((c) => c.method).toList()}',
+      );
+    },
+  );
+}
+
+/// The config text follows mpv.conf syntax, where quotes around a value belong
+/// to the syntax, not the value - but the entries are applied as runtime
+/// mpv_set_property writes, which take strings verbatim. An unstripped quote
+/// therefore names a font family that does not exist (a silent fallback) or
+/// fails a numeric parse (a logged skip); either way the line does nothing
+/// (#2025). The parser owns the stripping; this asserts what reaches the wire.
+Future<void> expectQuotedCustomConfigValuesReachWireUnquoted(WidgetTester tester) async {
+  await SettingsService.instance.write(
+    SettingsService.mpvConfigText,
+    // The issue's own lines (single-quoted string, single-quoted float) plus
+    // a double-quoted value for the other quote kind.
+    "sub-font = 'NetflixSans-Bold'\n"
+    "sub-blur = '0.2'\n"
+    'sub-scale="1.5"\n',
+  );
+  final calls = <MethodCall>[];
+  final eventCalls = <MethodCall>[];
+
+  await withMockPlayerChannels(
+    methodChannelName: 'com.plezy/mpv_player',
+    eventChannelName: 'com.plezy/mpv_player/events',
+    methodHandler: (call) async {
+      calls.add(call);
+      return call.method == 'initialize' ? true : null;
+    },
+    eventHandler: (call) async {
+      eventCalls.add(call);
+      return null;
+    },
+    testBody: () async {
+      await _mountPlayerScreen(tester, 'Quoted mpv config video');
+      // `volume-max` is the write immediately after the custom-config pass, so
+      // its arrival is what makes the lists below complete.
+      await pumpUntil(
+        tester,
+        () => _propertyWrites(calls).contains('volume-max'),
+        describe: () => 'writes=${_propertyWrites(calls)} calls=${calls.map((c) => c.method).toList()}',
+      );
+
+      // `.last` rather than the whole list: startup writes its own bundled
+      // fallback `sub-font` first when the font loader succeeds, and the
+      // custom pass lands after it. The config line must win, unquoted.
+      expect(_valueWrites(calls, 'sub-font').last, 'NetflixSans-Bold');
+      expect(_valueWrites(calls, 'sub-blur'), ['0.2']);
+      expect(_valueWrites(calls, 'sub-scale'), ['1.5']);
+
+      // Same deterministic teardown as [expectCustomConfigCannotOverrideEmbeddedVo].
+      await tester.pumpWidget(const SizedBox.shrink());
+      await pumpUntil(
+        tester,
+        () => calls.any((call) => call.method == 'dispose') && eventCalls.any((call) => call.method == 'cancel'),
+        describe: () =>
+            'calls=${calls.map((c) => c.method).toList()} events=${eventCalls.map((c) => c.method).toList()}',
+      );
+    },
+  );
+}
+
+/// A refused subtitle-styling write must not abort initialization: styling is
+/// a preference, and the same refusal that used to land as
+/// SET_PROPERTY_FAILED on the channel used to escape
+/// _runPlayerInitializationAttempt into the error screen. The mock plane
+/// refuses `sub-color`; initialization must run through to `volume-max` and
+/// no error screen may appear.
+Future<void> expectSubtitleStyleRefusalDoesNotAbortStartup(WidgetTester tester) async {
+  final refusal = PlatformException(
+    code: 'SET_PROPERTY_FAILED',
+    message: "setProperty 'sub-color'='#FFFFFF' failed: unsupported format for accessing property",
+  );
+  final calls = <MethodCall>[];
+  final eventCalls = <MethodCall>[];
+
+  await withMockPlayerChannels(
+    methodChannelName: 'com.plezy/mpv_player',
+    eventChannelName: 'com.plezy/mpv_player/events',
+    methodHandler: (call) async {
+      calls.add(call);
+      if (call.method == 'setProperty' && (call.arguments as Map)['name'] == 'sub-color') {
+        return Future<Object?>.error(refusal);
+      }
+      return call.method == 'initialize' ? true : null;
+    },
+    eventHandler: (call) async {
+      eventCalls.add(call);
+      return null;
+    },
+    testBody: () async {
+      await _mountPlayerScreen(tester, 'Linux subtitle style refusal video');
+      // `volume-max` follows the styling block; reaching it proves the refusal
+      // was contained and initialization ran on.
+      await pumpUntil(
+        tester,
+        () => _propertyWrites(calls).contains('volume-max'),
+        describe: () => 'writes=${_propertyWrites(calls)} calls=${calls.map((c) => c.method).toList()}',
+      );
+
+      // The write was attempted (not skipped) and the refusal was swallowed:
+      // playback must not die over styling.
+      expect(_propertyWrites(calls), contains('sub-color'));
+      expect(find.text('Retry'), findsNothing, reason: 'a styling refusal must not show the error screen');
+
+      // Same deterministic teardown as the HDR cases.
+      await tester.pumpWidget(const SizedBox.shrink());
+      await pumpUntil(
+        tester,
+        () => calls.any((call) => call.method == 'dispose') && eventCalls.any((call) => call.method == 'cancel'),
+        describe: () =>
+            'calls=${calls.map((c) => c.method).toList()} events=${eventCalls.map((c) => c.method).toList()}',
+      );
+    },
+  );
+}
+
+/// A libmpv older than the pinned build refuses a property it does not know
+/// with MPV_ERROR_PROPERTY_NOT_FOUND (`sub-ass-video-aspect-override` is
+/// mpv 0.39+; Ubuntu 24.04 ships 0.37). The refusal is a preference, not a
+/// reason to fail playback: the sibling writes still land and no error
+/// screen appears.
+Future<void> expectUnknownSubtitlePropertyRefusalDoesNotAbortStartup(WidgetTester tester) async {
+  final refusal = PlatformException(
+    code: 'SET_PROPERTY_FAILED',
+    message: "setProperty 'sub-ass-video-aspect-override'='1' failed: property not found",
+  );
+  final calls = <MethodCall>[];
+  final eventCalls = <MethodCall>[];
+
+  await withMockPlayerChannels(
+    methodChannelName: 'com.plezy/mpv_player',
+    eventChannelName: 'com.plezy/mpv_player/events',
+    methodHandler: _refusingPlane(calls, refusal, property: 'sub-ass-video-aspect-override'),
+    eventHandler: (call) async {
+      eventCalls.add(call);
+      return null;
+    },
+    testBody: () async {
+      await _mountPlayerScreen(tester, 'Distro libmpv unknown property video');
+      await pumpUntil(
+        tester,
+        () => _propertyWrites(calls).contains('volume-max'),
+        describe: () => 'writes=${_propertyWrites(calls)} calls=${calls.map((c) => c.method).toList()}',
+      );
+
+      // Attempted, refused, and the write after it still ran: one refusal
+      // must neither abort startup nor skip its siblings.
+      expect(
+        _propertyWrites(calls),
+        containsAllInOrder(['sub-ass-override', 'sub-ass-video-aspect-override', 'sub-pos', 'volume-max']),
+      );
+      expect(find.text('Retry'), findsNothing, reason: 'an unknown-property refusal must not show the error screen');
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await pumpUntil(
+        tester,
+        () => calls.any((call) => call.method == 'dispose') && eventCalls.any((call) => call.method == 'cancel'),
+        describe: () =>
+            'calls=${calls.map((c) => c.method).toList()} events=${eventCalls.map((c) => c.method).toList()}',
+      );
+    },
+  );
+}
+
+/// The stored subtitle colours are free-form strings and mpv 0.40's OPT_COLOR
+/// parser rejects anything but #RRGGBB/#AARRGGBB, so startup sanitizes the
+/// values before writing: parseable hex passes through, everything else is
+/// replaced by the preference default. The caller seeds the unparseable
+/// values; this asserts what reaches the wire.
+Future<void> expectSanitizedSubtitleColorsOnTheWire(WidgetTester tester) async {
+  final calls = <MethodCall>[];
+  final eventCalls = <MethodCall>[];
+
+  await withMockPlayerChannels(
+    methodChannelName: 'com.plezy/mpv_player',
+    eventChannelName: 'com.plezy/mpv_player/events',
+    methodHandler: (call) async {
+      calls.add(call);
+      return call.method == 'initialize' ? true : null;
+    },
+    eventHandler: (call) async {
+      eventCalls.add(call);
+      return null;
+    },
+    testBody: () async {
+      await _mountPlayerScreen(tester, 'Linux subtitle colour sanitization video');
+      // `volume-max` follows the subtitle styling block, so its arrival makes
+      // the styling writes complete.
+      await pumpUntil(
+        tester,
+        () => _propertyWrites(calls).contains('volume-max'),
+        describe: () => 'writes=${_propertyWrites(calls)} calls=${calls.map((c) => c.method).toList()}',
+      );
+
+      // The defaults, not the unparseable seeds.
+      expect(_valueWrites(calls, 'sub-color'), ['#FFFFFF']);
+      expect(_valueWrites(calls, 'sub-border-color'), ['#000000']);
+      expect(_valueWrites(calls, 'sub-back-color'), ['#FF000000']);
+
+      // Same deterministic teardown as the HDR cases.
+      await tester.pumpWidget(const SizedBox.shrink());
+      await pumpUntil(
+        tester,
+        () => calls.any((call) => call.method == 'dispose') && eventCalls.any((call) => call.method == 'cancel'),
+        describe: () =>
+            'calls=${calls.map((c) => c.method).toList()} events=${eventCalls.map((c) => c.method).toList()}',
+      );
+    },
+  );
+}
+
 /// The negative side of [expectStartupSurvivesHdrRefusal]: with the Linux video
 /// path forced off, the same refusal must abort initialization rather than be
 /// swallowed, so `audio-delay` never follows it and the stored preference is

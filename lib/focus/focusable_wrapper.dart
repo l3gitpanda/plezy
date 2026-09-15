@@ -161,9 +161,6 @@ class FocusableWrapper extends StatefulWidget {
   /// Short press triggers [onSelect].
   final bool enableLongPress;
 
-  /// Duration for long-press detection.
-  final Duration longPressDuration;
-
   /// Whether to use background color instead of border for focus indicator.
   /// Useful for video controls where outline doesn't look good.
   final bool useBackgroundFocus;
@@ -223,7 +220,6 @@ class FocusableWrapper extends StatefulWidget {
     this.canRequestFocus = true,
     this.onKeyEvent,
     this.enableLongPress = false,
-    this.longPressDuration = const Duration(milliseconds: 500),
     this.useBackgroundFocus = false,
     this.focusColor,
     this.disableScale = false,
@@ -323,8 +319,12 @@ class _FocusableWrapperState extends State<FocusableWrapper> with SingleTickerPr
         _animationController?.reverse();
       }
 
-      // Auto-scroll into view
-      if (hasFocus && widget.autoScroll) {
+      // Auto-scroll into view. Keyboard/D-pad sessions only: pointer-mode
+      // focus is invisible and only ever parked or restored programmatically
+      // (entry focus targets, a context menu re-focusing its trigger on
+      // close), so revealing it would yank the viewport away from wherever
+      // the user scrolled (issue #2031).
+      if (hasFocus && widget.autoScroll && InputModeTracker.currentMode == InputMode.keyboard) {
         _scrollIntoView();
       }
 
@@ -458,7 +458,6 @@ class _FocusableWrapperState extends State<FocusableWrapper> with SingleTickerPr
       if (widget.enableLongPress) {
         final result = _selectLongPress.handleKeyEvent(
           event,
-          duration: widget.longPressDuration,
           isOwnerActive: () => mounted,
           onShortPress: () => widget.onSelect?.call(),
           onLongPress: () => widget.onLongPress?.call(),

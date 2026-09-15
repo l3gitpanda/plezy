@@ -44,8 +44,7 @@ extension _PlexVideoControlsNavigationMethods on _PlexVideoControlsState {
         liveChannelName: widget.liveChannelName,
         captureBuffer: widget.captureBuffer,
         isAtLiveEdge: widget.isAtLiveEdge,
-        streamStartEpoch: widget.streamStartEpoch,
-        currentPositionEpoch: widget.currentPositionEpoch,
+        liveEpochForPosition: widget.liveEpochForPosition,
         onLiveSeek: _liveSeekAbandoningBurst(widget.onLiveSeek),
         onLiveSeekBy: widget.onLiveSeekBy,
         onJumpToLive: _abandoningBurst(widget.onJumpToLive),
@@ -117,7 +116,10 @@ extension _PlexVideoControlsNavigationMethods on _PlexVideoControlsState {
 
         try {
           if (!targetIsCurrent()) return SubtitleDownloadApplyOutcome.superseded;
-          final data = await client.getVideoPlaybackData(ratingKey);
+          // forceRefresh: playback start left a fresh /library/metadata row in
+          // the cache (and each network poll would re-stamp it), so a
+          // cache-eligible read here would never observe the new stream.
+          final data = await client.getVideoPlaybackData(ratingKey, forceRefresh: true);
           if (!targetIsCurrent()) return SubtitleDownloadApplyOutcome.superseded;
           if (data.mediaInfo == null) continue;
 

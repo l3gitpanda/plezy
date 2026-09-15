@@ -14,6 +14,7 @@ struct wl_callback;
 struct wl_compositor;
 struct wl_display;
 struct wl_egl_window;
+struct wl_output;
 struct wl_subcompositor;
 struct wl_subsurface;
 struct wl_surface;
@@ -57,7 +58,12 @@ struct PreferredColorDescription {
 // whole window surface per presented frame (see gdk_cairo_draw_from_gl's
 // alpha path), previously paid once per *video* frame.
 //
-// Everything here runs on the GTK main thread. The subsurface is desynchronized
+// Everything here runs on the GTK main thread, with one deliberate exception:
+// the commit itself. PreparePresent()/CompletePresent() bracket an
+// eglSwapBuffers that the plugin performs on the plane render thread (issue
+// #2057: an expensive render on the main thread starves input dispatch and
+// Flutter's raster). All Wayland protocol state stays main-thread; the worker
+// only ever touches the EGL surface. The subsurface is desynchronized
 // so its commits are independent of the parent's frame loop; position and
 // stacking, however, are *parent* state and only take effect on a parent
 // commit, which is why SetRect() asks the view to redraw.
@@ -108,7 +114,7 @@ class WaylandVideoSurface {
   // toplevel's frame, matching what the Dart side sends via setVideoRect.
   void SetRect(int32_t x, int32_t y, int32_t width, int32_t height, int32_t scale);
 
-  // Hides the plane by attaching a null buffer. The next Present() re-shows it.
+  // Hides the plane by attaching a null buffer. The next present re-shows it.
   void SetVisible(bool visible);
   bool visible() const { return visible_; }
 
@@ -117,6 +123,14 @@ class WaylandVideoSurface {
   // acknowledging frames for an occluded or minimized surface, and rendering
   // regardless would queue work that can never drain.
   bool frame_pending() const { return frame_pending_; }
+
+  // Whether any buffer has been presented since the surface was created. The
+  // caller uses this to refuse the very first present until mpv has actually
+  // produced a frame: presenting an empty buffer (the pre-allocated 1x1 or a
+  // black frame) is exactly the commit an occluded surface is entitled to
+  // ignore, and the frame callback it arms would then be the one a stalled
+  // plane waits on forever.
+  bool first_frame_presented() const { return first_frame_presented_; }
 
   // Invoked on the GTK main thread when the compositor acknowledges a frame.
   // This is what resumes rendering after the plane becomes visible again, so
@@ -133,11 +147,23 @@ class WaylandVideoSurface {
   // it real.
   void SetForcedRenderCallback(std::function<void()> callback) { on_forced_render_ = std::move(callback); }
 
-  // Presents whatever was rendered into the EGL surface. No-op while hidden,
-  // while a frame is still pending, or while a colour transition is staged —
-  // the last being the one case a caller cannot read off the plane's visible
-  // state, so see hdr_transition_staged().
-  bool Present();
+  // First half of a present: the gates, and the frame-callback request that
+  // must precede the commit eglSwapBuffers performs so the callback belongs to
+  // this frame. Returns false while the plane must not present - hidden, no
+  // EGL surface, a frame still unacknowledged, or a colour transition staged
+  // (the last being the one case a caller cannot read off the plane's visible
+  // state, so see hdr_transition_staged()).
+  //
+  // On true, the plane is reserved for the caller's render + eglSwapBuffers -
+  // frame_pending_ holds every later prepare off - and CompletePresent() must
+  // follow on the main thread once the swap's result is known.
+  bool PreparePresent();
+
+  // Second half, on the main thread, with |swapped| = the eglSwapBuffers
+  // result. Owns the first-frame scale flush and the ack watchdog, and
+  // re-detaches the buffer when the plane was hidden or lost its rect while
+  // the swap was in flight. Returns whether the frame truly presented.
+  bool CompletePresent(bool swapped);
 
   // True when this plane can be described as HDR at all: the compositor offers
   // a parametric image-description creator, accepts the perceptual render
@@ -168,6 +194,15 @@ class WaylandVideoSurface {
   // changes — a monitor move, or HDR being switched on or off under us.
   void SetPreferredChangedCallback(std::function<void()> callback) { on_preferred_changed_ = std::move(callback); }
 
+  // Invoked on the GTK main thread when the compositor places the plane on an
+  // output, with GDK's monitor for it. This is the only word the plugin gets
+  // that the plane moved: dragging the window to another monitor of the same
+  // scale raises no GTK signal on Wayland, and the preferred-description
+  // feedback above exists only under a colour-managing compositor.
+  void SetMonitorEnteredCallback(std::function<void(GdkMonitor*)> callback) {
+    on_monitor_entered_ = std::move(callback);
+  }
+
   // Number of bits per colour channel the plane actually got: 16 on a
   // half-float plane, 10 on a 10-bit unorm one, otherwise 8. PQ in 8 bits
   // bands badly, so HDR needs at least 10.
@@ -175,7 +210,7 @@ class WaylandVideoSurface {
 
   // Stages a colour change. It has to be two-phase; apply_hdr_state in
   // mpv_plugin.cc tells that story in full. In outline: BeginHdrTransition
-  // stages and validates the description and holds Present() while it does, the
+  // stages and validates the description and holds presents while it does, the
   // caller switches mpv once it settles, and CommitHdrTransition attaches the
   // state and releases the hold so the first buffer rendered in the new colour
   // space is the one that carries it. Abort backs out and changes nothing.
@@ -203,7 +238,7 @@ class WaylandVideoSurface {
   // colour state is left exactly as it was. Ignores a stale token.
   void AbortHdrTransition(uint64_t token);
 
-  // True while a transition is staged, i.e. while Present() is being held.
+  // True while a transition is staged, i.e. while presents are being held.
   bool hdr_transition_staged() const { return transition_staged_; }
 
   // Drops any staged transition and unsets the description immediately.
@@ -225,6 +260,20 @@ class WaylandVideoSurface {
   // Whether a description is attached, i.e. whether the compositor is currently
   // being told this plane carries an HDR curve.
   bool hdr_active() const { return hdr_active_; }
+
+  // Bounds each half of a staged transition: first the compositor's verdict on
+  // the image description, then the caller's mpv leg deciding to commit or
+  // abort. PreparePresent() and the plugin's render path are held across *both*, so it
+  // is re-armed rather than cancelled when the compositor answers - the second
+  // wait is the longer one and has no timeout of its own. Public because the
+  // plugin's own mpv-leg timeout (mpv_plugin.cc) shares this horizon: the two
+  // halves of the transaction must give up together or the surface would
+  // resume presenting while the HDR method call stayed unanswered.
+  static constexpr int kTransitionTimeoutSeconds = 5;
+  // How many roundtrips a synchronous bootstrap waits for its answer. Ready,
+  // then the info burst, then done is three at worst, plus one spare for a
+  // compositor that splits them differently.
+  static constexpr int kBootstrapRoundtrips = 4;
 
  private:
   bool BindGlobals(GdkDisplay* display, std::string* error);
@@ -248,6 +297,13 @@ class WaylandVideoSurface {
   void SettleTransition(bool ok);
 
   static void HandleFrameDone(void* data, wl_callback* callback, uint32_t time);
+  static void HandleSurfaceEnter(void* data, wl_surface* surface, wl_output* output);
+  static void HandleSurfaceLeave(void* data, wl_surface* surface, wl_output* output);
+  // wl_surface v6 events, informational for a plane whose scale Dart sets
+  // from the toplevel's. Present rather than null, for the reason given
+  // beside the description listener in BuildImageDescription().
+  static void HandleSurfacePreferredBufferScale(void* data, wl_surface* surface, int32_t factor);
+  static void HandleSurfacePreferredBufferTransform(void* data, wl_surface* surface, uint32_t transform);
   // Interface version 1 only; version 2 and later send ready2 in its place.
   static void HandleImageDescriptionReady(void* data, wp_image_description_v1* desc, uint32_t identity);
   // Interface version 2+. Must be present rather than null, for the reason
@@ -257,19 +313,46 @@ class WaylandVideoSurface {
   static void HandleImageDescriptionFailed(
       void* data, wp_image_description_v1* desc, uint32_t cause, const char* message);
 
-  // Bounds each half of a staged transition: first the compositor's verdict on
-  // the image description, then the caller's mpv leg deciding to commit or
-  // abort. Present() and the plugin's render path are held across *both*, so it
-  // is re-armed rather than cancelled when the compositor answers - the second
-  // wait is the longer one and has no timeout of its own.
-  static constexpr int kTransitionTimeoutSeconds = 5;
-  // How many roundtrips a synchronous bootstrap waits for its answer. Ready,
-  // then the info burst, then done is three at worst, plus one spare for a
-  // compositor that splits them differently.
-  static constexpr int kBootstrapRoundtrips = 4;
   void ArmTransitionWatchdog();
   void CancelTransitionWatchdog();
   guint watchdog_source_ = 0;
+
+  // Bounds the frame-acknowledgement wait. A compositor is entitled to stop
+  // acknowledging frames for an occluded or minimized surface - wlroots
+  // lineage compositors (Hyprland) and KWin do exactly that - and
+  // frame_pending_ is the only latch between a present and the frame callback.
+  // Without a bound, one missed wl_callback freezes the plane on its last
+  // buffer for good: every later render bails on frame_pending(), and nothing
+  // else clears it. The watchdog withdraws the dead callback and asks for a
+  // fresh present, which re-arms the callback; a compositor that keeps
+  // ignoring the surface (still hidden) hits the miss budget and backs off to
+  // the slow re-present timer below.
+  static constexpr int kFrameAckTimeoutMs = 500;
+  static constexpr int kMaxConsecutiveFrameAckMisses = 5;
+  void ArmFrameAckWatchdog();
+  void CancelFrameAckWatchdog();
+  guint frame_ack_source_ = 0;
+  int consecutive_frame_acks_missed_ = 0;
+
+  // Keeps a stalled plane recoverable after the miss budget is spent. Stopping
+  // outright would leave no wake-up at all (issue #2067): the giveup just
+  // destroyed the only outstanding wl_callback, so no acknowledgement can ever
+  // arrive; mpv's redraw latch is typically already saturated - the render its
+  // update scheduled bailed on frame_pending() without consuming it, and
+  // OnMpvRenderUpdate only schedules on the latch's false->true edge - so mpv
+  // never notifies again; and a workspace switch is invisible to GTK, so no
+  // visibility change comes either. The timer re-runs the frame callback at a
+  // pace the compositor cannot mind: a present only actually happens when mpv
+  // has produced a new frame (or a refresh is owed), and each one re-arms the
+  // normal watchdog, so a hidden playing plane settles at one present per
+  // timeout-plus-interval and recovers within one interval of being shown
+  // again. A paused hidden plane goes dormant instead - its last render
+  // consumed the latch, so the next mpv frame reaches the plugin as a fresh
+  // update edge.
+  static constexpr int kStalledRepresentIntervalMs = 1000;
+  void ArmStalledRepresentTimer();
+  void CancelStalledRepresentTimer();
+  guint stalled_represent_source_ = 0;
 
   // Creates the preferred-description query. The returned description is ready
   // immediately per the protocol, so get_information follows on ready, and the
@@ -361,6 +444,7 @@ class WaylandVideoSurface {
   wl_callback* frame_callback_ = nullptr;
   std::function<void()> on_frame_;
   std::function<void()> on_forced_render_;
+  std::function<void(GdkMonitor*)> on_monitor_entered_;
 
   wp_color_manager_v1* color_manager_ = nullptr;
   wp_color_management_surface_v1* color_surface_ = nullptr;
@@ -368,7 +452,7 @@ class WaylandVideoSurface {
   // one: set_image_description copies, so the object is destroyed immediately
   // after it is handed over.
   wp_image_description_v1* staged_description_ = nullptr;
-  // A transition is staged: Present() is held, and Commit or Abort will release
+  // A transition is staged: presents are held, and Commit or Abort will release
   // it. `staged_describe_` is what Commit will apply, and `transition_token_` is
   // what Commit and Abort must match to act on it.
   bool transition_staged_ = false;

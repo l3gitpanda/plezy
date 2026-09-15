@@ -1,4 +1,5 @@
 import 'dart:convert';
+
 import '../media/ids.dart';
 
 import '../media/media_backend.dart';
@@ -21,7 +22,7 @@ class CachedPlaybackMetadataService {
     int mediaIndex = 0,
   }) async {
     try {
-      return switch (backend) {
+      return await switch (backend) {
         MediaBackend.plex => _fetchPlexMediaSourceInfo(ServerId(cacheServerId), itemId, mediaIndex: mediaIndex),
         MediaBackend.jellyfin || MediaBackend.emby => _fetchJellyfinMediaSourceInfo(
           cacheServerId,
@@ -45,7 +46,7 @@ class CachedPlaybackMetadataService {
     bool forceChapterFallback = false,
   }) async {
     try {
-      return switch (backend) {
+      return await switch (backend) {
         MediaBackend.plex => _fetchPlexPlaybackExtras(
           ServerId(cacheServerId),
           itemId,
@@ -74,7 +75,11 @@ class CachedPlaybackMetadataService {
     required int mediaIndex,
   }) async {
     final metadata = await _plexMetadata(ServerId(serverId), itemId);
-    return metadata == null ? null : plexMediaSourceInfoFromCacheJson(metadata, mediaIndex: mediaIndex);
+    if (metadata == null) return null;
+    // The file is already on disk: stale server accessibility must not
+    // substitute another version's tracks for the downloaded file.
+    final selection = resolvePlexPlaybackSelection(metadata, mediaIndex: mediaIndex, preferPlayable: false);
+    return selection == null ? null : plexMediaSourceInfoForSelection(metadata, selection);
   }
 
   static Future<PlaybackExtras?> _fetchPlexPlaybackExtras(
@@ -86,11 +91,18 @@ class CachedPlaybackMetadataService {
   }) async {
     final metadata = await _plexMetadata(ServerId(serverId), itemId);
     if (metadata == null) return null;
-    return plexPlaybackExtrasFromCacheJson(
+    final extras = plexPlaybackExtrasFromCacheJson(
       metadata,
       introPattern: introPattern,
       creditsPattern: creditsPattern,
       forceChapterFallback: forceChapterFallback,
+    );
+    // Offline twin of the suppression in `PlexClient.getPlaybackExtras`;
+    // cache-only, so an uncached show row fails open and keeps the markers.
+    return plexApplyCreditsDetectionPreference(
+      extras,
+      metadata,
+      loadMetadataJson: (ratingKey) => _plexMetadata(serverId, ratingKey),
     );
   }
 
@@ -109,9 +121,15 @@ class CachedPlaybackMetadataService {
     final raw = resolved.raw;
     final sources = raw['MediaSources'];
     if (sources is! List || sources.isEmpty) return null;
-    final selected = mediaIndex >= 0 && mediaIndex < sources.length ? sources[mediaIndex] : sources.first;
+    final index = mediaIndex >= 0 && mediaIndex < sources.length ? mediaIndex : 0;
+    final selected = sources[index];
     if (selected is! Map<String, dynamic>) return null;
-    return jellyfinMediaSourceToMediaSourceInfo(selected, chapters: raw['Chapters'], trickplay: raw['Trickplay']);
+    return jellyfinMediaSourceToMediaSourceInfo(
+      selected,
+      chapters: raw['Chapters'],
+      trickplay: raw['Trickplay'],
+      mediaIndex: index,
+    );
   }
 
   static Future<PlaybackExtras?> _fetchJellyfinPlaybackExtras(

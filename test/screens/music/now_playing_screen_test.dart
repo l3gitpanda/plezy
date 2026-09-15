@@ -8,6 +8,7 @@ import 'package:plezy/i18n/strings.g.dart';
 import 'package:plezy/media/media_backend.dart';
 import 'package:plezy/media/media_item.dart';
 import 'package:plezy/media/media_kind.dart';
+import 'package:plezy/mpv/mpv.dart';
 import 'package:plezy/providers/multi_server_provider.dart';
 import 'package:plezy/screens/music/now_playing_screen.dart';
 import 'package:plezy/services/music/music_playback_service.dart';
@@ -40,6 +41,7 @@ class _FakeMusicService extends StubMusicPlaybackService {
   final MusicPlayContext context;
   final StreamController<Duration> _positionController = StreamController<Duration>.broadcast(sync: true);
   final StreamController<Duration?> _playheadJumpController = StreamController<Duration?>.broadcast(sync: true);
+  final StreamController<Object> _errorsController = StreamController<Object>.broadcast(sync: true);
   final List<Duration> seeks = [];
   Duration _position = Duration.zero;
 
@@ -63,6 +65,8 @@ class _FakeMusicService extends StubMusicPlaybackService {
     _playheadJumpController.add(position);
   }
 
+  void emitError(Object error) => _errorsController.add(error);
+
   @override
   MediaItem get currentTrack => track;
 
@@ -77,6 +81,9 @@ class _FakeMusicService extends StubMusicPlaybackService {
 
   @override
   Stream<Duration?> get playheadJumpStream => _playheadJumpController.stream;
+
+  @override
+  Stream<Object> get errors => _errorsController.stream;
 
   @override
   Duration get duration => const Duration(minutes: 3);
@@ -100,6 +107,7 @@ class _FakeMusicService extends StubMusicPlaybackService {
   void dispose() {
     _playheadJumpController.close();
     _positionController.close();
+    _errorsController.close();
     super.dispose();
   }
 }
@@ -157,7 +165,7 @@ void main() {
       final second = _track(id: 'two', title: 'Second Track', album: 'Second Album', year: 1999);
       final service = _FakeMusicService(
         track: first,
-        context: const MusicPlayContext(id: 'album_one', title: 'First Album', kind: MusicPlayContextKind.album),
+        context: const MusicPlayContext(title: 'First Album', kind: MusicPlayContextKind.album),
       );
 
       await pumpNowPlaying(tester, service, isTv: isTv);
@@ -175,7 +183,7 @@ void main() {
   testWidgets('playlist playback retains its queue provenance label', (tester) async {
     final service = _FakeMusicService(
       track: _track(id: 'one', title: 'First Track', album: 'First Album', year: 1973),
-      context: const MusicPlayContext(id: 'playlist_1', title: 'Road Trip', kind: MusicPlayContextKind.playlist),
+      context: const MusicPlayContext(title: 'Road Trip', kind: MusicPlayContextKind.playlist),
     );
 
     await pumpNowPlaying(tester, service, isTv: false);
@@ -264,5 +272,22 @@ void main() {
     await tester.pump();
 
     expect(seekSlider().value, 0);
+  });
+
+  testWidgets('a failed native core is named, not printed as an exception class', (tester) async {
+    // The init sentinel deliberately carries no prose, so the default
+    // `toString()` path would put "PlayerInitializationException" in front of
+    // the user.
+    final service = _FakeMusicService(
+      track: _track(id: 'one', title: 'First Track', album: 'First Album', year: 1973),
+      context: const MusicPlayContext(title: 'Queue', kind: MusicPlayContextKind.tracks),
+    );
+
+    await pumpNowPlaying(tester, service, isTv: false);
+    service.emitError(const PlayerInitializationException());
+    await tester.pump();
+
+    expect(find.text(t.messages.playbackFailed), findsOneWidget);
+    expect(find.textContaining('PlayerInitializationException'), findsNothing);
   });
 }

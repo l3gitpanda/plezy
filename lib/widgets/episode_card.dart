@@ -146,7 +146,6 @@ class _EpisodeCardState extends State<EpisodeCard> with ContextMenuTapMixin<Epis
             item: episode,
             onRefresh: widget.onRefresh,
             onListRefresh: widget.onListRefresh,
-            onTap: widget.onTap,
             child: InkWell(
               key: Key(episode.id),
               mouseCursor: SystemMouseCursors.click,
@@ -215,12 +214,7 @@ class _EpisodeCardState extends State<EpisodeCard> with ContextMenuTapMixin<Epis
                           ),
 
                           Positioned.fill(
-                            child: WatchedIndicator(
-                              item: episode,
-                              size: WatchedIndicatorSize.compact,
-                              // Progress isn't tracked offline.
-                              progressAvailable: !widget.isOffline,
-                            ),
+                            child: WatchedIndicator(item: episode, size: WatchedIndicatorSize.compact),
                           ),
                         ],
                       ),
@@ -258,29 +252,16 @@ class _EpisodeCardState extends State<EpisodeCard> with ContextMenuTapMixin<Epis
                                 // Note: No icon shown if not downloaded (null)
                               }
 
+                              final index = episode.index;
+                              // The prefix mirrors the server-provided episode
+                              // number verbatim, including a genuine episode 0.
+                              final titleText = index != null ? '$index. ${episode.title!}' : episode.title!;
                               return Row(
                                 children: [
-                                  if (episode.index != null)
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                                      decoration: BoxDecoration(
-                                        color: Theme.of(context).colorScheme.primaryContainer,
-                                        borderRadius: const BorderRadius.all(Radius.circular(3)),
-                                      ),
-                                      child: Text(
-                                        'E${episode.index}',
-                                        style: TextStyle(
-                                          color: Theme.of(context).colorScheme.onPrimaryContainer,
-                                          fontSize: 11,
-                                          fontWeight: .w600,
-                                        ),
-                                      ),
-                                    ),
-                                  if (downloadStatusIcon != null) ...[const SizedBox(width: 6), downloadStatusIcon],
-                                  const SizedBox(width: 8),
+                                  if (downloadStatusIcon != null) ...[downloadStatusIcon, const SizedBox(width: 8)],
                                   Expanded(
                                     child: Text(
-                                      episode.title!,
+                                      titleText,
                                       style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: .bold),
                                       maxLines: 2,
                                       overflow: .ellipsis,
@@ -344,7 +325,6 @@ class _EpisodeCardState extends State<EpisodeCard> with ContextMenuTapMixin<Epis
       return OptimizedMediaImage.thumb(
         client: widget.client,
         imagePath: episode.thumbPath,
-        filterQuality: FilterQuality.medium,
         fit: BoxFit.cover,
         placeholder: (context, url) => const PlaceholderContainer(),
         errorWidget: (context, url, error) =>

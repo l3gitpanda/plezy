@@ -17,6 +17,15 @@ final RegExp _httpStatusPattern = RegExp(r'\b(?:HTTP error |Response code: )(\d{
 /// open time instead of latching here (#1830).
 const Set<int> fatalPlaybackHttpStatuses = {404, 500};
 
+/// The native player core failed to come up. Carries no message: the UI
+/// owns the wording so `lib/mpv` stays free of user-facing copy.
+class PlayerInitializationException implements Exception {
+  const PlayerInitializationException();
+
+  @override
+  String toString() => 'PlayerInitializationException';
+}
+
 /// [cause] is an optional machine-readable tag (e.g. `server-http-500`),
 /// letting the UI branch without parsing [message].
 @Freezed(toStringOverride: false)
@@ -41,6 +50,24 @@ sealed class PlayerError with _$PlayerError {
   /// open has produced no frame for the whole patience window (#1830).
   static const String serverHttp503 = 'server-http-503';
 
+  /// Cause tag for a failed native core start. The accompanying [message] is
+  /// the raw thrown error, kept for diagnostics only; the UI picks localized
+  /// copy from this tag instead of parsing it.
+  static const String playerInitFailed = 'player-init-failed';
+
+  /// Cause tag for an open the backend started and then neither loaded,
+  /// failed, nor died within the attempt's deadline. Synthesized by the
+  /// player screen; the backend raised nothing, so there is no message to
+  /// show beyond the localized copy.
+  static const String openTimedOut = 'open-timed-out';
+
+  /// Cause tag for an audio device that stopped taking audio (or never
+  /// could) after the native core's own bounded recovery. A device fault, not
+  /// a stream fault: no stream retry, quality change, or backend switch can
+  /// recover it, so it is terminal on live TV too. Keep in sync with
+  /// MpvEndFileDiagnostics.CAUSE_AUDIO_OUTPUT_FAILED on Android.
+  static const String audioOutputFailed = 'audio-output-failed';
+
   /// HTTP status [logText] reports, or null when it names none.
   ///
   /// A [PlayerError] carries no status field: mpv only ever tells us the
@@ -57,7 +84,7 @@ sealed class PlayerError with _$PlayerError {
   String toString() => message;
 }
 
-enum PlayerLogLevel { none, fatal, error, warn, info, verbose, debug, trace }
+enum PlayerLogLevel { fatal, error, warn, info, verbose, debug, trace }
 
 @freezed
 sealed class AudioTrack with _$AudioTrack {

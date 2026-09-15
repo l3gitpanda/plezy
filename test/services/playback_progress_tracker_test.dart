@@ -5,6 +5,7 @@ import 'package:drift/native.dart';
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:plezy/database/app_database.dart';
+import 'package:plezy/exceptions/media_server_exceptions.dart';
 import 'package:plezy/media/media_backend.dart';
 import 'package:plezy/media/media_item.dart';
 import 'package:plezy/media/media_kind.dart';
@@ -310,6 +311,23 @@ class _StopMarksWatchedClient extends _FakePlexClient {
   ServerId get serverId => ServerId('srv');
 }
 
+/// Answers one progress report with a server-side termination (#1916) and
+/// records report kinds so the fresh-session re-open is observable.
+class _TerminatingProgressClient extends _FakePlexClient {
+  final List<PlaybackReportKind> reportKinds = [];
+  bool terminateNextProgress = false;
+
+  @override
+  Future<void> onPlaybackReport(PlaybackReportCall call) async {
+    reportKinds.add(call.kind);
+    if (call.kind == PlaybackReportKind.progress && terminateNextProgress) {
+      terminateNextProgress = false;
+      throw PlaybackSessionTerminatedException(code: 2006, reason: 'Admin terminated playback with reason: Go Away');
+    }
+    await super.onPlaybackReport(call);
+  }
+}
+
 const Object _defaultServerId = Object();
 
 MediaItem _meta({
@@ -574,7 +592,7 @@ void main() {
       addTearDown(tracker.dispose);
 
       final events = <WatchStateEvent>[];
-      final sub = WatchStateNotifier().forItem('42').listen(events.add);
+      final sub = WatchStateNotifier().stream.where((e) => e.affectsItem('42')).listen(events.add);
       addTearDown(sub.cancel);
 
       await Future.wait([tracker.sendProgress('stopped'), tracker.sendProgress('stopped')]);
@@ -765,7 +783,44 @@ void main() {
       expect(progressSelection.audioStreamIndex, 2);
     });
 
-    test('stopped reports only resolve media source and do not include selected streams', () async {
+    test('stopped reports carry the engine stream selection so a late pick still persists', () async {
+      final client = _FakePlexClient();
+      const selectedAudio = AudioTrack(id: 'audio_1', language: 'jpn');
+      const selectedSubtitle = SubtitleTrack(id: 'text_0', language: 'eng');
+      final player = _FakePlayer(
+        position: const Duration(seconds: 5),
+        duration: const Duration(seconds: 100),
+        tracks: const Tracks(audio: [selectedAudio], subtitle: [selectedSubtitle]),
+        track: const TrackSelection(audio: selectedAudio, subtitle: selectedSubtitle),
+      );
+      final mediaInfo = MediaSourceInfo(
+        videoUrl: '',
+        audioTracks: [MediaAudioTrack(id: 2, languageCode: 'jpn', selected: true)],
+        subtitleTracks: [MediaSubtitleTrack(id: 3, languageCode: 'eng', selected: true, forced: false)],
+        chapters: const [],
+        mediaSourceId: 'source-1',
+      );
+      final tracker = PlaybackProgressTracker(
+        client: client,
+        metadata: _meta(ratingKey: '42'),
+        player: player,
+        isOffline: false,
+        mediaInfo: mediaInfo,
+      );
+      addTearDown(tracker.dispose);
+
+      // No progress ping ever ran: a pick inside the last update interval has
+      // only the terminal report left to ride.
+      await tracker.sendProgress('stopped');
+
+      expect(client.playbackStreamSelections, hasLength(1));
+      final stopped = client.playbackStreamSelections.single;
+      expect(stopped.mediaSourceId, 'source-1');
+      expect(stopped.audioStreamIndex, 2);
+      expect(stopped.subtitleStreamIndex, 3);
+    });
+
+    test('stopped reports do not persist a declined off as -1 (#1785)', () async {
       final client = _FakePlexClient();
       const selectedAudio = AudioTrack(id: 'audio_1', language: 'jpn');
       final player = _FakePlayer(
@@ -777,8 +832,45 @@ void main() {
         ),
         track: const TrackSelection(
           audio: selectedAudio,
-          subtitle: SubtitleTrack(id: 'text_0', language: 'eng'),
+          subtitle: SubtitleTrack(id: 'no'),
         ),
+      );
+      final mediaInfo = MediaSourceInfo(
+        videoUrl: '',
+        audioTracks: [MediaAudioTrack(id: 2, languageCode: 'jpn', selected: true)],
+        subtitleTracks: [MediaSubtitleTrack(id: 3, languageCode: 'eng', selected: false, forced: false)],
+        chapters: const [],
+        mediaSourceId: 'source-1',
+      );
+      final tracker = PlaybackProgressTracker(
+        client: client,
+        metadata: _meta(ratingKey: '42'),
+        player: player,
+        isOffline: false,
+        mediaInfo: mediaInfo,
+        subtitleOffIsDeliberate: () => false,
+      );
+      addTearDown(tracker.dispose);
+
+      await tracker.sendProgress('stopped');
+
+      final stopped = client.playbackStreamSelections.single;
+      // Withholding the key leaves the server's remembered choice alone; an
+      // explicit -1 at session end would harden "no subtitles" for the item.
+      expect(stopped.subtitleStreamIndex, isNull);
+      expect(stopped.audioStreamIndex, 2);
+    });
+
+    test('stopped reports withhold stream indexes when remembering is off', () async {
+      resetSharedPreferencesForTest(initialAsync: {'remember_track_selections': false});
+      final client = _FakePlexClient();
+      const selectedAudio = AudioTrack(id: 'audio_1', language: 'jpn');
+      const selectedSubtitle = SubtitleTrack(id: 'text_0', language: 'eng');
+      final player = _FakePlayer(
+        position: const Duration(seconds: 5),
+        duration: const Duration(seconds: 100),
+        tracks: const Tracks(audio: [selectedAudio], subtitle: [selectedSubtitle]),
+        track: const TrackSelection(audio: selectedAudio, subtitle: selectedSubtitle),
       );
       final mediaInfo = MediaSourceInfo(
         videoUrl: '',
@@ -798,10 +890,10 @@ void main() {
 
       await tracker.sendProgress('stopped');
 
-      expect(client.playbackStreamSelections, hasLength(1));
-      expect(client.playbackStreamSelections.single.mediaSourceId, 'source-1');
-      expect(client.playbackStreamSelections.single.audioStreamIndex, isNull);
-      expect(client.playbackStreamSelections.single.subtitleStreamIndex, isNull);
+      final stopped = client.playbackStreamSelections.single;
+      expect(stopped.mediaSourceId, 'source-1');
+      expect(stopped.audioStreamIndex, isNull);
+      expect(stopped.subtitleStreamIndex, isNull);
     });
   });
 
@@ -851,9 +943,8 @@ void main() {
       addTearDown(tracker.dispose);
 
       final watched = <WatchStateEvent>[];
-      final sub = WatchStateNotifier()
-          .forItem('42')
-          .where((e) => e.changeType == WatchStateChangeType.watched)
+      final sub = WatchStateNotifier().stream
+          .where((e) => e.affectsItem('42') && e.changeType == WatchStateChangeType.watched)
           .listen(watched.add);
       addTearDown(sub.cancel);
 
@@ -1063,9 +1154,8 @@ void main() {
       addTearDown(tracker.dispose);
 
       final watched = <WatchStateEvent>[];
-      final sub = WatchStateNotifier()
-          .forItem('42')
-          .where((e) => e.changeType == WatchStateChangeType.watched)
+      final sub = WatchStateNotifier().stream
+          .where((e) => e.affectsItem('42') && e.changeType == WatchStateChangeType.watched)
           .listen(watched.add);
       addTearDown(sub.cancel);
 
@@ -1535,7 +1625,7 @@ void main() {
 
       // Subscribe before triggering the event.
       final events = <WatchStateEvent>[];
-      final sub = WatchStateNotifier().forItem('42').listen(events.add);
+      final sub = WatchStateNotifier().stream.where((e) => e.affectsItem('42')).listen(events.add);
       addTearDown(sub.cancel);
 
       await tracker.sendProgress('stopped');
@@ -1561,7 +1651,7 @@ void main() {
       addTearDown(tracker.dispose);
 
       final events = <WatchStateEvent>[];
-      final sub = WatchStateNotifier().forItem('no-watch').listen(events.add);
+      final sub = WatchStateNotifier().stream.where((e) => e.affectsItem('no-watch')).listen(events.add);
       addTearDown(sub.cancel);
 
       await tracker.sendProgress('stopped');
@@ -1585,7 +1675,7 @@ void main() {
       addTearDown(tracker.dispose);
 
       final events = <WatchStateEvent>[];
-      final sub = WatchStateNotifier().forItem('scrobbler').listen(events.add);
+      final sub = WatchStateNotifier().stream.where((e) => e.affectsItem('scrobbler')).listen(events.add);
       addTearDown(sub.cancel);
 
       await tracker.sendProgress('stopped');
@@ -1783,6 +1873,104 @@ void main() {
         async.flushMicrotasks();
         expect(client.updateProgressCalls, hasLength(1));
       });
+    });
+  });
+
+  group('server-side session termination (#1916)', () {
+    test('terminated paused session sends one final stop, goes silent, and re-opens on resume', () {
+      fakeAsync((async) {
+        final client = _TerminatingProgressClient();
+        final player = _FakePlayer(position: const Duration(seconds: 5), duration: const Duration(seconds: 100));
+        var pausedKeepalives = 0;
+        final tracker = PlaybackProgressTracker(
+          client: client,
+          metadata: _meta(),
+          player: player,
+          isOffline: false,
+          updateInterval: const Duration(seconds: 1),
+          onPausedKeepalive: () async => pausedKeepalives++,
+        );
+
+        tracker.startTracking();
+        async.flushMicrotasks();
+        player.playing = false;
+        async.elapse(const Duration(seconds: 1));
+        async.flushMicrotasks();
+        expect(client.updateProgressCalls.map((call) => call.state), ['playing', 'paused']);
+        expect(pausedKeepalives, 1);
+
+        // The server answers the next paused heartbeat with a termination:
+        // the tracker closes the session with one stop at the current
+        // playhead instead of retrying/queueing.
+        client.terminateNextProgress = true;
+        async.elapse(const Duration(seconds: 1));
+        async.flushMicrotasks();
+        expect(client.updateProgressCalls.map((call) => call.state), ['playing', 'paused', 'stopped']);
+        expect(client.updateProgressCalls.last.time, 5000);
+
+        // Continued pause: no heartbeats re-registering the zombie session and
+        // no transcode keepalives. (The keepalive count includes the detection
+        // tick, whose ping raced the not-yet-latched termination.)
+        async.elapse(const Duration(seconds: 5));
+        async.flushMicrotasks();
+        expect(client.updateProgressCalls, hasLength(3));
+        expect(pausedKeepalives, 2);
+
+        // Unpause: real consumption again — a fresh session opens with a new
+        // started report, immediately (a failure-style backoff would skip
+        // this tick).
+        player.playing = true;
+        async.elapse(const Duration(seconds: 1));
+        async.flushMicrotasks();
+        expect(client.reportKinds, [
+          PlaybackReportKind.started,
+          PlaybackReportKind.progress,
+          PlaybackReportKind.progress, // the terminated attempt
+          PlaybackReportKind.stopped,
+          PlaybackReportKind.started, // fresh session
+        ]);
+
+        // The new session pauses normally: heartbeats and keepalives resume.
+        player.playing = false;
+        async.elapse(const Duration(seconds: 1));
+        async.flushMicrotasks();
+        expect(client.updateProgressCalls.last.state, 'paused');
+        expect(pausedKeepalives, 3);
+
+        tracker.dispose();
+      });
+    });
+
+    test('termination is not a report failure: nothing is queued for offline replay', () async {
+      final db = AppDatabase.forTesting(NativeDatabase.memory());
+      final mgr = MultiServerManager();
+      final svc = OfflineWatchSyncService(database: db, serverManager: mgr);
+      addTearDown(() async {
+        svc.dispose();
+        mgr.dispose();
+        await db.close();
+      });
+
+      final client = _TerminatingProgressClient();
+      final player = _FakePlayer(position: const Duration(seconds: 10), duration: const Duration(seconds: 100));
+      final tracker = PlaybackProgressTracker(
+        client: client,
+        metadata: _meta(ratingKey: '42', serverId: ServerId('srv')),
+        player: player,
+        isOffline: false,
+        offlineWatchService: svc,
+        queueOnOnlineFailure: true,
+      );
+      addTearDown(tracker.dispose);
+
+      await tracker.sendProgress('playing');
+      await pumpEventQueue();
+      client.terminateNextProgress = true;
+      await tracker.sendProgress('paused');
+      await pumpEventQueue();
+
+      expect(client.updateProgressCalls.map((call) => call.state), ['playing', 'stopped']);
+      expect(await svc.getPendingSyncCount(), 0);
     });
   });
 

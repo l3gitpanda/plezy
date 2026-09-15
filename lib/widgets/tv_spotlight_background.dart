@@ -1,20 +1,18 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:material_symbols_icons/symbols.dart';
 
 import '../i18n/strings.g.dart';
 import '../media/media_item.dart';
 import '../media/media_item_types.dart';
 import '../media/media_server_client.dart';
-import '../providers/watch_state_store.dart';
 import '../services/device_performance.dart';
 import '../utils/content_utils.dart';
 import '../utils/formatters.dart';
 import '../utils/layout_constants.dart';
 import '../utils/media_image_helper.dart';
 import '../services/settings_service.dart';
-import 'app_icon.dart';
+import '../utils/tone_mapped_logo_image.dart';
 import 'cycling_media_backdrop.dart';
 import 'fitting_title_text.dart';
 import 'fitted_metadata_line.dart';
@@ -30,10 +28,7 @@ class TvSpotlightBackground extends StatelessWidget {
   final double contentBottom;
   final double? contentTop;
   final double? contentLeft;
-  final VoidCallback? onPrimaryAction;
-  final Widget? actions;
   final bool compact;
-  final bool showPrimaryAction;
   final bool showInfo;
   final String? Function(String? artworkPath)? localArtworkPathResolver;
   final bool allowNetwork;
@@ -49,10 +44,7 @@ class TvSpotlightBackground extends StatelessWidget {
     this.contentBottom = 360,
     this.contentTop,
     this.contentLeft,
-    this.onPrimaryAction,
-    this.actions,
     this.compact = false,
-    this.showPrimaryAction = true,
     this.showInfo = true,
     this.localArtworkPathResolver,
     this.allowNetwork = true,
@@ -228,15 +220,18 @@ class TvSpotlightBackground extends StatelessWidget {
             ),
           ),
         ],
-        if (showPrimaryAction || actions != null) ...[
-          SizedBox(height: (compact ? 18 : 26) * scale),
-          actions ?? _buildPrimaryAction(context, media),
-        ],
       ],
     );
   }
 
   Widget _buildLogoOrTitle(BuildContext context, MediaItem media, String title) {
+    final theme = Theme.of(context);
+    // The spotlight scrim washes artwork toward the scaffold background, so
+    // light themes recolor light-toned logos to stay visible.
+    final logoToneTarget = logoToneTargetFor(
+      surface: theme.scaffoldBackgroundColor,
+      foreground: theme.colorScheme.onSurface,
+    );
     final scale = _scale(context);
     final logoPath = media.clearLogoPath;
     final logoWidth = _logoWidth(scale);
@@ -244,26 +239,30 @@ class TvSpotlightBackground extends StatelessWidget {
     if (logoPath == null || logoPath.isEmpty) {
       return SizedBox(width: logoWidth, height: logoHeight, child: _buildTitle(context, title));
     }
-    final dpr = MediaImageHelper.effectiveDevicePixelRatio(context);
+    final pixelRatio = MediaImageHelper.artworkPixelRatio(context, imageType: ImageType.heroLogo);
     final (logoMemWidth, logoMemHeight) = MediaImageHelper.getMemCacheDimensions(
-      displayWidth: (logoWidth * dpr).round(),
-      displayHeight: (logoHeight * dpr).round(),
+      displayWidth: (logoWidth * pixelRatio).round(),
+      displayHeight: (logoHeight * pixelRatio).round(),
       imageType: ImageType.heroLogo,
     );
 
     final localLogoPath = localArtworkPathResolver?.call(logoPath);
     if (localLogoPath != null && File(localLogoPath).existsSync()) {
+      final bounded = MediaImageHelper.boundedDecode(
+        FileImage(File(localLogoPath)),
+        memWidth: logoMemWidth,
+        memHeight: logoMemHeight,
+      );
       return SizedBox(
         width: logoWidth,
         height: logoHeight,
         child: blurArtwork(
           Image(
-            image: MediaImageHelper.boundedDecode(
-              FileImage(File(localLogoPath)),
-              memWidth: logoMemWidth,
-              memHeight: logoMemHeight,
-            ),
+            image: logoToneTarget == null
+                ? bounded
+                : ToneMappedLogoImage(bounded, target: logoToneTarget, remapMixed: false),
             fit: BoxFit.contain,
+            filterQuality: MediaImageHelper.artworkFilterQuality(context, ImageType.heroLogo),
             alignment: .centerLeft,
             errorBuilder: (context, error, stackTrace) => _buildTitle(context, title),
           ),
@@ -279,6 +278,7 @@ class TvSpotlightBackground extends StatelessWidget {
       width: logoWidth,
       height: logoHeight,
       fadeInDuration: DevicePerformance.reducedDuration(const Duration(milliseconds: 200)),
+      logoToneTarget: logoToneTarget,
       fallbackBuilder: (context) => _buildTitle(context, title),
     );
   }
@@ -369,32 +369,4 @@ class TvSpotlightBackground extends StatelessWidget {
   double _metadataFontSize(double scale) => (compact ? 16 : 18) * scale;
 
   double _summaryFontSize(double scale) => (compact ? 18 : 20) * scale;
-
-  Widget _buildPrimaryAction(BuildContext context, MediaItem media) {
-    final scale = _scale(context);
-    media = context.withFreshWatchState(media);
-    final hasProgress = media.hasActiveProgress;
-    final minutesLeft = hasProgress && media.durationMs != null && media.viewOffsetMs != null
-        ? ((media.durationMs! - media.viewOffsetMs!) / 60_000).round()
-        : 0;
-
-    return GestureDetector(
-      onTap: onPrimaryAction,
-      child: Container(
-        padding: .symmetric(horizontal: (compact ? 24 : 30) * scale, vertical: (compact ? 12 : 15) * scale),
-        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(32 * scale)),
-        child: Row(
-          mainAxisSize: .min,
-          children: [
-            AppIcon(Symbols.play_arrow_rounded, fill: 1, size: (compact ? 24 : 28) * scale, color: Colors.black),
-            SizedBox(width: (compact ? 10 : 12) * scale),
-            Text(
-              hasProgress ? t.discover.minutesLeft(minutes: minutesLeft) : t.common.play,
-              style: TextStyle(color: Colors.black, fontSize: (compact ? 16 : 18) * scale, fontWeight: .w800),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }

@@ -9,8 +9,8 @@ import '../../focus/focusable_action_bar.dart';
 import '../../focus/dpad_navigator.dart';
 import '../../focus/input_mode_tracker.dart';
 import '../../mixins/tab_navigation_mixin.dart';
+import '../../mixins/tab_visibility_aware.dart';
 import '../../media/ids.dart';
-import '../../media/media_item.dart';
 import '../../media/media_library.dart';
 import '../../providers/hidden_libraries_provider.dart';
 import '../../providers/libraries_provider.dart';
@@ -18,27 +18,26 @@ import '../../providers/multi_server_provider.dart';
 import '../../services/settings_service.dart';
 import '../../widgets/settings_builder.dart';
 import '../../utils/app_logger.dart';
-import '../../utils/library_grouping.dart';
 import '../../utils/platform_detector.dart';
 import '../../utils/content_utils.dart';
 import '../../widgets/app_menu.dart';
-import '../../widgets/backend_badge.dart';
 import '../../widgets/desktop_app_bar.dart';
 import '../../widgets/focusable_tab_chip.dart';
 import '../../widgets/library_management_sheet.dart';
 import '../../services/storage_service.dart';
 import '../../mixins/refreshable.dart';
-import '../../mixins/item_updatable.dart';
 import '../../i18n/strings.g.dart';
+import 'library_server_label.dart';
 import 'state_messages.dart';
 import 'tabs/library_browse_tab.dart';
 import 'tabs/library_recommended_tab.dart';
 import 'tabs/library_collections_tab.dart';
 import 'tabs/library_playlists_tab.dart';
+import 'tabs/base_library_tab.dart';
 
 enum LibraryTabType { recommended, browse, collections, playlists }
 
-List<LibraryTabType> _getVisibleTabs(MediaLibrary library) {
+List<LibraryTabType> visibleLibraryTabs(MediaLibrary library) {
   if (library.isShared) return [LibraryTabType.browse, LibraryTabType.playlists];
   return LibraryTabType.values;
 }
@@ -59,9 +58,9 @@ class _LibrariesScreenState extends State<LibrariesScreen>
         FullRefreshable,
         FocusableTab,
         LibraryLoadable,
-        ItemUpdatable,
         TickerProviderStateMixin,
-        TabNavigationMixin {
+        TabNavigationMixin,
+        TabVisibilityAware {
   final _recommendedTabKey = GlobalKey();
   final _browseTabKey = GlobalKey();
   final _collectionsTabKey = GlobalKey();
@@ -69,7 +68,6 @@ class _LibrariesScreenState extends State<LibrariesScreen>
 
   String? _errorMessage;
   String? _selectedLibraryGlobalKey;
-  bool _isInitialLoad = true;
 
   /// Flag to prevent onTabChanged from focusing when we're programmatically changing tabs
   bool _isRestoringTab = false;
@@ -138,10 +136,22 @@ class _LibrariesScreenState extends State<LibrariesScreen>
 
   /// Initialize the screen with libraries from the provider.
   /// This handles initial library selection and content loading.
+  ///
+  /// An existing selection is authoritative. A sidebar library selection that
+  /// mounts this screen (`MainScreen._selectLibrary`) applies its target from a
+  /// post-frame callback registered *before* the one in [initState], so this
+  /// runs second and must not replace the requested library — which may be
+  /// hidden, and so is never the saved or topmost-visible default — with a
+  /// default. The re-checks cover the reverse interleaving, where a selection
+  /// lands while this is suspended on an await ([refresh]'s stale-resume
+  /// entry point).
   Future<void> _initializeWithLibraries() async {
+    if (_selectedLibraryGlobalKey != null) return;
+
     final librariesProvider = context.read<LibrariesProvider>();
     final hiddenLibrariesProvider = context.read<HiddenLibrariesProvider>();
     await hiddenLibrariesProvider.ensureInitialized();
+    if (!mounted || _selectedLibraryGlobalKey != null) return;
     final allLibraries = librariesProvider.libraries;
 
     if (allLibraries.isEmpty) {
@@ -153,6 +163,7 @@ class _LibrariesScreenState extends State<LibrariesScreen>
     final visibleLibraries = allLibraries.where((lib) => !hiddenKeys.contains(lib.globalKey)).toList();
 
     final storage = await StorageService.getInstance();
+    if (!mounted || _selectedLibraryGlobalKey != null) return;
     final savedLibraryKey = storage.getSelectedLibraryKey();
 
     String? libraryGlobalKeyToLoad;
@@ -167,7 +178,7 @@ class _LibrariesScreenState extends State<LibrariesScreen>
       libraryGlobalKeyToLoad = visibleLibraries.first.globalKey;
     }
 
-    if (libraryGlobalKeyToLoad != null && mounted) {
+    if (libraryGlobalKeyToLoad != null) {
       unawaited(_loadLibraryContent(libraryGlobalKeyToLoad));
     }
   }
@@ -406,12 +417,6 @@ class _LibrariesScreenState extends State<LibrariesScreen>
     };
   }
 
-  /// Check if libraries come from multiple servers
-  bool _hasMultipleServers(List<MediaLibrary> libraries) {
-    final uniqueServerIds = libraries.where((lib) => lib.serverId != null).map((lib) => lib.serverId).toSet();
-    return uniqueServerIds.length > 1;
-  }
-
   /// Notify parent that library order changed
   void _notifyLibraryOrderChanged() {
     widget.onLibraryOrderChanged?.call();
@@ -436,7 +441,7 @@ class _LibrariesScreenState extends State<LibrariesScreen>
 
     // Update visible tabs and state in the same synchronous block so no
     // intermediate rebuild can see a mismatched controller/key pair.
-    _updateVisibleTabs(_getVisibleTabs(selectedLibrary));
+    _updateVisibleTabs(visibleLibraryTabs(selectedLibrary));
 
     _updateState(() {
       _selectedLibraryGlobalKey = libraryGlobalKey;
@@ -455,11 +460,6 @@ class _LibrariesScreenState extends State<LibrariesScreen>
         if (!mounted) return;
         _resetOuterScroll();
       });
-    }
-
-    // Mark that initial load is complete
-    if (_isInitialLoad) {
-      _isInitialLoad = false;
     }
 
     // Save selected library key and restore saved tab (async — safe after state is consistent)
@@ -491,17 +491,35 @@ class _LibrariesScreenState extends State<LibrariesScreen>
     });
   }
 
-  @override
-  void updateItemInLists(String sourceGlobalKey, MediaItem updatedItem) {
-    // Delegate to the active tab — parent doesn't maintain its own item list
-  }
-
-  // Public method to refresh content (for normal navigation)
+  /// Refetch content in place (stale-resume sweep from MainScreen, #2043).
+  ///
+  /// With a library on screen this refetches its instantiated tabs — the same
+  /// action as the toolbar refresh button. Selecting the saved library again
+  /// would not: the tab widgets are keyed on stable GlobalKeys and only reload
+  /// when the library's globalKey changes. Without a selection yet (provider
+  /// was empty at startup) it re-runs initialization instead.
   @override
   void refresh() {
-    // Reinitialize with current libraries
-    _initializeWithLibraries();
+    if (_selectedLibraryGlobalKey == null) {
+      _initializeWithLibraries();
+      return;
+    }
+    _refreshSelectedLibraryTabs();
   }
+
+  /// Returning to the Libraries tab consumes push-marked staleness (#1646)
+  /// for the visible library tab only; hidden tabs consume on their own
+  /// activation, and a library switch reloads unconditionally anyway.
+  @override
+  void onTabShown() {
+    if (_selectedLibraryGlobalKey == null) return;
+    final Object? tabState = _getTabState(tabController.index);
+    if (tabState is BaseLibraryTabState) tabState.refreshIfLibraryContentStale();
+  }
+
+  @override
+  // ignore: no-empty-block - visibility mixin contract; nothing to pause.
+  void onTabHidden() {}
 
   // Refresh every loaded tab for the selected library.
   void _refreshSelectedLibraryTabs() {
@@ -563,40 +581,14 @@ class _LibrariesScreenState extends State<LibrariesScreen>
     );
   }
 
-  Widget _buildLibraryServerLabel(
-    MediaLibrary library,
-    TextStyle? style, {
-    double badgeSize = 11,
-    bool constrainText = false,
-    String? fallbackServerName,
-  }) {
-    final serverName = library.serverName ?? fallbackServerName;
-    if (serverName == null || serverName.isEmpty) return const SizedBox.shrink();
-
-    final text = Text(serverName, style: style, overflow: .ellipsis);
-    return Row(
-      mainAxisSize: .min,
-      children: [
-        BackendBadge(backend: library.backend, size: badgeSize, color: style?.color),
-        const SizedBox(width: 4),
-        if (constrainText) Flexible(child: text) else text,
-      ],
-    );
-  }
-
   AppMenuHeader<String> _buildLibraryServerHeaderMenuItem(MediaLibrary library, String serverKey) {
-    final style = Theme.of(context).textTheme.labelSmall?.copyWith(
-      fontWeight: .w600,
-      letterSpacing: 0.4,
-      color: Theme.of(context).textTheme.bodySmall?.color?.withValues(alpha: 0.65),
-    );
     return AppMenuHeader<String>(
-      child: _buildLibraryServerLabel(
-        library,
-        style,
-        badgeSize: 12,
-        constrainText: true,
+      child: LibraryServerLabel(
+        library: library,
         fallbackServerName: serverKey,
+        badgeSize: 12,
+        style: libraryServerHeaderStyle(context),
+        constrainText: true,
       ),
     );
   }
@@ -609,44 +601,31 @@ class _LibrariesScreenState extends State<LibrariesScreen>
       label: library.title,
       selected: isSelected,
       subtitleWidget: showServerName
-          ? _buildLibraryServerLabel(
-              library,
-              TextStyle(fontSize: 11, color: Theme.of(context).textTheme.bodySmall?.color?.withValues(alpha: 0.6)),
+          ? LibraryServerLabel(
+              library: library,
               badgeSize: 10,
+              style: TextStyle(
+                fontSize: 11,
+                color: Theme.of(context).textTheme.bodySmall?.color?.withValues(alpha: 0.6),
+              ),
               constrainText: true,
             )
           : null,
     );
   }
 
-  /// Build dropdown menu items with server subtitle when needed for clarity.
+  /// Build dropdown menu entries via the shared server-label policy.
   List<AppMenuEntry<String>> _buildGroupedLibraryMenuItems(
     List<MediaLibrary> visibleLibraries, {
-    required bool showServerHeaders,
+    required bool groupByServer,
   }) {
-    if (!showServerHeaders) {
-      // With multiple servers connected (but not grouped under headers), show the
-      // server name on every library so its origin is always clear — not only when
-      // two libraries happen to share a title.
-      final showServerNames = _hasMultipleServers(visibleLibraries);
-      return visibleLibraries.map((library) {
-        final showServerName = library.serverName != null && showServerNames;
-        return _buildLibraryMenuItem(library, showServerName: showServerName);
-      }).toList();
-    }
-
-    final grouped = groupLibrariesByFirstAppearance(visibleLibraries);
-    final menuItems = <AppMenuEntry<String>>[];
-    for (final serverKey in grouped.serverOrder) {
-      final bucket = grouped.byServer[serverKey]!;
-      if (serverKey.isNotEmpty) {
-        menuItems.add(_buildLibraryServerHeaderMenuItem(bucket.first, serverKey));
-      }
-      for (final library in bucket) {
-        menuItems.add(_buildLibraryMenuItem(library, showServerName: false));
-      }
-    }
-    return menuItems;
+    return buildLibraryServerEntries<AppMenuEntry<String>>(
+      visibleLibraries,
+      groupByServer: groupByServer,
+      buildHeader: _buildLibraryServerHeaderMenuItem,
+      buildItem: (library, {required bool showServerName}) =>
+          _buildLibraryMenuItem(library, showServerName: showServerName),
+    );
   }
 
   /// Build the app bar title - either dropdown on mobile or simple title on desktop
@@ -687,16 +666,15 @@ class _LibrariesScreenState extends State<LibrariesScreen>
         visibleLibraries.where((lib) => lib.globalKey == _selectedLibraryGlobalKey).firstOrNull ??
         visibleLibraries.firstOrNull;
     if (selectedLibrary == null) return Text(t.libraries.title);
-    final showServerHeaders = _hasMultipleServers(visibleLibraries) && groupByServer;
 
     return AppMenuButton<String>(
       key: _libraryDropdownKey,
       tooltip: t.libraries.selectLibrary,
+      adaptiveSheet: true,
       onSelected: (libraryGlobalKey) {
         _loadLibraryContent(libraryGlobalKey);
       },
-      entriesBuilder: (context) =>
-          _buildGroupedLibraryMenuItems(visibleLibraries, showServerHeaders: showServerHeaders),
+      entriesBuilder: (context) => _buildGroupedLibraryMenuItems(visibleLibraries, groupByServer: groupByServer),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         child: Row(
@@ -704,18 +682,18 @@ class _LibrariesScreenState extends State<LibrariesScreen>
           children: [
             AppIcon(ContentTypeHelper.getLibraryIcon(selectedLibrary.kind.id), fill: 1, size: 20),
             const SizedBox(width: 8),
-            if (_hasMultipleServers(visibleLibraries) && selectedLibrary.serverName != null)
+            if (librariesSpanMultipleServers(visibleLibraries) && selectedLibrary.serverName != null)
               Column(
                 crossAxisAlignment: .start,
                 mainAxisSize: .min,
                 children: [
                   Text(selectedLibrary.title, style: Theme.of(context).textTheme.titleMedium),
-                  _buildLibraryServerLabel(
-                    selectedLibrary,
-                    Theme.of(context).textTheme.labelSmall?.copyWith(
+                  LibraryServerLabel(
+                    library: selectedLibrary,
+                    badgeSize: 10,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
                       color: Theme.of(context).textTheme.bodySmall?.color?.withValues(alpha: 0.6),
                     ),
-                    badgeSize: 10,
                   ),
                 ],
               )

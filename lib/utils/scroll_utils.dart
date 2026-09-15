@@ -216,6 +216,8 @@ void scrollListToIndex(
   required double itemExtent,
   double leadingPadding = 12.0,
   bool animate = true,
+  Duration duration = const Duration(milliseconds: 150),
+  Curve curve = Curves.easeOut,
 }) {
   if (controller.positions.length != 1 || itemExtent <= 0) return;
 
@@ -226,10 +228,98 @@ void scrollListToIndex(
   final desiredOffset = (targetCenter - (viewport / 2)).clamp(0.0, maxExtent);
 
   if (animate) {
-    unawaited(controller.animateTo(desiredOffset, duration: const Duration(milliseconds: 150), curve: Curves.easeOut));
+    unawaited(controller.animateTo(desiredOffset, duration: duration, curve: curve));
   } else {
     controller.jumpTo(desiredOffset);
   }
+}
+
+/// Scroll a vertical list so the row at [index] is fully visible, parking it
+/// [alignment] of the viewport below the top edge when it has to move.
+///
+/// Geometry is read back from the laid-out sliver children instead of assumed:
+/// a `ListTile` row is 56dp without a subtitle and 72dp with one, and visual
+/// density, text scale and list padding move both numbers. A row outside the
+/// built range is extrapolated from the rows that are laid out.
+///
+/// Expects a single scroll position whose viewport holds one lazy list sliver;
+/// nothing happens when the list has not been laid out yet.
+void scrollIndexIntoView(
+  ScrollController controller,
+  int index, {
+  double alignment = 0.25,
+  Duration duration = const Duration(milliseconds: 150),
+  Curve curve = Curves.easeOut,
+}) {
+  if (controller.positions.length != 1) return;
+
+  final position = controller.position;
+  if (position.axis != Axis.vertical) return;
+
+  final viewportHeight = position.viewportDimension;
+  if (!viewportHeight.isFinite || !position.maxScrollExtent.isFinite) return;
+
+  final row = _listRowPlacement(position, index);
+  if (row == null) return;
+
+  final viewportTop = position.pixels;
+  if (row.top >= viewportTop && row.top + row.extent <= viewportTop + viewportHeight) return;
+
+  final desiredOffset = (row.top - viewportHeight * alignment).clamp(
+    position.minScrollExtent,
+    position.maxScrollExtent,
+  );
+  unawaited(controller.animateTo(desiredOffset, duration: duration, curve: curve));
+}
+
+/// Scroll offset that would align row [index] with the viewport's leading edge,
+/// plus that row's extent. Null while no row is laid out.
+({double top, double extent})? _listRowPlacement(ScrollPosition position, int index) {
+  final sliver = _findLazyListSliver(position.context.storageContext.findRenderObject());
+  if (sliver == null) return null;
+
+  RenderBox? anchor;
+  var anchorIndex = 0;
+  var extentSum = 0.0;
+  var laidOutRows = 0;
+
+  for (RenderBox? child = sliver.firstChild; child != null; child = sliver.childAfter(child)) {
+    final parentData = child.parentData;
+    if (parentData is! SliverMultiBoxAdaptorParentData) continue;
+    final childIndex = parentData.index;
+    if (childIndex == null || !child.hasSize) continue;
+
+    if (childIndex == index) {
+      final reveal = RenderAbstractViewport.maybeOf(child)?.getOffsetToReveal(child, 0.0);
+      return reveal == null ? null : (top: reveal.offset, extent: child.size.height);
+    }
+    if (anchor == null) {
+      anchor = child;
+      anchorIndex = childIndex;
+    }
+    extentSum += child.size.height;
+    laidOutRows++;
+  }
+
+  final anchorRow = anchor;
+  if (anchorRow == null) return null;
+  final anchorReveal = RenderAbstractViewport.maybeOf(anchorRow)?.getOffsetToReveal(anchorRow, 0.0);
+  if (anchorReveal == null) return null;
+
+  // The row is beyond the cache extent: step from a real row by the average
+  // laid-out row extent rather than by a guessed constant.
+  final rowExtent = extentSum / laidOutRows;
+  return (top: anchorReveal.offset + (index - anchorIndex) * rowExtent, extent: rowExtent);
+}
+
+RenderSliverMultiBoxAdaptor? _findLazyListSliver(RenderObject? node) {
+  if (node == null) return null;
+  if (node is RenderSliverMultiBoxAdaptor) return node;
+  RenderSliverMultiBoxAdaptor? found;
+  node.visitChildren((child) {
+    found ??= _findLazyListSliver(child);
+  });
+  return found;
 }
 
 /// Scroll a horizontal list so the keyed child is centered using its real layout
@@ -240,6 +330,8 @@ void scrollKeyedChildToHorizontalCenter(
   bool animate = true,
   int maxAttempts = 2,
   bool Function()? isCurrent,
+  Duration duration = const Duration(milliseconds: 150),
+  Curve curve = Curves.easeOut,
 }) {
   void schedule(int attempt) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -251,7 +343,13 @@ void scrollKeyedChildToHorizontalCenter(
         return;
       }
 
-      final didResolve = _scrollContextToHorizontalCenterNow(controller, context, animate: animate);
+      final didResolve = _scrollContextToHorizontalCenterNow(
+        controller,
+        context,
+        animate: animate,
+        duration: duration,
+        curve: curve,
+      );
       if (!didResolve && attempt < maxAttempts) schedule(attempt + 1);
     });
   }
@@ -259,7 +357,13 @@ void scrollKeyedChildToHorizontalCenter(
   schedule(0);
 }
 
-bool _scrollContextToHorizontalCenterNow(ScrollController controller, BuildContext context, {required bool animate}) {
+bool _scrollContextToHorizontalCenterNow(
+  ScrollController controller,
+  BuildContext context, {
+  required bool animate,
+  required Duration duration,
+  required Curve curve,
+}) {
   if (!context.mounted || controller.positions.length != 1) return false;
 
   final position = controller.position;
@@ -286,7 +390,7 @@ bool _scrollContextToHorizontalCenterNow(ScrollController controller, BuildConte
   if ((target - position.pixels).abs() < 0.5) return true;
 
   if (animate) {
-    unawaited(controller.animateTo(target, duration: const Duration(milliseconds: 150), curve: Curves.easeOut));
+    unawaited(controller.animateTo(target, duration: duration, curve: curve));
   } else {
     controller.jumpTo(target);
   }

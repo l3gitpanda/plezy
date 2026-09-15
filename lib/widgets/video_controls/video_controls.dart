@@ -41,6 +41,7 @@ import '../../mpv/mpv.dart';
 import '../overlay_sheet.dart';
 import '../../focus/dpad_navigator.dart';
 import '../../focus/focus_navigation_intent.dart';
+import '../../focus/transport_keys.dart';
 
 import '../../database/app_database.dart';
 import '../../media/media_backend.dart';
@@ -56,6 +57,7 @@ import '../../focus/key_event_utils.dart';
 import '../../services/keyboard_shortcuts_service.dart';
 import '../../services/device_adjustment_service.dart';
 import '../../services/scrub_preview_source.dart';
+import '../../services/scoped_player_prefs.dart';
 import '../../services/settings_service.dart';
 import '../../services/video_volume_controller.dart';
 import '../../utils/codec_utils.dart';
@@ -93,6 +95,7 @@ import '../../models/shader_preset.dart';
 import '../../providers/playback_state_provider.dart';
 import '../../providers/shader_provider.dart';
 import '../../services/shader_service.dart';
+import '../../watch_together/providers/watch_together_provider.dart';
 
 part 'parts/key_events.dart';
 part 'parts/markers.dart';
@@ -300,6 +303,7 @@ class PlayerNavigationCoordinator {
   final bool Function() isChromePresented;
   final Future<bool> Function() exitFullscreenIfActive;
   final bool Function() _physicalEscapeExitsFullscreen;
+  final bool Function() _exitPlayerBeforeChrome;
   final VoidCallback exitPlayer;
   final VoidCallback navigateHome;
   final bool Function() isActive;
@@ -313,14 +317,17 @@ class PlayerNavigationCoordinator {
     required this.isChromePresented,
     required this.exitFullscreenIfActive,
     bool Function()? physicalEscapeExitsFullscreen,
+    bool Function()? exitPlayerBeforeChrome,
     required this.exitPlayer,
     required this.navigateHome,
     bool Function()? isActive,
   }) : _physicalEscapeExitsFullscreen = physicalEscapeExitsFullscreen ?? _alwaysTrue,
+       _exitPlayerBeforeChrome = exitPlayerBeforeChrome ?? _alwaysFalse,
        isActive = isActive ?? _alwaysActive;
 
   static bool _alwaysActive() => true;
   static bool _alwaysTrue() => true;
+  static bool _alwaysFalse() => false;
 
   void handle(PlayerNavigationKey navigationKey) {
     if (navigationKey == PlayerNavigationKey.home) {
@@ -329,6 +336,12 @@ class PlayerNavigationCoordinator {
     }
     if (isPromptOpen()) {
       dismissPrompt();
+      return;
+    }
+    if (navigationKey == PlayerNavigationKey.back && _exitPlayerBeforeChrome()) {
+      // Mobile Back exits even with the chrome up (#1938); the staged
+      // strip/fullscreen/hide/exit chain is TV and desktop behavior.
+      exitPlayer();
       return;
     }
     final disposition = resolvePlayerBackDisposition(
@@ -374,6 +387,44 @@ class PlayerNavigationCoordinator {
       _handlingPhysicalEscape = false;
     }
   }
+}
+
+/// Whether a Back press should answer a visible skip prompt instead of walking
+/// the screen's staged Back chain.
+///
+/// Mirrors the "sole affordance on screen" rule Select already uses in
+/// `_activatePlayerSurfaceSelect`: the prompt owns the key only while the
+/// chrome is down, the button is up, and the viewer can actually drive
+/// playback. With the chrome up the button is an ordinary focusable control
+/// and `skipButtonDismissed` would not hide it anyway, so Back stays the
+/// chrome's own key there; without [canControl] the button is inert, and
+/// eating a guest's exit press for a control they cannot operate is worse than
+/// leaving the prompt up.
+///
+/// Both Back flavours count. A local layer takes the dismiss key ahead of the
+/// screen's fullscreen and exit stages, the same way an open sheet already
+/// swallows a physical Escape — and Escape is only a fullscreen key when
+/// [shouldPhysicalEscapeExitFullscreen] holds, so excluding it would leave it
+/// exiting the player outright on macOS, on a windowed player, or with player
+/// navigation turned on.
+///
+/// Phones are excluded: there Back is unconditionally "leave the player"
+/// (#1938), and a stage sitting above the coordinator would quietly revoke
+/// that. So is an open playback prompt, whose own Back stage lives on the
+/// screen and would otherwise never be reached.
+bool shouldDismissSkipMarkerOnBack({
+  required PlayerNavigationKey navigationKey,
+  required bool controlsVisible,
+  required bool skipMarkerButtonVisible,
+  required bool canControl,
+  required bool isMobile,
+  required bool playbackPromptOpen,
+}) {
+  if (isMobile || playbackPromptOpen) return false;
+  if (navigationKey != PlayerNavigationKey.back && navigationKey != PlayerNavigationKey.physicalEscape) {
+    return false;
+  }
+  return canControl && !controlsVisible && skipMarkerButtonVisible;
 }
 
 // ignore: unused-code
@@ -479,20 +530,6 @@ bool shouldSkipDuplicateTimelineSeek({required Duration? lastDispatchedSeek, req
   return lastDispatchedSeek == finalSeek;
 }
 
-/// A user transport intent. `play`/`pause` are *directed* — a remote with
-/// dedicated buttons must not flip the state it explicitly asked for.
-enum TransportCommand { play, pause, toggle }
-
-/// Maps hardware media transport keys to their intent. Returns null for keys
-/// that are not transport keys (including the configured play/pause hotkey,
-/// which callers resolve to [TransportCommand.toggle] themselves).
-TransportCommand? classifyTransportKey(LogicalKeyboardKey key) {
-  if (key == LogicalKeyboardKey.mediaPlay) return TransportCommand.play;
-  if (key == LogicalKeyboardKey.mediaPause) return TransportCommand.pause;
-  if (key == LogicalKeyboardKey.mediaPlayPause) return TransportCommand.toggle;
-  return null;
-}
-
 /// Directional seeking with the chrome hidden owns the whole key burst —
 /// repeats accelerate in place rather than escalating to the timeline — so
 /// both the initial press and its repeats perform a step.
@@ -549,6 +586,11 @@ class PlexVideoControls extends StatefulWidget {
   /// playback state around the native player seek.
   final Future<void> Function(Duration position)? onSeekRequested;
 
+  /// Called for app-level playback-rate requests (speed sheet, keyboard
+  /// shortcuts, long-press 2x) so the owning screen can apply the rate and
+  /// declare it to a Watch Together room. Falls back to [Player.setRate].
+  final Future<void> Function(double rate)? onRateRequested;
+
   /// Called for app-level transport requests so the owning screen can track
   /// user playback intent separately from transient buffering state, and
   /// announce the accepted command.
@@ -578,6 +620,12 @@ class PlexVideoControls extends StatefulWidget {
   /// Optional focus node for Play Next dialog button (for TV navigation from timeline)
   final FocusNode? playNextFocusNode;
 
+  /// Whether a screen-level playback prompt (e.g. "Still watching?") owns the
+  /// remote. The Play Next dialog announces itself through
+  /// [playNextFocusNode]; the others have no node here, and a local layer must
+  /// not answer a Back the prompt is waiting for.
+  final bool playbackPromptOpen;
+
   /// Shared controller for player chrome visibility, auto-hide, and layout state.
   final PlayerChromeController chromeController;
 
@@ -602,11 +650,8 @@ class PlexVideoControls extends StatefulWidget {
   /// Whether playback is at the live edge
   final bool isAtLiveEdge;
 
-  /// Epoch seconds corresponding to player position 0 (for live TV)
-  final double streamStartEpoch;
-
-  /// Current playback position as absolute epoch seconds (for live TV)
-  final int? currentPositionEpoch;
+  /// Maps a player-local position to absolute epoch seconds for live TV.
+  final int Function(Duration position)? liveEpochForPosition;
 
   /// Seek callback for live TV time-shift (absolute epoch seconds; scrubber)
   final ValueChanged<int>? onLiveSeek;
@@ -678,6 +723,7 @@ class PlexVideoControls extends StatefulWidget {
     this.onSubtitleTrackChanged,
     this.onSecondarySubtitleTrackChanged,
     this.onSeekRequested,
+    this.onRateRequested,
     this.onPlayPauseRequested,
     this.onSeekCompleted,
     this.onBack,
@@ -686,6 +732,7 @@ class PlexVideoControls extends StatefulWidget {
     required this.canNavigateMediaItems,
     this.hasFirstFrame,
     this.playNextFocusNode,
+    this.playbackPromptOpen = false,
     required this.chromeController,
     this.shaderService,
     this.onShaderChanged,
@@ -694,8 +741,7 @@ class PlexVideoControls extends StatefulWidget {
     this.liveChannelName,
     this.captureBuffer,
     this.isAtLiveEdge = true,
-    this.streamStartEpoch = 0,
-    this.currentPositionEpoch,
+    this.liveEpochForPosition,
     this.onLiveSeek,
     this.onLiveSeekBy,
     this.onJumpToLive,
@@ -732,8 +778,11 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
   SettingsService get _settings => SettingsService.instance;
   int get _seekTimeSmall => _settings.read(SettingsService.seekTimeSmall);
   int get _rewindOnResume => _settings.read(SettingsService.rewindOnResume);
-  int get _audioSyncOffset => _settings.read(SettingsService.audioSyncOffset);
-  int get _subtitleSyncOffset => _settings.read(SettingsService.subtitleSyncOffset);
+  // Resolved through the configured sync-offset scope so the sheet rows, the
+  // tune indicator, and the sync-slider seed agree with the value the player
+  // actually applies (video_player_screen resolves the same way).
+  int get _audioSyncOffset => ScopedPlayerPrefs.resolve(ScopedPlayerPrefs.audioSyncOffset, widget.metadata);
+  int get _subtitleSyncOffset => ScopedPlayerPrefs.resolve(ScopedPlayerPrefs.subtitleSyncOffset, widget.metadata);
   bool get _isRotationLocked => _settings.read(SettingsService.rotationLocked);
   bool _isScreenLocked = false; // Touch lock during playback
   bool _showLockIcon = false; // Whether to show the lock overlay icon
@@ -750,7 +799,7 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
   double _doubleTapFeedbackOpacity = 0.0;
   bool _lastDoubleTapWasForward = true;
   Timer? _feedbackTimer;
-  int _accumulatedSkipSeconds = 0; // Stacking skip: total skip during active feedback
+  final ValueNotifier<int> _accumulatedSkipSeconds = ValueNotifier<int>(0);
   // Desktop double-click detection (more reliable than Flutter's onDoubleTap).
   // The mobile skip zones do not use this; they pair off _singleTapTimer.
   DateTime? _lastSkipTapTime;
@@ -771,6 +820,7 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
   ));
   double? _edgeAdjustmentStartValue;
   bool _edgeAdjustmentWasActive = false;
+  MobileEdgeAdjustmentSide? _edgeAdjustmentActiveSide;
   MobileEdgeAdjustmentSide? _pendingEdgeAdjustmentSide;
   double _pendingEdgeAdjustmentDelta = 0.0;
   int? _pendingEdgeAdjustmentGeneration;
@@ -795,6 +845,9 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
   int _hiddenSeekRepeatCount = 0;
   // Current marker state
   MediaMarker? _currentMarker;
+
+  /// Latched for the whole Back press; see [_handleLocalPlayerNavigationKeyEvent].
+  bool _skipMarkerOwnsBackPress = false;
   late List<MediaMarker> _markers = widget.initialMarkers ?? [];
   late bool _markersLoaded = widget.initialMarkers != null;
   // Playback state subscription for auto-hide timer
@@ -803,12 +856,13 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
   StreamSubscription<bool>? _completedSubscription;
   // Position subscription for marker tracking
   StreamSubscription<Duration>? _positionSubscription;
-  // Auto-skip state
-  bool get _autoSkipIntro => _settings.read(SettingsService.autoSkipIntro);
-  bool get _autoSkipCredits => _settings.read(SettingsService.autoSkipCredits);
+  // Skip-marker state
+  SkipMarkerMode _skipModeFor(MediaMarker marker) =>
+      _settings.read(marker.isCredits ? SettingsService.skipCreditsMode : SettingsService.skipIntroMode);
   int get _autoSkipDelay => _settings.read(SettingsService.autoSkipDelay);
   Timer? _autoSkipTimer;
-  double _autoSkipProgress = 0.0;
+  final ValueNotifier<double> _autoSkipProgress = ValueNotifier<double>(0.0);
+  final ValueNotifier<bool> _autoSkipActive = ValueNotifier<bool>(false);
   // Skip button dismiss state
   bool _skipButtonDismissed = false;
   Timer? _skipButtonDismissTimer;
@@ -843,6 +897,7 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
     _lastControlsVisible = widget.chromeController.controlsVisible;
     _controlsMounted = _lastControlsVisible;
     _controlsOpaque = _lastControlsVisible;
+    if (_controlsOpaque) widget.chromeController.markControlsOpaque();
     // Horizontal arrows stay the player's even with navigation enabled: with
     // the chrome down they run a hidden seek (see parts/key_events.dart), so
     // they are not evidence of a focus session. Up/Down raises the chrome and
@@ -886,9 +941,13 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
       SettingsService.rewindOnResume,
       SettingsService.audioSyncOffset,
       SettingsService.subtitleSyncOffset,
+      // The sync-offset getters resolve through ScopedPlayerPrefs, so scoped
+      // writes and scope changes must rebuild too.
+      SettingsService.scopedPlayerPrefValues,
+      SettingsService.syncOffsetScope,
       SettingsService.rotationLocked,
-      SettingsService.autoSkipIntro,
-      SettingsService.autoSkipCredits,
+      SettingsService.skipIntroMode,
+      SettingsService.skipCreditsMode,
       SettingsService.autoSkipDelay,
       SettingsService.videoPlayerNavigationEnabled,
       SettingsService.showPerformanceOverlay,
@@ -896,6 +955,10 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
       SettingsService.clickVideoTogglesPlayback,
       SettingsService.showChapterMarkersOnTimeline,
     ]);
+    // A marker kind switched Off while inside one of its markers must drop the
+    // prompt now, not on the next position tick (paused playback never ticks).
+    bindEffect(SettingsService.skipIntroMode, (_) => _syncCurrentMarkerForCurrentPosition(), fireImmediately: false);
+    bindEffect(SettingsService.skipCreditsMode, (_) => _syncCurrentMarkerForCurrentPosition(), fireImmediately: false);
     widget.chromeController.addListener(_onChromeChanged);
     _configureChromeController();
     widget.chromeController.setPlaying(widget.player.state.playing);
@@ -904,12 +967,12 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
     _listenToPlayingState();
     _listenToCompleted();
     _checkPipSupport();
-    _deviceAdjustmentService.onResume = _refreshDeviceAdjustmentValues;
+    _deviceAdjustmentService.onResume = _handleDeviceAdjustmentResume;
     _deviceAdjustmentService.setRestoreSuppressed(_pipService.isPipActive.value);
     _pipService.isPipActive.addListener(_onEdgeAdjustmentPipChanged);
     _edgeAdjustmentLifecycleListener = AppLifecycleListener(
-      onResume: _refreshDeviceAdjustmentValues,
-      onShow: _refreshDeviceAdjustmentValues,
+      onResume: _handleDeviceAdjustmentResume,
+      onShow: _handleDeviceAdjustmentResume,
       onHide: _cancelEdgeAdjustmentGesture,
       onPause: _cancelEdgeAdjustmentGesture,
     );
@@ -945,7 +1008,7 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
       // shortcut.
       if (!_focusPlayPauseIfKeyboardMode()) _claimPlayerSurfaceFocus();
       if (PlatformDetector.isMobile(context) && !PlatformDetector.isTV()) {
-        _refreshDeviceAdjustmentValues();
+        _handleDeviceAdjustmentResume();
       }
     });
   }
@@ -953,7 +1016,11 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
   void _setControlsState(VoidCallback fn) => setStateIfMounted(fn);
 
   void _configureChromeController() {
-    widget.chromeController.configure(hideDelay: _hideDelay, hasFirstFrame: widget.hasFirstFrame?.value ?? true);
+    widget.chromeController.configure(
+      hideDelay: _hideDelay,
+      hasFirstFrame: widget.hasFirstFrame?.value ?? true,
+      directionalNavigation: playerDirectionalNavigationEnabled(),
+    );
   }
 
   @override
@@ -970,6 +1037,7 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
       _lastControlsVisible = widget.chromeController.controlsVisible;
       _controlsMounted = _lastControlsVisible;
       _controlsOpaque = _lastControlsVisible;
+      if (_controlsOpaque) widget.chromeController.markControlsOpaque();
       widget.chromeController.addListener(_onChromeChanged);
     }
     // The same controls instance survives in-place episode swaps — re-key
@@ -1005,12 +1073,15 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
     widget.hasFirstFrame?.removeListener(_onFirstFrameReady);
     _feedbackTimer?.cancel();
     _feedbackHideTimer?.cancel();
+    _accumulatedSkipSeconds.dispose();
     _lockIconTimer?.cancel();
     _edgeAdjustmentIndicatorHideTimer?.cancel();
     _edgeAdjustmentIndicatorClearTimer?.cancel();
     _edgeAdjustmentLifecycleListener?.dispose();
     _edgeAdjustmentLifecycleListener = null;
     _autoSkipTimer?.cancel();
+    _autoSkipProgress.dispose();
+    _autoSkipActive.dispose();
     _skipButtonDismissTimer?.cancel();
     _singleTapTimer?.cancel();
     _seekThrottle.cancel();
@@ -1120,8 +1191,10 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
     // reclaim re-tests `hasFocus` when it runs, so once the surface holds the
     // remote the two no longer compete.
     if (!mounted || _focusNode.hasFocus) return;
-    // A route pushed above the player still leaves these controls mounted;
-    // re-activating the window must not pull the remote off the top route.
+    // A route pushed above the player on this navigator still leaves these
+    // controls mounted; re-activating the window must not pull the remote off
+    // the top route. (A root-navigator cover is handled for the whole session
+    // by CoveredRouteFocusBoundary, which makes the claim a no-op.)
     if (ModalRoute.of(context)?.isCurrent != true) return;
     _claimPlayerSurfaceFocus();
   }
@@ -1133,6 +1206,10 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
   @override
   Widget build(BuildContext context) {
     final isMobile = PlatformDetector.isMobile(context) && !PlatformDetector.isTV();
+    // Auto-hide only fades the performance card out; the same flag also has to
+    // stop its 500 ms native stats poll, which would otherwise keep running
+    // behind a fully transparent widget.
+    final performanceOverlayVisible = !_autoHidePerformanceOverlay || _showControls;
 
     // Hide ALL controls when in PiP mode (except macOS where main window stays visible)
     return ValueListenableBuilder<bool>(
@@ -1215,6 +1292,11 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
                                     if (_controlsMounted) {
                                       setState(() => _controlsMounted = false);
                                     }
+                                  } else {
+                                    // The fade-in genuinely completed, so a later
+                                    // hide() can rely on a real fade-out retiring
+                                    // controlsPresented via markControlsHidden.
+                                    widget.chromeController.markControlsOpaque();
                                   }
                                 },
                                 child: Builder(
@@ -1282,7 +1364,7 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
                                                       onSeekCompleted: widget.onSeekCompleted,
                                                       onPlayPause: () => unawaited(_playOrPause()),
                                                       onCancelAutoHide: widget.chromeController.cancelAutoHide,
-                                                      onStartAutoHide: widget.chromeController.startAutoHide,
+                                                      onStartAutoHide: _startHideTimer,
                                                       onBack: widget.onBack,
                                                       onNext: _abandoningBurst(widget.onNext),
                                                       onPrevious: _abandoningBurst(widget.onPrevious),
@@ -1293,7 +1375,7 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
                                                       liveChannelName: widget.liveChannelName,
                                                       captureBuffer: widget.captureBuffer,
                                                       isAtLiveEdge: widget.isAtLiveEdge,
-                                                      streamStartEpoch: widget.streamStartEpoch,
+                                                      liveEpochForPosition: widget.liveEpochForPosition,
                                                       onLiveSeek: _liveSeekAbandoningBurst(widget.onLiveSeek),
                                                       serverId: widget.metadata.serverId,
                                                       showQueueTab: canShowQueue,
@@ -1328,9 +1410,12 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
                         child: AnimatedOpacity(
                           opacity: _doubleTapFeedbackOpacity,
                           duration: tokens(context).slow,
-                          child: DoubleTapFeedback(
-                            isForward: _lastDoubleTapWasForward,
-                            seconds: _accumulatedSkipSeconds,
+                          child: RepaintBoundary(
+                            child: DoubleTapFeedback(
+                              isForward: _lastDoubleTapWasForward,
+                              seconds: _accumulatedSkipSeconds,
+                              animate: _doubleTapFeedbackOpacity > 0.0,
+                            ),
                           ),
                         ),
                       ),
@@ -1425,9 +1510,11 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
                       child: Align(
                         alignment: Alignment.topLeft,
                         child: AnimatedOpacity(
-                          opacity: (!_autoHidePerformanceOverlay || _showControls) ? 1.0 : 0.0,
+                          opacity: performanceOverlayVisible ? 1.0 : 0.0,
                           duration: const Duration(milliseconds: 200),
-                          child: IgnorePointer(child: PlayerPerformanceOverlay(player: widget.player)),
+                          child: IgnorePointer(
+                            child: PlayerPerformanceOverlay(player: widget.player, active: performanceOverlayVisible),
+                          ),
                         ),
                       ),
                     ),

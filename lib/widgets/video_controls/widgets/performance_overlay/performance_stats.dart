@@ -1,4 +1,5 @@
 import '../../../../i18n/strings.g.dart';
+import '../../../../utils/codec_utils.dart';
 
 /// Data model for video player performance statistics.
 ///
@@ -12,6 +13,10 @@ class PerformanceStats {
   final int? videoHeight;
   final double? videoFps;
   final String? hwdecCurrent;
+
+  /// mpv's active video output (`current-vo`), when the producing platform
+  /// knows it. Null on the ExoPlayer path and wherever it is not polled.
+  final String? currentVo;
   final int? videoBitrate;
   final String? aspectName;
   final int? rotate;
@@ -34,6 +39,10 @@ class PerformanceStats {
   final int? audioBitrate;
   final String? audioDecoderName;
 
+  /// mpv `audio-params/format` when it names an IEC 61937 bitstream
+  /// ('spdif-eac3'); null when audio is decoded locally.
+  final String? audioPassthroughFormat;
+
   final bool tunneledPlayback;
   final String? tunnelingStatus;
 
@@ -54,12 +63,10 @@ class PerformanceStats {
   final String dvConversionMode;
   final int? dvConvertedRpus;
   final int? dvRpuConversionFailures;
-  final int? dvRpuOutputTooSmall;
   final int? dvAvgRpuConversionUs;
   final int? dvAvgSampleProcessingUs;
   final int? dvSourceProfile;
   final String? dvPlaybackPath;
-  final String? dvPlaybackReason;
 
   final int? appMemoryBytes;
   final double? uiFps;
@@ -71,6 +78,7 @@ class PerformanceStats {
     this.videoHeight,
     this.videoFps,
     this.hwdecCurrent,
+    this.currentVo,
     this.videoBitrate,
     this.aspectName,
     this.rotate,
@@ -89,6 +97,7 @@ class PerformanceStats {
     this.audioChannels,
     this.audioBitrate,
     this.audioDecoderName,
+    this.audioPassthroughFormat,
     this.tunneledPlayback = false,
     this.tunnelingStatus,
     this.actualFps,
@@ -106,12 +115,10 @@ class PerformanceStats {
     this.dvConversionMode = '',
     this.dvConvertedRpus,
     this.dvRpuConversionFailures,
-    this.dvRpuOutputTooSmall,
     this.dvAvgRpuConversionUs,
     this.dvAvgSampleProcessingUs,
     this.dvSourceProfile,
     this.dvPlaybackPath,
-    this.dvPlaybackReason,
     this.appMemoryBytes,
     this.uiFps,
   });
@@ -124,6 +131,7 @@ class PerformanceStats {
       videoHeight = null,
       videoFps = null,
       hwdecCurrent = null,
+      currentVo = null,
       videoBitrate = null,
       aspectName = null,
       rotate = null,
@@ -142,6 +150,7 @@ class PerformanceStats {
       audioChannels = null,
       audioBitrate = null,
       audioDecoderName = null,
+      audioPassthroughFormat = null,
       tunneledPlayback = false,
       tunnelingStatus = null,
       actualFps = null,
@@ -159,12 +168,10 @@ class PerformanceStats {
       dvConversionMode = '',
       dvConvertedRpus = null,
       dvRpuConversionFailures = null,
-      dvRpuOutputTooSmall = null,
       dvAvgRpuConversionUs = null,
       dvAvgSampleProcessingUs = null,
       dvSourceProfile = null,
       dvPlaybackPath = null,
-      dvPlaybackReason = null,
       appMemoryBytes = null,
       uiFps = null;
 
@@ -206,6 +213,17 @@ class PerformanceStats {
     return '${khz.toStringAsFixed(1)} kHz';
   }
 
+  /// Whether audio is bitstreamed to the device instead of decoded locally.
+  bool get audioPassthrough => audioPassthroughFormat != null;
+
+  /// Format the bitstreamed codec ('spdif-eac3' → 'E-AC3').
+  String get audioPassthroughFormatted {
+    final format = audioPassthroughFormat;
+    if (format == null) return t.common.notAvailable;
+    final codec = format.startsWith('spdif-') ? format.substring('spdif-'.length) : format;
+    return CodecUtils.formatAudioCodec(codec);
+  }
+
   /// Format FPS with 2 decimal places.
   String get actualFpsFormatted {
     if (actualFps == null) return t.common.notAvailable;
@@ -232,7 +250,12 @@ class PerformanceStats {
     return '${mb.toStringAsFixed(1)} MB';
   }
 
-  /// Format cache limit in MB.
+  /// Format the resident cache ceiling in MB.
+  ///
+  /// [cacheLimit] is the forward *plus* back demuxer bound: with
+  /// `demuxer-donate-buffer` (on by default) the back cache absorbs forward
+  /// bytes the reader has not claimed, so the sum is the only number that
+  /// bounds what the process holds.
   String get cacheLimitFormatted {
     if (cacheLimit == null || cacheLimit! <= 0) return t.common.notAvailable;
     final mb = cacheLimit! / (1024 * 1024);
@@ -258,8 +281,25 @@ class PerformanceStats {
     return displayFps!.toStringAsFixed(0);
   }
 
+  /// Whether the active video output can count dropped frames at all.
+  ///
+  /// mpv's `frame-drop-count` only increments for a frame admitted after its
+  /// own end time (`vo.c`), and the fork's `vo_mediacodec` declares
+  /// `prepare_frame`, which makes mpv hand frames over a full preparation
+  /// lead *before* their pts - so that condition is never true in normal
+  /// playback. `decoder-frame-drop-count` is the `--framedrop=decoder` path,
+  /// which Plezy does not enable. A GL vo (`gpu`/`gpu-next`, every software
+  /// Android session and every desktop/Apple one) has no `prepare_frame` and
+  /// mpv's counters do work there.
+  bool get _voCountsDroppedFrames => currentVo != 'mediacodec';
+
   /// Format dropped frames count.
+  ///
+  /// Reported unavailable rather than as a confident `0` where the vo cannot
+  /// produce the number: an overlay showing no drops through visible stutter
+  /// sent reporters and maintainers looking in the wrong place.
   String get droppedFramesFormatted {
+    if (!_voCountsDroppedFrames) return t.common.notAvailable;
     final total = (frameDropCount ?? 0) + (decoderFrameDropCount ?? 0);
     return total.toString();
   }

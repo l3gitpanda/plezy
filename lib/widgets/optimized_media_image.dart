@@ -10,6 +10,7 @@ import '../services/device_performance.dart';
 import '../utils/app_logger.dart';
 import '../utils/media_image_helper.dart';
 import '../utils/obfuscation_utils.dart';
+import '../utils/tone_mapped_logo_image.dart';
 
 /// Tracks recent image load failures to log a periodic summary instead of
 /// spamming per-image. Resets after [_logInterval] so recurring issues
@@ -58,12 +59,9 @@ class OptimizedMediaImage extends StatelessWidget {
   final double? width;
   final double? height;
   final BoxFit fit;
-  final FilterQuality filterQuality;
   final Widget Function(BuildContext, String)? placeholder;
   final Widget Function(BuildContext, String, dynamic)? errorWidget;
   final Duration fadeInDuration;
-  final bool enableTranscoding;
-  final String? cacheKey;
   final Alignment alignment;
   final IconData? fallbackIcon;
   final ImageType imageType;
@@ -73,6 +71,16 @@ class OptimizedMediaImage extends StatelessWidget {
   /// Black tint applied at image paint time without an opacity save layer.
   final Animation<double>? artworkDim;
 
+  /// Recolors light-toned logo artwork toward this theme foreground so it
+  /// stays legible on light surfaces (see [ToneMappedLogoImage]). Applies to
+  /// both the network and local-file decode paths.
+  final Color? logoToneTarget;
+
+  /// Forwards [ToneMappedLogoImage.remapMixed]: heroes pass false so marks
+  /// with significant color render untouched; the guide's channel cells keep
+  /// the default and remap mixed marks too.
+  final bool logoToneRemapMixed;
+
   const OptimizedMediaImage._({
     super.key,
     this.client,
@@ -80,17 +88,16 @@ class OptimizedMediaImage extends StatelessWidget {
     this.width,
     this.height,
     this.fit = BoxFit.cover,
-    this.filterQuality = FilterQuality.medium,
     this.placeholder,
     this.errorWidget,
     this.fadeInDuration = const Duration(milliseconds: 300),
-    this.enableTranscoding = true,
-    this.cacheKey,
     this.alignment = Alignment.center,
     this.fallbackIcon,
     this.imageType = ImageType.poster,
     this.localFilePath,
     this.artworkDim,
+    this.logoToneTarget,
+    this.logoToneRemapMixed = true,
     this.cacheMissingLocalFile = false,
   });
 
@@ -102,17 +109,16 @@ class OptimizedMediaImage extends StatelessWidget {
     double? width,
     double? height,
     BoxFit fit,
-    FilterQuality filterQuality,
     Widget Function(BuildContext, String)? placeholder,
     Widget Function(BuildContext, String, dynamic)? errorWidget,
     Duration fadeInDuration,
-    bool enableTranscoding,
-    String? cacheKey,
     Alignment alignment,
     IconData? fallbackIcon,
     ImageType imageType,
     String? localFilePath,
     Animation<double>? artworkDim,
+    Color? logoToneTarget,
+    bool logoToneRemapMixed,
     bool cacheMissingLocalFile,
   }) = OptimizedMediaImage._;
 
@@ -124,12 +130,9 @@ class OptimizedMediaImage extends StatelessWidget {
     double? width,
     double? height,
     BoxFit fit = BoxFit.cover,
-    FilterQuality filterQuality = FilterQuality.medium,
     Widget Function(BuildContext, String)? placeholder,
     Widget Function(BuildContext, String, dynamic)? errorWidget,
     Duration fadeInDuration = const Duration(milliseconds: 300),
-    bool enableTranscoding = true,
-    String? cacheKey,
     Alignment alignment = Alignment.center,
     IconData? fallbackIcon,
     String? localFilePath,
@@ -141,12 +144,9 @@ class OptimizedMediaImage extends StatelessWidget {
          width: width,
          height: height,
          fit: fit,
-         filterQuality: filterQuality,
          placeholder: placeholder,
          errorWidget: errorWidget,
          fadeInDuration: fadeInDuration,
-         enableTranscoding: enableTranscoding,
-         cacheKey: cacheKey,
          alignment: alignment,
          fallbackIcon: fallbackIcon ?? Symbols.movie_rounded,
          imageType: ImageType.poster,
@@ -162,15 +162,14 @@ class OptimizedMediaImage extends StatelessWidget {
     double? width,
     double? height,
     BoxFit fit = BoxFit.cover,
-    FilterQuality filterQuality = FilterQuality.medium,
     Widget Function(BuildContext, String)? placeholder,
     Widget Function(BuildContext, String, dynamic)? errorWidget,
     Duration fadeInDuration = const Duration(milliseconds: 300),
-    bool enableTranscoding = true,
-    String? cacheKey,
     Alignment alignment = Alignment.center,
     IconData? fallbackIcon,
     String? localFilePath,
+    Color? logoToneTarget,
+    bool logoToneRemapMixed = true,
     Animation<double>? artworkDim,
   }) : this._(
          key: key,
@@ -179,53 +178,15 @@ class OptimizedMediaImage extends StatelessWidget {
          width: width,
          height: height,
          fit: fit,
-         filterQuality: filterQuality,
          placeholder: placeholder,
          errorWidget: errorWidget,
          fadeInDuration: fadeInDuration,
-         enableTranscoding: enableTranscoding,
-         cacheKey: cacheKey,
          alignment: alignment,
          fallbackIcon: fallbackIcon ?? Symbols.video_library_rounded,
          imageType: ImageType.thumb,
          localFilePath: localFilePath,
-         artworkDim: artworkDim,
-       );
-
-  /// Named constructor for playlist images.
-  const OptimizedMediaImage.playlist({
-    Key? key,
-    MediaServerClient? client,
-    required String? imagePath,
-    double? width,
-    double? height,
-    BoxFit fit = BoxFit.cover,
-    FilterQuality filterQuality = FilterQuality.medium,
-    Widget Function(BuildContext, String)? placeholder,
-    Widget Function(BuildContext, String, dynamic)? errorWidget,
-    Duration fadeInDuration = const Duration(milliseconds: 300),
-    bool enableTranscoding = true,
-    String? cacheKey,
-    Alignment alignment = Alignment.center,
-    String? localFilePath,
-    Animation<double>? artworkDim,
-  }) : this._(
-         key: key,
-         client: client,
-         imagePath: imagePath,
-         width: width,
-         height: height,
-         fit: fit,
-         filterQuality: filterQuality,
-         placeholder: placeholder,
-         errorWidget: errorWidget,
-         fadeInDuration: fadeInDuration,
-         enableTranscoding: enableTranscoding,
-         cacheKey: cacheKey,
-         alignment: alignment,
-         fallbackIcon: Symbols.playlist_play_rounded,
-         imageType: ImageType.poster,
-         localFilePath: localFilePath,
+         logoToneTarget: logoToneTarget,
+         logoToneRemapMixed: logoToneRemapMixed,
          artworkDim: artworkDim,
        );
 
@@ -233,6 +194,10 @@ class OptimizedMediaImage extends StatelessWidget {
   /// meaning we can skip the LayoutBuilder.
   bool get _hasKnownDimensions =>
       width != null && width!.isFinite && width! > 0 && height != null && height!.isFinite && height! > 0;
+
+  /// Not a constructor parameter: the filter has to follow the fetch density,
+  /// not the call site.
+  FilterQuality _filterQuality(BuildContext context) => MediaImageHelper.artworkFilterQuality(context, imageType);
 
   @override
   Widget build(BuildContext context) {
@@ -280,19 +245,23 @@ class OptimizedMediaImage extends StatelessWidget {
   }
 
   Widget _buildLocalFileImage(BuildContext context, File file, double effectiveWidth, double effectiveHeight) {
-    final dpr = MediaImageHelper.effectiveDevicePixelRatio(context);
-    final scaledWidth = effectiveWidth * dpr;
-    final scaledHeight = effectiveHeight * dpr;
+    final pixelRatio = MediaImageHelper.artworkPixelRatio(context, imageType: imageType);
+    final scaledWidth = effectiveWidth * pixelRatio;
+    final scaledHeight = effectiveHeight * pixelRatio;
     final (memWidth, memHeight) = MediaImageHelper.getMemCacheDimensions(
       displayWidth: scaledWidth.isFinite && scaledWidth > 0 ? scaledWidth.round() : 0,
       displayHeight: scaledHeight.isFinite && scaledHeight > 0 ? scaledHeight.round() : 0,
       imageType: imageType,
     );
+    final bounded = MediaImageHelper.boundedDecode(FileImage(file), memWidth: memWidth, memHeight: memHeight);
+    final provider = logoToneTarget == null
+        ? bounded
+        : ToneMappedLogoImage(bounded, target: logoToneTarget!, remapMixed: logoToneRemapMixed);
 
     return _withArtworkDim(
       artworkDim,
       (tint) => Image(
-        image: MediaImageHelper.boundedDecode(FileImage(file), memWidth: memWidth, memHeight: memHeight),
+        image: provider,
         width: width,
         height: height,
         // Artwork is decorative: the enclosing card exposes one merged node
@@ -300,7 +269,7 @@ class OptimizedMediaImage extends StatelessWidget {
         // the TV a11y services make Flutter rebuild every frame.
         excludeFromSemantics: true,
         fit: fit,
-        filterQuality: filterQuality,
+        filterQuality: _filterQuality(context),
         alignment: alignment,
         color: tint,
         colorBlendMode: tint == null ? null : BlendMode.srcATop,
@@ -328,15 +297,14 @@ class OptimizedMediaImage extends StatelessWidget {
   }
 
   Widget _buildCachedImage(BuildContext context, double effectiveWidth, double effectiveHeight) {
-    final devicePixelRatio = MediaImageHelper.effectiveDevicePixelRatio(context);
+    final pixelRatio = MediaImageHelper.artworkPixelRatio(context, imageType: imageType);
 
     final imageUrl = MediaImageHelper.getOptimizedImageUrl(
       client: client,
       thumbPath: imagePath,
       maxWidth: effectiveWidth,
       maxHeight: effectiveHeight,
-      devicePixelRatio: devicePixelRatio,
-      enableTranscoding: enableTranscoding,
+      pixelRatio: pixelRatio,
       imageType: imageType,
     );
 
@@ -350,8 +318,8 @@ class OptimizedMediaImage extends StatelessWidget {
       return _buildFallback(context);
     }
 
-    final scaledWidth = effectiveWidth * devicePixelRatio;
-    final scaledHeight = effectiveHeight * devicePixelRatio;
+    final scaledWidth = effectiveWidth * pixelRatio;
+    final scaledHeight = effectiveHeight * pixelRatio;
     final (memWidth, memHeight) = MediaImageHelper.getMemCacheDimensions(
       displayWidth: scaledWidth.isFinite && scaledWidth > 0 ? scaledWidth.round() : 0,
       displayHeight: scaledHeight.isFinite && scaledHeight > 0 ? scaledHeight.round() : 0,
@@ -362,7 +330,8 @@ class OptimizedMediaImage extends StatelessWidget {
       imageUrl: imageUrl,
       memWidth: memWidth,
       memHeight: memHeight,
-      cacheKey: cacheKey,
+      logoToneTarget: logoToneTarget,
+      logoToneRemapMixed: logoToneRemapMixed,
     );
 
     // Reduced tier: swap in directly, no fade machinery at all.
@@ -376,7 +345,7 @@ class OptimizedMediaImage extends StatelessWidget {
           // Decorative — see the Image.file branch.
           excludeFromSemantics: true,
           fit: fit,
-          filterQuality: filterQuality,
+          filterQuality: _filterQuality(context),
           alignment: alignment,
           color: tint,
           colorBlendMode: tint == null ? null : BlendMode.srcATop,
@@ -394,7 +363,7 @@ class OptimizedMediaImage extends StatelessWidget {
       width: width,
       height: height,
       fit: fit,
-      filterQuality: filterQuality,
+      filterQuality: _filterQuality(context),
       alignment: alignment,
       duration: fadeInDuration,
       placeholderBuilder: (context) => _buildPlaceholder(context, imageUrl),
@@ -483,13 +452,13 @@ class OptimizedMediaImage extends StatelessWidget {
 /// `CachedNetworkImage` instead decodes under `ResizeImagePolicy.exact`, which
 /// pins the logo to whatever ratio those two bounds happen to have.
 ///
-/// Plex serves logos with `minSize=1&upscale=1`, so the transcode covers the
-/// requested box on both axes (a 4313×1035 logo asked for at 1200×360 comes
-/// back 1500×360, aspect intact). `exact` then clamps neither axis down to the
-/// source and squashes the logo to the bound ratio: on a phone at DPR 3 the
-/// 400×120 hero slot decodes to exactly 1000×360 — the width capped by
-/// [MediaImageHelper.getMemCacheDimensions] — turning a 4.17∶1 logo into
-/// 2.78∶1.
+/// Plex serves logos as fitting transcodes (`minSize=0&upscale=0`), so the
+/// image comes back inside the requested box with aspect intact (a 4313×1035
+/// logo asked for at 1200×360 comes back 1200×288). `exact` ignores the
+/// source ratio and decodes to whatever ratio the two bounds happen to have:
+/// on a phone at DPR 3 the 400×120 hero slot decodes to exactly 1000×360 —
+/// the width capped by [MediaImageHelper.getMemCacheDimensions] — turning a
+/// 4.17∶1 logo into 2.78∶1.
 ///
 /// [fallbackBuilder] renders the title in place of the logo when the path is
 /// missing, the URL can't be built, or the image fails to load.
@@ -503,6 +472,7 @@ class ClearLogoImage extends StatelessWidget {
     required this.fallbackBuilder,
     this.alignment = Alignment.centerLeft,
     this.fadeInDuration = const Duration(milliseconds: 300),
+    this.logoToneTarget,
   });
 
   final MediaServerClient? client;
@@ -512,6 +482,10 @@ class ClearLogoImage extends StatelessWidget {
   final WidgetBuilder fallbackBuilder;
   final Alignment alignment;
   final Duration fadeInDuration;
+
+  /// See [OptimizedMediaImage.logoToneTarget]; heroes pass a target when the
+  /// backdrop behind the logo is scrimmed toward a light background.
+  final Color? logoToneTarget;
 
   @override
   Widget build(BuildContext context) {
@@ -530,6 +504,10 @@ class ClearLogoImage extends StatelessWidget {
               alignment: alignment,
               imageType: ImageType.heroLogo,
               fadeInDuration: fadeInDuration,
+              logoToneTarget: logoToneTarget,
+              // Clear logos render on heroes where a mark's color is part of
+              // its identity: mixed-tone marks stay untouched.
+              logoToneRemapMixed: false,
               placeholder: (context, _) => const SizedBox.shrink(),
               errorWidget: (context, _, _) => fallbackBuilder(context),
             ),

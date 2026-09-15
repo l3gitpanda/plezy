@@ -148,7 +148,8 @@ class _FakeCatalogSourcesProvider extends CatalogSourcesProvider {
   }
 
   @override
-  Future<void> setActiveSource(CatalogSourceId id) async {
+  Future<void> setActiveSource(CatalogSourceId? id, {void Function()? checkCurrent}) async {
+    checkCurrent?.call();
     if (_activeId == id) return;
     _activeId = id;
     notifyListeners();
@@ -180,15 +181,16 @@ Future<_FakeCatalogSourcesProvider> _pumpExplore(
   final mal = _FakeCatalogSource(CatalogSourceId.mal, 'MyAnimeList', malItemId);
   final anilist = _FakeCatalogSource(CatalogSourceId.anilist, 'AniList', 3);
   final simkl = _FakeCatalogSource(CatalogSourceId.simkl, 'Simkl', 4);
+  final mdblist = _FakeCatalogSource(CatalogSourceId.mdblist, 'MDBList', 5);
   final plex = _FakeCatalogSource(
     CatalogSourceId.plex,
     'Plex',
-    5,
+    6,
     providerHubTitle: 'Trending on Plex',
     providerHubStyle: plexHubStyle,
   );
-  final seerr = _FakeCatalogSource(CatalogSourceId.seerr, 'Seerr', 6);
-  final sources = _FakeCatalogSourcesProvider([trakt, mal, anilist, simkl, plex, seerr]);
+  final seerr = _FakeCatalogSource(CatalogSourceId.seerr, 'Seerr', 7);
+  final sources = _FakeCatalogSourcesProvider([trakt, mal, anilist, simkl, mdblist, plex, seerr]);
   final explore = ExploreProvider(sources);
   addTearDown(explore.dispose);
   addTearDown(sources.dispose);
@@ -196,6 +198,7 @@ Future<_FakeCatalogSourcesProvider> _pumpExplore(
   addTearDown(mal.dispose);
   addTearDown(anilist.dispose);
   addTearDown(simkl.dispose);
+  addTearDown(mdblist.dispose);
   addTearDown(plex.dispose);
   addTearDown(seerr.dispose);
 
@@ -299,16 +302,16 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.select);
     await tester.pumpAndSettle();
 
-    for (final name in ['Trakt', 'MyAnimeList', 'AniList', 'Simkl', 'Plex', 'Seerr']) {
+    for (final name in ['Trakt', 'MyAnimeList', 'AniList', 'Simkl', 'MDBList', 'Plex', 'Seerr']) {
       expect(find.text(name), findsAtLeast(1));
     }
-    expect(find.byType(CatalogSourceLogo), findsAtLeast(6));
+    expect(find.byType(CatalogSourceLogo), findsAtLeast(7));
 
-    await tester.tap(find.text('AniList'));
+    await tester.tap(find.text('MDBList'));
     await tester.pumpAndSettle();
-    expect(sources.activeSource?.id, CatalogSourceId.anilist);
-    expect(find.text('AniList'), findsOneWidget);
-    expect(find.text('AniList Movie'), findsAtLeast(1));
+    expect(sources.activeSource?.id, CatalogSourceId.mdblist);
+    expect(find.text('MDBList'), findsOneWidget);
+    expect(find.text('MDBList Movie'), findsAtLeast(1));
   });
 
   testWidgets('a null-style Plex provider hub keeps the existing Explore shelf', (tester) async {

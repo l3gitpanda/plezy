@@ -19,6 +19,8 @@ extension _PlexVideoControlsMarkerMethods on _PlexVideoControlsState {
 
     MediaMarker? foundMarker;
     for (final marker in _markers) {
+      // An Off marker kind plays through as if the server had sent no marker.
+      if (_skipModeFor(marker) == SkipMarkerMode.off) continue;
       if (marker.containsPosition(position)) {
         foundMarker = marker;
         break;
@@ -35,7 +37,8 @@ extension _PlexVideoControlsMarkerMethods on _PlexVideoControlsState {
         _currentMarker != null ||
         _skipButtonDismissed ||
         _autoSkipTimer != null ||
-        _autoSkipProgress != 0.0 ||
+        _autoSkipActive.value ||
+        _autoSkipProgress.value != 0.0 ||
         _skipButtonDismissTimer != null;
     if (!hasMarkerState) return;
 
@@ -133,11 +136,9 @@ extension _PlexVideoControlsMarkerMethods on _PlexVideoControlsState {
     _cancelAutoSkipTimer();
     if (!_hasRenderedFirstFrame) return;
 
-    final shouldAutoSkip = (marker.isCredits && _autoSkipCredits) || (!marker.isCredits && _autoSkipIntro);
+    if (!_shouldAutoSkipForMarker(marker) || _autoSkipDelay <= 0) return;
 
-    if (!shouldAutoSkip || _autoSkipDelay <= 0) return;
-
-    _autoSkipProgress = 0.0;
+    _autoSkipProgress.value = 0.0;
     const tickDuration = Duration(milliseconds: 200);
     final totalTicks = (_autoSkipDelay * 1000) / tickDuration.inMilliseconds;
 
@@ -146,28 +147,29 @@ extension _PlexVideoControlsMarkerMethods on _PlexVideoControlsState {
     _autoSkipTimer = Timer.periodic(tickDuration, (timer) {
       if (!mounted || _currentMarker != marker) {
         timer.cancel();
+        if (mounted) _autoSkipActive.value = false;
         return;
       }
 
-      _setControlsState(() {
-        _autoSkipProgress = (timer.tick / totalTicks).clamp(0.0, 1.0);
-      });
+      _autoSkipProgress.value = (timer.tick / totalTicks).clamp(0.0, 1.0);
 
       if (timer.tick >= totalTicks) {
         timer.cancel();
+        _autoSkipActive.value = false;
         _performAutoSkip(skipAutoPlayCountdown: true);
       }
     });
+    _autoSkipActive.value = true;
   }
 
   void _cancelAutoSkipTimer() {
     final hadTimer = _autoSkipTimer != null;
     _autoSkipTimer?.cancel();
     _autoSkipTimer = null;
-    if (mounted && (hadTimer || _autoSkipProgress != 0.0)) {
-      _setControlsState(() {
-        _autoSkipProgress = 0.0;
-      });
+    if (!mounted) return;
+    _autoSkipActive.value = false;
+    if (hadTimer || _autoSkipProgress.value != 0.0) {
+      _autoSkipProgress.value = 0.0;
     }
   }
 
@@ -211,9 +213,7 @@ extension _PlexVideoControlsMarkerMethods on _PlexVideoControlsState {
     unawaited(_skipMarker(skipAutoPlayCountdown: skipAutoPlayCountdown));
   }
 
-  bool _shouldAutoSkipForMarker(MediaMarker marker) {
-    return (marker.isCredits && _autoSkipCredits) || (!marker.isCredits && _autoSkipIntro);
-  }
+  bool _shouldAutoSkipForMarker(MediaMarker marker) => _skipModeFor(marker) == SkipMarkerMode.auto;
 
   bool _shouldShowAutoSkip() {
     if (_currentMarker == null) return false;
@@ -234,19 +234,50 @@ extension _PlexVideoControlsMarkerMethods on _PlexVideoControlsState {
     _performAutoSkip();
   }
 
+  /// The viewer's "no thanks" to a skip prompt: stops any running auto-skip
+  /// countdown and hides the button for the rest of this marker.
+  ///
+  /// The mirror of [_activateSkipMarker]. The focus hand-back carries its own
+  /// chrome guard rather than relying on the caller's: with the chrome up the
+  /// button stays visible and keeps focus, so releasing it there would pull the
+  /// remote off a control the viewer can still see.
+  void _dismissSkipMarker() {
+    if (!_isSkipMarkerButtonVisible) return;
+    // Cancelled here rather than left to the global key handler's
+    // _cancelAutoSkipFromUserInteraction: gamepad and companion-remote presses
+    // are synthesized straight onto the focus chain and never reach
+    // HardwareKeyboard, so for those this is the only thing that stops the
+    // countdown.
+    _cancelAutoSkipTimer();
+    _cancelSkipButtonDismissTimer();
+    _setControlsState(() {
+      _skipButtonDismissed = true;
+    });
+    if (!_showControls) _releaseSkipMarkerFocusToSurface();
+  }
+
   Widget _buildSkipMarkerButton() {
-    final isAutoSkipActive = _autoSkipTimer?.isActive ?? false;
-    return SkipMarkerButton(
-      marker: _currentMarker!,
-      playerDuration: widget.player.state.duration,
-      hasNextEpisode: widget.onNext != null,
-      isAutoSkipActive: isAutoSkipActive,
-      shouldShowAutoSkip: _shouldShowAutoSkip(),
-      autoSkipDelay: _autoSkipDelay,
-      autoSkipProgress: _autoSkipProgress,
-      focusNode: _skipMarkerFocusNode,
-      onActivate: _activateSkipMarker,
-      onFocusDown: () => _desktopControlsKey.currentState?.requestPlayPauseFocus(),
+    return ValueListenableBuilder<double>(
+      valueListenable: _autoSkipProgress,
+      builder: (context, autoSkipProgress, _) {
+        return ValueListenableBuilder<bool>(
+          valueListenable: _autoSkipActive,
+          builder: (context, isAutoSkipActive, _) {
+            return SkipMarkerButton(
+              marker: _currentMarker!,
+              playerDuration: widget.player.state.duration,
+              hasNextEpisode: widget.onNext != null,
+              isAutoSkipActive: isAutoSkipActive,
+              shouldShowAutoSkip: _shouldShowAutoSkip(),
+              autoSkipDelay: _autoSkipDelay,
+              autoSkipProgress: autoSkipProgress,
+              focusNode: _skipMarkerFocusNode,
+              onActivate: _activateSkipMarker,
+              onFocusDown: () => _desktopControlsKey.currentState?.requestPlayPauseFocus(),
+            );
+          },
+        );
+      },
     );
   }
 }

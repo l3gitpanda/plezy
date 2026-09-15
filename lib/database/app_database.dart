@@ -37,15 +37,6 @@ enum OfflineActionType {
     OfflineActionType.watched => 'watched',
     OfflineActionType.unwatched => 'unwatched',
   };
-
-  /// Inverse of [id]. Throws on unknown so a typo in production doesn't
-  /// silently fall back to the wrong action.
-  static OfflineActionType fromId(String id) => switch (id) {
-    'progress' => OfflineActionType.progress,
-    'watched' => OfflineActionType.watched,
-    'unwatched' => OfflineActionType.unwatched,
-    _ => throw ArgumentError('Unknown OfflineActionType id: $id'),
-  };
 }
 
 final class AppDatabaseBootstrap {
@@ -67,6 +58,7 @@ final class AppDatabaseBootstrap {
     Connections,
     Profiles,
     ProfileConnections,
+    MusicSessions,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -81,7 +73,6 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase._withRecovery(super.e, this._recoveryStore);
 
   final TvosDatabaseRecoveryStore? _recoveryStore;
-  final SerialFutureQueue _durabilityQueue = SerialFutureQueue();
   static final Object _durabilityZoneKey = Object();
   static final SerialFutureQueue _tvosRecoveryQueue = SerialFutureQueue();
 
@@ -156,12 +147,10 @@ class AppDatabase extends _$AppDatabase {
     final store = _recoveryStore;
     if (store == null || !store.isTvos) return Future<void>.value();
 
-    return _durabilityQueue.run(
-      () => _tvosRecoveryQueue.run(
-        () => store.acknowledgeRecoveryRequired(
-          readIdentity: _readProtectedIdentityRecoveryRows,
-          readPending: _readPendingRecoveryRows,
-        ),
+    return _tvosRecoveryQueue.run(
+      () => store.acknowledgeRecoveryRequired(
+        readIdentity: _readProtectedIdentityRecoveryRows,
+        readPending: _readPendingRecoveryRows,
       ),
     );
   }
@@ -175,17 +164,15 @@ class AppDatabase extends _$AppDatabase {
     if (store == null || !store.isTvos) return mutation();
     if (Zone.current[_durabilityZoneKey] == this) return mutation();
 
-    return _durabilityQueue.run(
-      () => _tvosRecoveryQueue.run(
-        () => runZoned(
-          () => store.runDurableMutation(
-            group: group,
-            mutation: mutation,
-            readIdentity: _readProtectedIdentityRecoveryRows,
-            readPending: _readPendingRecoveryRows,
-          ),
-          zoneValues: {_durabilityZoneKey: this},
+    return _tvosRecoveryQueue.run(
+      () => runZoned(
+        () => store.runDurableMutation(
+          group: group,
+          mutation: mutation,
+          readIdentity: _readProtectedIdentityRecoveryRows,
+          readPending: _readPendingRecoveryRows,
         ),
+        zoneValues: {_durabilityZoneKey: this},
       ),
     );
   }
@@ -324,6 +311,14 @@ class AppDatabase extends _$AppDatabase {
     });
   }
 
+  /// Columns that once existed in a snapshotted table and may still appear in
+  /// committed recovery images written by older builds. They are stripped
+  /// before the strict round-trip check in [_decodeRecoveryRow] so retiring a
+  /// column does not brick restore on devices holding a pre-retirement image.
+  static const Map<String, Set<String>> _retiredRecoveryColumns = {
+    'connections': {'isDefault'},
+  };
+
   static List<T> _decodeRecoveryRows<T extends DataClass>(
     Map<String, Object?> group,
     String key,
@@ -331,9 +326,21 @@ class AppDatabase extends _$AppDatabase {
   ) {
     final value = group[key];
     if (value is! List) throw _invalidRecoveryImage;
+    final retired = _retiredRecoveryColumns[key];
     return [
       for (final row in value)
-        if (row is Map<String, dynamic>) _decodeRecoveryRow(row, fromJson) else throw _invalidRecoveryImage,
+        if (row is Map<String, dynamic>)
+          _decodeRecoveryRow(
+            retired == null
+                ? row
+                : {
+                    for (final entry in row.entries)
+                      if (!retired.contains(entry.key)) entry.key: entry.value,
+                  },
+            fromJson,
+          )
+        else
+          throw _invalidRecoveryImage,
     ];
   }
 
@@ -359,7 +366,7 @@ class AppDatabase extends _$AppDatabase {
   static const FormatException _invalidRecoveryImage = FormatException('Invalid tvOS database recovery image');
 
   @override
-  int get schemaVersion => 20;
+  int get schemaVersion => 22;
 
   @override
   MigrationStrategy get migration {
@@ -725,6 +732,14 @@ class AppDatabase extends _$AppDatabase {
             () => m.create(idxSyncRuleDownloadsProfileKey),
           );
         }
+        if (from < 21) {
+          appLogger.i('Dropping unused Connections.isDefault column (v21 migration)');
+          await m.alterTable(TableMigration(connections));
+        }
+        if (from < 22) {
+          appLogger.i('Adding MusicSessions table (v22 migration)');
+          await _ignoreAlreadyExists('MusicSessions table', () => m.createTable(musicSessions));
+        }
       },
     );
   }
@@ -1057,25 +1072,6 @@ class AppDatabase extends _$AppDatabase {
     });
   }
 
-  /// Delete a specific watch action outside a snapshotted replay.
-  Future<void> deleteWatchAction(int id) {
-    return _runPendingMutation(() async {
-      await (delete(offlineWatchProgress)..where((t) => t.id.equals(id))).go();
-    });
-  }
-
-  /// Update retry state outside a snapshotted replay.
-  Future<void> updateSyncAttempt(int id, String? errorMessage) {
-    return _runPendingMutation(() async {
-      final existing = await (select(offlineWatchProgress)..where((t) => t.id.equals(id))).getSingleOrNull();
-      if (existing == null) return;
-
-      await (update(offlineWatchProgress)..where((t) => t.id.equals(id))).write(
-        OfflineWatchProgressCompanion(syncAttempts: Value(existing.syncAttempts + 1), lastError: Value(errorMessage)),
-      );
-    });
-  }
-
   /// Get count of pending sync items
   Future<int> getPendingSyncCount({String? profileId, int? maxSyncAttempts}) async {
     final query = selectOnly(offlineWatchProgress)..addColumns([offlineWatchProgress.id.count()]);
@@ -1101,6 +1097,38 @@ class AppDatabase extends _$AppDatabase {
     await _runPendingMutation(() async {
       await (delete(offlineWatchProgress)..where((t) => t.profileId.equals(profileId))).go();
     });
+  }
+
+  // ===========================================================================
+  // Music session persistence (#2148)
+  // ===========================================================================
+
+  /// Full snapshot write: replaces the profile's persisted music session.
+  Future<void> upsertMusicSession(MusicSessionRow row) {
+    return into(musicSessions).insertOnConflictUpdate(row);
+  }
+
+  /// Cheap write-through for playhead/cursor changes — leaves the (possibly
+  /// large) queue JSON untouched. No-op when no snapshot row exists.
+  Future<void> updateMusicSessionProgress({
+    required String profileId,
+    required int cursor,
+    required int positionMs,
+    required int updatedAt,
+  }) async {
+    await (update(musicSessions)..where((t) => t.profileId.equals(profileId))).write(
+      MusicSessionsCompanion(cursor: Value(cursor), positionMs: Value(positionMs), updatedAt: Value(updatedAt)),
+    );
+  }
+
+  Future<MusicSessionRow?> getMusicSession(String profileId) {
+    return (select(musicSessions)..where((t) => t.profileId.equals(profileId))).getSingleOrNull();
+  }
+
+  /// Drop a profile's persisted music session (user session end or profile
+  /// teardown).
+  Future<void> deleteMusicSessionForProfile(String profileId) async {
+    await (delete(musicSessions)..where((t) => t.profileId.equals(profileId))).go();
   }
 
   Future<List<SyncRuleItem>> getSyncRules({String? profileId}) {
@@ -1266,17 +1294,41 @@ class AppDatabase extends _$AppDatabase {
     await (update(syncRules)..where((t) => t.globalKey.equals(globalKey))).write(values);
   }
 
-  Future<void> updateSyncRuleCount(String globalKey, int episodeCount) =>
-      _writeSyncRule(globalKey, SyncRulesCompanion(episodeCount: Value(episodeCount)));
-
-  Future<void> updateSyncRuleFilter(String globalKey, String downloadFilter) =>
-      _writeSyncRule(globalKey, SyncRulesCompanion(downloadFilter: Value(downloadFilter)));
-
   Future<void> updateSyncRuleEnabled(String globalKey, bool enabled) =>
       _writeSyncRule(globalKey, SyncRulesCompanion(enabled: Value(enabled)));
 
-  Future<void> updateSyncRuleLastExecuted(String globalKey) =>
-      _writeSyncRule(globalKey, SyncRulesCompanion(lastExecutedAt: Value(DateTime.now().millisecondsSinceEpoch)));
+  /// Patch one existing rule without replacing concurrent execution metadata.
+  /// The id check rejects delete/recreate races for the same target.
+  Future<SyncRuleItem> updateSyncRuleOptions(
+    SyncRuleItem expected, {
+    int? episodeCount,
+    String? downloadFilter,
+    bool? enabled,
+    bool? includeSpecials,
+    int? mediaIndex,
+    required void Function() checkCurrent,
+  }) => transaction(() async {
+    checkCurrent();
+    final current = await getSyncRule(expected.globalKey);
+    checkCurrent();
+    if (current == null || current.id != expected.id || current.profileId != expected.profileId) {
+      throw StateError('Sync rule no longer exists');
+    }
+    await (update(syncRules)..where((t) => t.id.equals(expected.id) & t.profileId.equals(expected.profileId))).write(
+      SyncRulesCompanion(
+        episodeCount: episodeCount == null ? const Value.absent() : Value(episodeCount),
+        downloadFilter: downloadFilter == null ? const Value.absent() : Value(downloadFilter),
+        enabled: enabled == null ? const Value.absent() : Value(enabled),
+        includeSpecials: includeSpecials == null ? const Value.absent() : Value(includeSpecials),
+        mediaIndex: mediaIndex == null ? const Value.absent() : Value(mediaIndex),
+      ),
+    );
+    checkCurrent();
+    final updated = await getSyncRule(expected.globalKey);
+    checkCurrent();
+    if (updated == null) throw StateError('Sync rule no longer exists');
+    return updated;
+  });
 
   Future<void> completeSyncRuleExecution(String globalKey) {
     return (update(syncRules)..where((t) => t.globalKey.equals(globalKey))).write(

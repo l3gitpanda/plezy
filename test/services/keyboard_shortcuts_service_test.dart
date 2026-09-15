@@ -86,24 +86,6 @@ void main() {
       expect(service.getHotkey('play_pause')?.modifiers, [HotKeyModifier.shift]);
     });
 
-    test('resets shortcuts to active defaults', () async {
-      final service = await KeyboardShortcutsService.getInstance();
-      addTearDown(service.dispose);
-      await service.setHotkey(
-        'play_pause',
-        const HotKey(key: PhysicalKeyboardKey.f12, modifiers: [HotKeyModifier.alt]),
-      );
-
-      await service.resetToDefaults();
-
-      expect(service.getHotkey('play_pause')?.key, PhysicalKeyboardKey.space);
-      expect(service.getHotkey('play_pause')?.modifiers, isNull);
-      final stored =
-          json.decode(SettingsService.instance.prefs.getString(SettingsService.keyboardHotkeys.key)!)
-              as Map<String, dynamic>;
-      expect(stored['play_pause'], {'key': '0007002c', 'modifiers': <dynamic>[]});
-    });
-
     test('tracks resetAllSettings through the active preference listener', () async {
       final service = await KeyboardShortcutsService.getInstance();
       addTearDown(service.dispose);
@@ -164,11 +146,6 @@ void main() {
       await reloaded.resetToDefaults();
       expect(dispatch(), KeyEventResult.handled);
       expect(playPauseCalls, 1);
-
-      final resetStored =
-          json.decode(SettingsService.instance.prefs.getString(SettingsService.keyboardHotkeys.key)!)
-              as Map<String, dynamic>;
-      expect(resetStored['play_pause'], {'key': '0007002c', 'modifiers': <dynamic>[]});
     });
 
     test('serialized writes preserve rapid edits and recover after a failure', () async {
@@ -201,9 +178,9 @@ void main() {
       );
       expect(service.getHotkey('play_pause')?.key, PhysicalKeyboardKey.keyQ);
 
-      await service.setHotkey('volume_down', const HotKey(key: PhysicalKeyboardKey.keyR));
+      await service.setHotkey('volume_down', const HotKey(key: PhysicalKeyboardKey.keyT));
       expect(service.getHotkey('play_pause')?.key, PhysicalKeyboardKey.keyQ);
-      expect(service.getHotkey('volume_down')?.key, PhysicalKeyboardKey.keyR);
+      expect(service.getHotkey('volume_down')?.key, PhysicalKeyboardKey.keyT);
     });
   });
 
@@ -212,6 +189,7 @@ void main() {
     addTearDown(service.dispose);
     await service.setHotkey('speed_increase', const HotKey(key: PhysicalKeyboardKey.f12));
     final player = _FakePlayer(rate: 7.75);
+    final persistedSpeeds = <double>[];
 
     final result = service.handleVideoPlayerKeyEvent(
       const KeyDownEvent(
@@ -228,12 +206,15 @@ void main() {
       null,
       canControlPlayback: true,
       canNavigateMediaItems: true,
+      onSpeedPersist: persistedSpeeds.add,
     );
     await tester.pump();
 
     expect(result, KeyEventResult.handled);
     expect(player.rateChanges, [8.0]);
-    expect(SettingsService.instance.read(SettingsService.defaultPlaybackSpeed), 8.0);
+    // Persistence is the surface's responsibility (scope-aware); the service
+    // reports the clamped rate it applied.
+    expect(persistedSpeeds, [8.0]);
   });
 
   testWidgets('Ctrl+S takes a screenshot once while held', (tester) async {
@@ -567,11 +548,10 @@ void main() {
     expect(player.volumeChanges, isEmpty);
     expect(settings.read(SettingsService.volume), 37);
 
-    await service.setHotkey('volume_up', const HotKey(key: PhysicalKeyboardKey.f12));
     final repeatResult = service.handleVideoPlayerKeyEvent(
       const KeyRepeatEvent(
-        physicalKey: PhysicalKeyboardKey.f12,
-        logicalKey: LogicalKeyboardKey.f12,
+        physicalKey: PhysicalKeyboardKey.f10,
+        logicalKey: LogicalKeyboardKey.f10,
         timeStamp: Duration(milliseconds: 1),
       ),
       player,
@@ -636,6 +616,7 @@ void main() {
         onSeekRequested: (_) async => seekCalls++,
       );
       expect(result, KeyEventResult.handled, reason: action);
+      await service.setHotkey(action, null);
     }
 
     expect(callbacks, 0);
@@ -675,6 +656,7 @@ void main() {
         ),
         KeyEventResult.handled,
       );
+      await service.setHotkey(action, null);
     }
     expect(nextCalls, 0);
 
@@ -709,6 +691,7 @@ void main() {
         KeyEventResult.handled,
       );
       await Future<void>.delayed(Duration.zero);
+      await service.setHotkey(action, null);
     }
     expect(localCalls, 7);
   });

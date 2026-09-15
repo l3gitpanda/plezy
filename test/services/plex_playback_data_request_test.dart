@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:plezy/media/ids.dart';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -9,9 +10,11 @@ import 'package:plezy/exceptions/media_server_exceptions.dart';
 import 'package:plezy/media/media_backend.dart';
 
 import 'package:plezy/media/media_kind.dart';
+import 'package:plezy/media/media_server_client.dart';
 import 'package:plezy/media/media_source_info.dart';
 import 'package:plezy/mpv/mpv.dart';
 import 'package:plezy/models/transcode_quality_preset.dart';
+import 'package:plezy/services/settings_service.dart';
 import 'package:plezy/services/subtitle_preference.dart';
 import 'package:plezy/services/playback_initialization_types.dart';
 import 'package:plezy/services/plex_api_cache.dart';
@@ -20,6 +23,7 @@ import 'package:plezy/utils/active_client_scope.dart';
 
 import '../test_helpers/backend_client_fixtures.dart';
 import '../test_helpers/media_items.dart';
+import '../test_helpers/prefs.dart';
 
 void main() {
   late AppDatabase db;
@@ -154,7 +158,7 @@ void main() {
     });
     addTearDown(client.close);
 
-    final saved = await client.selectStreams(99, audioStreamID: 301, allParts: true);
+    final saved = await client.selectStreams(99, audioStreamID: 301);
 
     expect(saved, isTrue);
     expect(requests, hasLength(1));
@@ -253,6 +257,145 @@ void main() {
     expect(data.mediaInfo?.subtitleTracks, hasLength(1));
     expect(data.mediaInfo?.subtitleTracks.single.id, 401);
     expect(data.mediaInfo?.subtitleTracks.single.selected, isTrue);
+  });
+
+  group('fresh-cache-first playback metadata', () {
+    // Same scope [PlexClient.getVideoPlaybackData] resolves via
+    // `ServerId(cacheServerId)` — the fixture's default profile scope.
+    final cacheScope = buildPlexProfileScopeId(
+      serverId: ServerId('server-id'),
+      profileId: 'test-profile',
+    ).cacheServerId;
+    const endpoint = '/library/metadata/42';
+
+    // The shape the detail screen caches: includeStreams + checkFiles keys
+    // (`Stream`/`exists`/`accessible`) present on the part.
+    Map<String, dynamic> richPlaybackPayload() => {
+      'MediaContainer': {
+        'Metadata': [
+          {
+            'ratingKey': '42',
+            'type': 'movie',
+            'title': 'Movie',
+            'Media': [
+              {
+                'id': 7,
+                'container': 'mkv',
+                'Part': [
+                  {
+                    'id': 99,
+                    'key': '/library/parts/99/file.mkv',
+                    'exists': true,
+                    'accessible': true,
+                    'Stream': [
+                      {'streamType': 1, 'id': 300, 'codec': 'h264'},
+                      {'streamType': 3, 'id': 401, 'index': 1, 'codec': 'ass', 'languageCode': 'eng', 'selected': true},
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    };
+
+    PlexClient makeCountingClient(List<Uri> requests) => makeClient((request) async {
+      requests.add(request.url);
+      if (request.url.path != endpoint) return http.Response('not found', 404);
+      return http.Response(jsonEncode(richPlaybackPayload()), 200, headers: {'content-type': 'application/json'});
+    });
+
+    test('fresh stream-rich cached row is served with zero network requests', () async {
+      await PlexApiCache.instance.put(cacheScope, endpoint, richPlaybackPayload());
+      final requests = <Uri>[];
+      final client = makeCountingClient(requests);
+      addTearDown(client.close);
+
+      final data = await client.getVideoPlaybackData('42');
+
+      expect(requests, isEmpty);
+      expect(data.hasValidVideoUrl, isTrue);
+      expect(data.videoUrl, contains('/library/parts/99/file.mkv'));
+      expect(data.mediaInfo?.subtitleTracks.single.id, 401);
+    });
+
+    test('forceRefresh bypasses a fresh stream-rich cached row', () async {
+      // The subtitle-download poller relies on this: it must observe the new
+      // external stream appearing server-side while the shared row is fresh.
+      await PlexApiCache.instance.put(cacheScope, endpoint, richPlaybackPayload());
+      final requests = <Uri>[];
+      final client = makeCountingClient(requests);
+      addTearDown(client.close);
+
+      final data = await client.getVideoPlaybackData('42', forceRefresh: true);
+
+      expect(requests, hasLength(1));
+      expect(requests.single.queryParameters['includeStreams'], '1');
+      expect(data.mediaInfo?.subtitleTracks.single.id, 401);
+    });
+
+    test('fresh but stream-less cached row still fetches from the network', () async {
+      // getPlaybackExtras' lean fetch overwrites the shared row without
+      // includeStreams/checkFiles; that shape must never satisfy playback.
+      await PlexApiCache.instance.put(cacheScope, endpoint, {
+        'MediaContainer': {
+          'Metadata': [
+            {
+              'ratingKey': '42',
+              'type': 'movie',
+              'title': 'Movie',
+              'Media': [
+                {
+                  'id': 7,
+                  'container': 'mkv',
+                  'Part': [
+                    {'id': 99, 'key': '/library/parts/99/file.mkv'},
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      });
+      final requests = <Uri>[];
+      final client = makeCountingClient(requests);
+      addTearDown(client.close);
+
+      final data = await client.getVideoPlaybackData('42');
+
+      expect(requests, hasLength(1));
+      expect(requests.single.queryParameters['includeStreams'], '1');
+      expect(data.mediaInfo?.subtitleTracks.single.id, 401);
+    });
+
+    test('cached row older than the freshness window fetches from the network', () async {
+      await PlexApiCache.instance.put(cacheScope, endpoint, richPlaybackPayload());
+      await (db.update(db.apiCache)..where((t) => t.cacheKey.equals('$cacheScope:$endpoint'))).write(
+        ApiCacheCompanion(
+          cachedAt: Value(DateTime.now().subtract(playbackMetadataCacheFreshness + const Duration(seconds: 1))),
+        ),
+      );
+      final requests = <Uri>[];
+      final client = makeCountingClient(requests);
+      addTearDown(client.close);
+
+      final data = await client.getVideoPlaybackData('42');
+
+      expect(requests, hasLength(1));
+      expect(data.hasValidVideoUrl, isTrue);
+    });
+
+    test('cache miss fetches from the network', () async {
+      final requests = <Uri>[];
+      final client = makeCountingClient(requests);
+      addTearDown(client.close);
+
+      final data = await client.getVideoPlaybackData('42');
+
+      expect(requests, hasLength(1));
+      expect(data.hasValidVideoUrl, isTrue);
+    });
   });
 
   test('transcode initialization burns the selected embedded stream and sidecars only the external file', () async {
@@ -1009,6 +1152,125 @@ void main() {
     );
     expect(original.containsKey('videoResolution'), isFalse);
     expect(original.containsKey('videoQuality'), isFalse);
+  });
+
+  Future<({PlaybackInitializationResult result, List<String> paths})> initializeCappedPlayback({
+    required TranscodeQualityPreset preset,
+    required int bitrateKbps,
+    required int height,
+  }) async {
+    final paths = <String>[];
+    final client = makeClient((request) async {
+      paths.add(request.url.path);
+      if (request.url.path == '/library/metadata/42') {
+        return http.Response(
+          jsonEncode({
+            'MediaContainer': {
+              'Metadata': [
+                {
+                  'ratingKey': '42',
+                  'Media': [
+                    {
+                      'id': 7,
+                      'container': 'mkv',
+                      'bitrate': bitrateKbps,
+                      'height': height,
+                      'Part': [
+                        {'id': 99, 'key': '/library/parts/99/file.mkv'},
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }
+      if (request.url.path == '/video/:/transcode/universal/decision') {
+        return http.Response(
+          jsonEncode({
+            'MediaContainer': {
+              'transcodeDecisionCode': 1001,
+              'Metadata': [
+                {
+                  'Media': [
+                    {'container': 'mp4', 'protocol': 'hls', 'selected': true},
+                  ],
+                },
+              ],
+            },
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }
+      return http.Response('unexpected request', 500);
+    });
+    try {
+      final result = await client.getPlaybackInitialization(
+        PlaybackInitializationOptions(
+          metadata: testMediaItem(id: '42', backend: MediaBackend.plex, serverId: 'server-id'),
+          selectedMediaIndex: 0,
+          qualityPreset: preset,
+          sessionIdentifier: 'session-id',
+          transcodeSessionId: 'transcode-id',
+        ),
+      );
+      return (result: result, paths: paths);
+    } finally {
+      client.close();
+    }
+  }
+
+  test('a preset the source already fits under plays the file itself (#2152)', () async {
+    final run = await initializeCappedPlayback(
+      preset: TranscodeQualityPreset.p1080_10mbps,
+      bitrateKbps: 6206,
+      height: 1080,
+    );
+
+    expect(run.paths, isNot(contains('/video/:/transcode/universal/decision')));
+    expect(run.result.isTranscoding, isFalse);
+    expect(run.result.playMethod, 'DirectPlay');
+    expect(run.result.videoUrl, contains('/library/parts/99/file.mkv'));
+    // Not a fallback: nothing failed, so the player must not report one.
+    expect(run.result.fallbackReason, isNull);
+  });
+
+  test('a source the preset would actually reduce still transcodes', () async {
+    final overBitrate = await initializeCappedPlayback(
+      preset: TranscodeQualityPreset.p1080_10mbps,
+      bitrateKbps: 13137,
+      height: 1080,
+    );
+    expect(overBitrate.paths, contains('/video/:/transcode/universal/decision'));
+    expect(overBitrate.result.playMethod, 'Transcode');
+
+    final overResolution = await initializeCappedPlayback(
+      preset: TranscodeQualityPreset.p1080_10mbps,
+      bitrateKbps: 6534,
+      height: 2160,
+    );
+    expect(overResolution.paths, contains('/video/:/transcode/universal/decision'));
+    expect(overResolution.result.playMethod, 'Transcode');
+  });
+
+  test('turning the covered-source direct play off keeps the requested transcode (#2193)', () async {
+    resetSharedPreferencesForTest();
+    await SettingsService.getInstance();
+    await SettingsService.instance.write(SettingsService.directPlayCoveredQuality, false);
+
+    final run = await initializeCappedPlayback(
+      preset: TranscodeQualityPreset.p1080_20mbps,
+      bitrateKbps: 15900,
+      height: 1080,
+    );
+
+    expect(run.paths, contains('/video/:/transcode/universal/decision'));
+    expect(run.result.isTranscoding, isTrue);
+    expect(run.result.playMethod, 'Transcode');
   });
 
   test('the TS fallback profile offers only H.264, never HEVC-in-TS', () {

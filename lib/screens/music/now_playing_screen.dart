@@ -21,11 +21,11 @@ import '../../media/media_item.dart';
 import '../../media/stepped_seek.dart';
 import '../../media/media_server_client.dart';
 import '../../mixins/context_menu_tap_mixin.dart';
+import '../../mpv/mpv.dart';
 import '../../services/device_performance.dart';
 import '../../services/music/music_playback_service.dart';
 import '../../theme/mono_motion.dart';
 import '../../theme/mono_tokens.dart';
-import '../../utils/app_logger.dart';
 import '../../utils/formatters.dart';
 import '../../utils/desktop_window_padding.dart';
 import '../../utils/media_image_helper.dart';
@@ -109,7 +109,16 @@ class _NowPlayingScreenState extends State<NowPlayingScreen>
       // Surface playback failures while the screen is open — the service
       // already recovers (skip / stop) by itself.
       _errorsSub = service.errors.listen((error) {
-        if (mounted) showErrorSnackBar(context, t.messages.errorLoading(error: error.toString()));
+        if (!mounted) return;
+        // The init sentinel deliberately carries no prose, so `toString()`
+        // would put its class name in front of the user; it gets the same
+        // localized copy the video player shows.
+        showErrorSnackBar(
+          context,
+          error is PlayerInitializationException
+              ? t.messages.playbackFailed
+              : t.messages.errorLoading(error: error.toString()),
+        );
       });
     }
   }
@@ -179,20 +188,13 @@ class _NowPlayingScreenState extends State<NowPlayingScreen>
     _dismissSettle.forward(from: 0);
   }
 
-  /// Artist line tap — the track's grandparent is the artist. Mirrors the
-  /// album screen's artist link (fetch, then navigate; soft-fail).
+  /// Artist line tap — the track's grandparent is the artist. Shares the
+  /// album screen's fetch-then-navigate flow via [openArtistById].
   Future<void> _openArtist(MediaItem track) async {
     final artistId = track.grandparentId;
     final client = context.getMediaClientForItemOrNull(track);
     if (artistId == null || client == null) return;
-    MediaItem? artist;
-    try {
-      artist = await client.fetchItem(artistId);
-    } catch (e) {
-      appLogger.w('Failed to fetch artist $artistId for track ${track.id}', error: e);
-    }
-    if (artist == null || !mounted) return;
-    await navigateToArtist(context, artist);
+    await openArtistById(context, client, artistId);
   }
 
   Future<void> _showSleepTimerSheet() async {

@@ -1,12 +1,9 @@
-import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
-import 'package:plezy/focus/input_mode_tracker.dart';
-import 'package:plezy/i18n/strings.g.dart';
 import 'package:plezy/models/seerr/seerr_session.dart';
 import 'package:plezy/providers/seerr_account_provider.dart';
 import 'package:plezy/screens/settings/seerr_connect_screen.dart';
@@ -15,302 +12,197 @@ import 'package:plezy/services/seerr/seerr_constants.dart';
 import 'package:plezy/theme/mono_theme.dart';
 import 'package:provider/provider.dart';
 
-typedef _RequestHandler = Future<http.Response> Function(http.Request request);
+/// Records what the connect flow produced instead of persisting it: the real
+/// store writes through the credential vault.
+class _RecordingAccount extends SeerrAccountProvider {
+  _RecordingAccount(SeerrAuthService authService) : super(authService: authService);
 
-http.Response _json(Object body, {int status = 200, Map<String, String>? headers}) => http.Response(
-  jsonEncode(body),
-  status,
-  headers: {'content-type': 'application/json', ...?headers},
-);
+  SeerrSession? adopted;
 
-Map<String, Object?> _publicSettings({
-  required bool mediaServerLogin,
-  required int mediaServerType,
-  bool localLogin = false,
-}) => {
+  @override
+  Future<void> adoptSession(SeerrSession session) async => adopted = session;
+}
+
+http.Response _json(Object body, {int status = 200, Map<String, String>? headers}) =>
+    http.Response(jsonEncode(body), status, headers: {'content-type': 'application/json', ...?headers});
+
+Map<String, Object?> _publicSettings({int mediaServerType = SeerrMediaServerType.jellyfin}) => {
   'initialized': true,
-  'applicationTitle': 'Test Seerr',
-  'localLogin': localLogin,
-  'mediaServerLogin': mediaServerLogin,
+  'applicationTitle': 'Requests',
+  'localLogin': false,
+  'mediaServerLogin': true,
   'mediaServerType': mediaServerType,
 };
 
-Map<String, Object?> _user() => {
-  'id': 7,
-  'displayName': 'Alice',
-  'permissions': 2,
-  'avatar': '/avatar.png',
-};
-
-class _RecordingSeerrAccountProvider extends SeerrAccountProvider {
-  _RecordingSeerrAccountProvider({required super.authService});
-
-  SeerrSession? adoptedSession;
-
-  @override
-  Future<void> adoptSession(SeerrSession session) async {
-    adoptedSession = session;
-  }
-}
-
-_RecordingSeerrAccountProvider _provider(_RequestHandler handler) {
-  return _RecordingSeerrAccountProvider(
-    authService: SeerrAuthService(
-      httpClientFactory: () => MockClient(handler),
-    ),
+/// A Seerr that answers only on plain HTTP at its default port — the LAN setup
+/// that used to fail because the form assumed https.
+SeerrAuthService _plainHttpLanInstance({int mediaServerType = SeerrMediaServerType.jellyfin}) {
+  return SeerrAuthService(
+    httpClientFactory: () => MockClient((request) async {
+      if (request.url.scheme != 'http' || request.url.port != SeerrConstants.defaultPort) {
+        throw http.ClientException('connection refused', request.url);
+      }
+      return _json(_publicSettings(mediaServerType: mediaServerType));
+    }),
   );
 }
 
-Widget _app(_RecordingSeerrAccountProvider provider, Widget home) {
-  return TranslationProvider(
-    child: ChangeNotifierProvider<SeerrAccountProvider>.value(
-      value: provider,
-      child: InputModeTracker(
-        child: MaterialApp(theme: monoTheme(dark: true), home: home),
-      ),
-    ),
+/// The same instance, plus the Quick Connect proxy routes. [approved] gates the
+/// poll; [initiateStatus] simulates an instance without the routes.
+SeerrAuthService _quickConnectInstance({bool approved = true, int initiateStatus = 200}) {
+  return SeerrAuthService(
+    httpClientFactory: () => MockClient((request) async {
+      switch (request.url.path) {
+        case '/api/v1/settings/public':
+          return _json(_publicSettings());
+        case '/api/v1/auth/jellyfin/quickconnect/initiate':
+          if (initiateStatus != 200) return _json({'message': 'Not Found'}, status: initiateStatus);
+          return _json({'code': 'ABC123', 'secret': 'qc-secret'});
+        case '/api/v1/auth/jellyfin/quickconnect/check':
+          return _json({'authenticated': approved});
+        case '/api/v1/auth/jellyfin/quickconnect/authenticate':
+          return _json(
+            {'id': 3, 'displayName': 'Alice', 'permissions': 2},
+            headers: {'set-cookie': '${SeerrConstants.sessionCookieName}=fresh; Path=/'},
+          );
+        case '/api/v1/auth/me':
+          // Sign-in reads the user back through /auth/me with the fresh cookie.
+          expect(request.headers['Cookie'], '${SeerrConstants.sessionCookieName}=fresh');
+          return _json({'id': 3, 'displayName': 'Alice', 'permissions': 2});
+      }
+      throw http.ClientException('unexpected ${request.url.path}', request.url);
+    }),
   );
-}
-
-Future<void> _pumpScreen(
-  WidgetTester tester,
-  _RecordingSeerrAccountProvider provider,
-) async {
-  await tester.pumpWidget(_app(provider, const SeerrConnectScreen()));
-  await tester.pump();
-}
-
-Future<void> _probe(WidgetTester tester) async {
-  await tester.enterText(
-    find.byType(TextField).first,
-    'https://seerr.example.com',
-  );
-  await tester.tap(find.text(t.seerr.checkServer));
-  // The probe response is immediate, but crosses the HTTP and runAsync
-  // futures before scheduling the credential-form frame.
-  await tester.pump();
-  await tester.pump();
 }
 
 void main() {
-  group('Seerr Jellyfin Quick Connect availability', () {
-    for (final scenario
-        in <
-          ({
-            String name,
-            bool mediaServerLogin,
-            int mediaServerType,
-            bool localLogin,
-            bool expected,
-          })
-        >[
-          (
-            name: 'is shown for a Jellyfin instance with media sign-in enabled',
-            mediaServerLogin: true,
-            mediaServerType: SeerrMediaServerType.jellyfin,
-            localLogin: false,
-            expected: true,
-          ),
-          (
-            name: 'is hidden for an Emby instance',
-            mediaServerLogin: true,
-            mediaServerType: SeerrMediaServerType.emby,
-            localLogin: false,
-            expected: false,
-          ),
-          (
-            name: 'is hidden when media-server sign-in is disabled',
-            mediaServerLogin: false,
-            mediaServerType: SeerrMediaServerType.jellyfin,
-            localLogin: true,
-            expected: false,
-          ),
-        ]) {
-      testWidgets(scenario.name, (tester) async {
-        final provider = _provider((request) async {
-          expect(request.url.path, '/api/v1/settings/public');
-          return _json(
-            _publicSettings(
-              mediaServerLogin: scenario.mediaServerLogin,
-              mediaServerType: scenario.mediaServerType,
-              localLogin: scenario.localLogin,
-            ),
-          );
-        });
-        addTearDown(provider.dispose);
+  late _RecordingAccount account;
 
-        await _pumpScreen(tester, provider);
-        await _probe(tester);
+  tearDown(() => account.dispose());
 
-        expect(
-          find.text(t.auth.useQuickConnect),
-          scenario.expected ? findsOneWidget : findsNothing,
-        );
-      });
-    }
-  });
-
-  testWidgets('shows the returned code and cancel restores credentials', (
-    tester,
-  ) async {
-    final checkStarted = Completer<void>();
-    final checkResponse = Completer<http.Response>();
-    var authenticateCalls = 0;
-    final provider = _provider((request) async {
-      switch (request.url.path) {
-        case '/api/v1/settings/public':
-          return _json(
-            _publicSettings(
-              mediaServerLogin: true,
-              mediaServerType: SeerrMediaServerType.jellyfin,
-            ),
-          );
-        case '/api/v1/auth/jellyfin/quickconnect/initiate':
-          return _json({'code': '654321', 'secret': 'abcdef123456'});
-        case '/api/v1/auth/jellyfin/quickconnect/check':
-          if (!checkStarted.isCompleted) checkStarted.complete();
-          return checkResponse.future;
-        case '/api/v1/auth/jellyfin/quickconnect/authenticate':
-          authenticateCalls++;
-          return _json(_user());
-        default:
-          fail('Unexpected request: ${request.method} ${request.url}');
-      }
-    });
-    addTearDown(provider.dispose);
-
-    await _pumpScreen(tester, provider);
-    await _probe(tester);
-    expect(find.byType(TextField), findsNWidgets(2));
-
-    await tester.tap(find.text(t.auth.useQuickConnect));
-    await tester.pump();
-    await tester.pump();
-
-    expect(find.text('654321'), findsOneWidget);
-    expect(find.text(t.auth.quickConnectWaiting), findsOneWidget);
-    expect(checkStarted.isCompleted, isTrue);
-    expect(find.byType(TextField), findsNothing);
-
-    await tester.tap(find.text(t.auth.quickConnectCancel));
-    await tester.pump();
-
-    expect(find.text('654321'), findsNothing);
-    expect(find.text(t.auth.useQuickConnect), findsOneWidget);
-    expect(find.byType(TextField), findsNWidgets(2));
-
-    // Release the in-flight check after cancellation. Even an approval must
-    // not proceed to the final exchange once the attempt is stale.
-    checkResponse.complete(_json({'authenticated': true}));
-    await tester.pump();
-    await tester.pump();
-    expect(authenticateCalls, 0);
-  });
-
-  testWidgets('an initiation 404 keeps credential login and shows an error', (
-    tester,
-  ) async {
-    final provider = _provider((request) async {
-      switch (request.url.path) {
-        case '/api/v1/settings/public':
-          return _json(
-            _publicSettings(
-              mediaServerLogin: true,
-              mediaServerType: SeerrMediaServerType.jellyfin,
-            ),
-          );
-        case '/api/v1/auth/jellyfin/quickconnect/initiate':
-          return _json({'message': 'Not Found'}, status: 404);
-        default:
-          fail('Unexpected request: ${request.method} ${request.url}');
-      }
-    });
-    addTearDown(provider.dispose);
-
-    await _pumpScreen(tester, provider);
-    await _probe(tester);
-    await tester.tap(find.text(t.auth.useQuickConnect));
-    await tester.pump();
-    await tester.pump();
-
-    expect(find.text(t.auth.useQuickConnect), findsOneWidget);
-    expect(find.byType(TextField), findsNWidgets(2));
-    expect(find.text(t.addServer.quickConnectRejected), findsOneWidget);
-  });
-
-  testWidgets('an approved flow adopts the cookie-backed Seerr session', (
-    tester,
-  ) async {
-    final checkStarted = Completer<void>();
-    final checkResponse = Completer<http.Response>();
-    final provider = _provider((request) async {
-      switch (request.url.path) {
-        case '/api/v1/settings/public':
-          return _json(
-            _publicSettings(
-              mediaServerLogin: true,
-              mediaServerType: SeerrMediaServerType.jellyfin,
-            ),
-          );
-        case '/api/v1/auth/jellyfin/quickconnect/initiate':
-          return _json({'code': '123456', 'secret': 'abcdef123456'});
-        case '/api/v1/auth/jellyfin/quickconnect/check':
-          if (!checkStarted.isCompleted) checkStarted.complete();
-          return checkResponse.future;
-        case '/api/v1/auth/jellyfin/quickconnect/authenticate':
-          expect(jsonDecode(request.body), {'secret': 'abcdef123456'});
-          return _json(
-            _user(),
-            headers: {
-              'set-cookie': '${SeerrConstants.sessionCookieName}=fresh-qc; Path=/; HttpOnly',
-            },
-          );
-        default:
-          fail('Unexpected request: ${request.method} ${request.url}');
-      }
-    });
-    addTearDown(provider.dispose);
-
-    late Future<bool?> routeResult;
-    await tester.pumpWidget(
-      _app(
-        provider,
-        Builder(
-          builder: (context) => Scaffold(
-            body: Center(
-              child: TextButton(
-                onPressed: () {
-                  routeResult = Navigator.of(context).push<bool>(
-                    MaterialPageRoute<bool>(
-                      builder: (_) => const SeerrConnectScreen(),
-                    ),
-                  );
-                },
-                child: const Text('Open Seerr connect'),
+  Widget app(SeerrAuthService auth, {ValueChanged<Future<bool?>>? onRoute}) {
+    account = _RecordingAccount(auth);
+    return ChangeNotifierProvider<SeerrAccountProvider>.value(
+      value: account,
+      child: MaterialApp(
+        theme: monoTheme(dark: true),
+        home: onRoute == null
+            ? const SeerrConnectScreen()
+            : Builder(
+                builder: (context) => TextButton(
+                  onPressed: () => onRoute(
+                    Navigator.of(context).push<bool>(MaterialPageRoute(builder: (_) => const SeerrConnectScreen())),
+                  ),
+                  child: const Text('Open route'),
+                ),
               ),
-            ),
-          ),
+      ),
+    );
+  }
+
+  Future<void> submitUrl(WidgetTester tester, String input) async {
+    await tester.enterText(find.byType(TextField).first, input);
+    await tester.testTextInput.receiveAction(TextInputAction.go);
+    await tester.pumpAndSettle();
+  }
+
+  /// The waiting panel hosts a perpetual spinner, so `pumpAndSettle` would
+  /// never return — pump bounded frames instead.
+  Future<void> pumpFrames(WidgetTester tester) async {
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pump(const Duration(milliseconds: 50));
+  }
+
+  testWidgets('a schemeless address reaches a plain-HTTP instance on the default port', (tester) async {
+    await tester.pumpWidget(app(_plainHttpLanInstance()));
+    await submitUrl(tester, 'seerr.lan');
+
+    // The URL that answered is what the sign-in and the session will use.
+    expect(find.text('http://seerr.lan:5055'), findsOneWidget);
+    expect(find.text('Requests'), findsOneWidget);
+  });
+
+  testWidgets('an unreachable address keeps the URL step with the primary candidate named', (tester) async {
+    await tester.pumpWidget(
+      app(
+        SeerrAuthService(
+          httpClientFactory: () =>
+              MockClient((request) async => throw http.ClientException('connection refused', request.url)),
         ),
       ),
     );
-    await tester.tap(find.text('Open Seerr connect'));
-    await tester.pumpAndSettle();
-    await _probe(tester);
-    await tester.tap(find.text(t.auth.useQuickConnect));
-    await tester.pump();
-    await tester.pump();
-    expect(checkStarted.isCompleted, isTrue);
+    await submitUrl(tester, 'seerr.lan');
 
-    checkResponse.complete(_json({'authenticated': true}));
+    expect(find.textContaining('https://seerr.lan'), findsOneWidget);
+    expect(find.byType(TextField), findsWidgets);
+  });
+
+  testWidgets('Quick Connect is offered for a Jellyfin-backed instance', (tester) async {
+    await tester.pumpWidget(app(_plainHttpLanInstance()));
+    await submitUrl(tester, 'seerr.lan');
+
+    expect(find.text('Use Quick Connect'), findsOneWidget);
+  });
+
+  testWidgets('Quick Connect is withheld from an Emby-backed instance', (tester) async {
+    // Seerr rejects its Quick Connect routes for Emby, so the affordance is
+    // gated on the linked media server, not on the instance answering at all.
+    await tester.pumpWidget(app(_plainHttpLanInstance(mediaServerType: SeerrMediaServerType.emby)));
+    await submitUrl(tester, 'seerr.lan');
+
+    expect(find.text('Use Quick Connect'), findsNothing);
+    // Emby's only path stays reachable.
+    expect(find.text('Sign in'), findsOneWidget);
+  });
+
+  testWidgets('Quick Connect shows the code and cancel restores the form', (tester) async {
+    await tester.pumpWidget(app(_quickConnectInstance(approved: false)));
+    await submitUrl(tester, 'https://seerr.example.com');
+
+    await tester.tap(find.text('Use Quick Connect'));
+    await pumpFrames(tester);
+
+    expect(find.text('ABC123'), findsOneWidget);
+    expect(find.byType(TextField), findsNothing);
+
+    await tester.tap(find.text('Cancel'));
     await tester.pump();
+
+    expect(find.text('ABC123'), findsNothing);
+    expect(find.byType(TextField), findsWidgets);
+    expect(account.adopted, isNull);
+
+    // Let the cancelled poll's backoff timer fire so the test ends clean.
+    await tester.pump(SeerrConstants.quickConnectPollInterval * 2);
+  });
+
+  testWidgets('approving the code adopts a quickConnect session and pops', (tester) async {
+    Future<bool?>? route;
+    await tester.pumpWidget(app(_quickConnectInstance(), onRoute: (r) => route = r));
+    await tester.tap(find.text('Open route'));
     await tester.pumpAndSettle();
 
-    expect(await routeResult, isTrue);
-    expect(provider.adoptedSession, isNotNull);
-    expect(provider.adoptedSession!.method, SeerrAuthMethod.jellyfin);
-    expect(provider.adoptedSession!.cookie, 'fresh-qc');
-    expect(provider.adoptedSession!.identifier, isEmpty);
-    expect(provider.adoptedSession!.secret, isEmpty);
-    expect(provider.adoptedSession!.instanceLabel, 'Test Seerr');
+    await submitUrl(tester, 'https://seerr.example.com');
+    await tester.tap(find.text('Use Quick Connect'));
+    await tester.pumpAndSettle();
+
+    expect(await route, isTrue);
+    expect(account.adopted, isNotNull);
+    expect(account.adopted!.method, SeerrAuthMethod.quickConnect);
+    expect(account.adopted!.cookie, 'fresh');
+    expect(account.adopted!.secret, isEmpty, reason: 'no secret to store means no silent re-auth to attempt');
+    expect(account.adopted!.instanceLabel, 'Requests');
+  });
+
+  testWidgets('an instance without the Quick Connect routes says so and restores the form', (tester) async {
+    await tester.pumpWidget(app(_quickConnectInstance(initiateStatus: 404)));
+    await submitUrl(tester, 'https://seerr.example.com');
+
+    await tester.tap(find.text('Use Quick Connect'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Seerr 3.4 or newer'), findsOneWidget);
+    expect(find.text('Use Quick Connect'), findsOneWidget);
   });
 }
