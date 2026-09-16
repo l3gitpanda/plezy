@@ -22,13 +22,17 @@ name: Sync Fork
 #     to contents and workflows. GITHUB_TOKEN is refused any push that changes a
 #     file under .github/workflows/, and upstream edits those files often, so
 #     without SYNC_TOKEN the branch merges that carry a workflow change are
-#     reported as failed instead of landing. Step 1 needs no such token.
+#     reported as failed instead of landing. Step 1 needs it too: the
+#     merge-upstream API refuses the same way when upstream's own commits edit
+#     a workflow file, which is what failed every scheduled run of this file.
 
+# Manual only. On a six-hourly schedule this workflow produced nothing but
+# noise: the sync step cannot move main whenever upstream touches a workflow
+# file (see GH_TOKEN below), so every run failed and mailed a failure, while
+# the propagation step pushed merge commits to branches that head pull
+# requests and notified their subscribers each time. Run it from the Actions
+# tab instead; re-add a `schedule:` trigger here once a SYNC_TOKEN exists.
 on:
-  schedule:
-    # Every six hours, off the hour: the scheduler is heavily oversubscribed at
-    # :00 and delays runs queued there.
-    - cron: "17 */6 * * *"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -70,7 +74,10 @@ jobs:
     steps:
       - name: Merge upstream into the tracked branch
         env:
-          GH_TOKEN: ${{ github.token }}
+          # merge-upstream is refused with HTTP 422 when the merge would touch
+          # a file under .github/workflows/ and the token lacks the workflows
+          # permission, which GITHUB_TOKEN never has.
+          GH_TOKEN: ${{ secrets.SYNC_TOKEN || github.token }}
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
