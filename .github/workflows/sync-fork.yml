@@ -6,7 +6,7 @@ name: Sync Fork
 #   1. sync-tracked-branch — runs the same server-side sync as the repository
 #      page's "Sync fork" button, so main follows upstream without a checkout.
 #   2. update-branches — merges the refreshed main into every eligible branch
-#      and pushes the result.
+#      and pushes the result. Manual only, from the Actions tab: see the job.
 #
 # This file has to live on the default branch: GitHub only ever runs the copy
 # of a scheduled workflow that exists on the default branch, and it ignores the
@@ -110,9 +110,15 @@ jobs:
   update-branches:
     name: Carry main into topic branches
     needs: sync-tracked-branch
-    # Worth running even when the upstream sync failed: branches can still be
-    # behind the tracked branch this fork already has.
-    if: always()
+    # Manual only. Most topic branches are the head of a pull request against
+    # the parent repository, and every push to one of those notifies everyone
+    # subscribed to it, so a scheduled sweep buries real review activity under
+    # merge-commit noise. Run this from the Actions tab when a branch actually
+    # needs main carried in — the branches input takes a subset.
+    #
+    # always(): still worth running when the upstream sync failed, since the
+    # branches can be behind the tracked branch this fork already has.
+    if: always() && github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: write
