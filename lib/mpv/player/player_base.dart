@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 import 'dart:math' as math;
 
 import 'package:collection/collection.dart';
@@ -567,6 +568,7 @@ abstract class PlayerBase with PlayerStreamControllersMixin implements Player {
         _primaryMediaReadyEmitted = false;
         _primaryFileLoaded = false;
         _lastErrorLogText = null;
+        _state = _state.copyWith(hasRenderedFrame: false);
         fileStartedController.add(null);
         if (sourceId != null) {
           sourceStartedController.add(PlayerSourceStarted(sourceId));
@@ -627,13 +629,16 @@ abstract class PlayerBase with PlayerStreamControllersMixin implements Player {
       case 'file-loaded':
         if (sourceId != null && sourceId != _activeSourceId) break;
         _primaryFileLoaded = true;
-        _state = _state.copyWith(completed: false);
+        // ExoPlayer reports no start-file: its media-item transition is the
+        // only "new file" boundary before the frame it renders next.
+        _state = _state.copyWith(completed: false, hasRenderedFrame: false);
         completedController.add(false);
         fileLoadedController.add(null);
         break;
 
       case 'playback-restart':
         if (sourceId != null && sourceId != _activeSourceId) break;
+        _state = _state.copyWith(hasRenderedFrame: true);
         playbackRestartController.add(null);
         if (sourceId != null && !_activeSourceReadyEmitted) {
           final positionMs = _millisecondsFromSeconds(data?['positionSeconds'], round: true);
@@ -1127,6 +1132,9 @@ abstract class PlayerBase with PlayerStreamControllersMixin implements Player {
     _positionMs = position.inMilliseconds;
     // A source is being installed at this position; nothing has been reported
     // about it yet, and its predecessor's position says nothing about it.
+    // Neither does its predecessor's rendered frame: `open()` resolves before
+    // the backend's `start-file`, and a binding made in that window must not
+    // read the outgoing file's frame as the new file's readiness.
     _lastReportedPositionMs = position.inMilliseconds;
     _state = _state.copyWith(
       completed: false,
@@ -1134,6 +1142,7 @@ abstract class PlayerBase with PlayerStreamControllersMixin implements Player {
       duration: _timelineDuration ?? Duration.zero,
       buffer: Duration.zero,
       bufferRanges: const [],
+      hasRenderedFrame: false,
     );
     _takeOperationOwnership(++_playheadOperations);
     _lastPositionWriter = _playheadOperations;
@@ -1168,6 +1177,7 @@ abstract class PlayerBase with PlayerStreamControllersMixin implements Player {
       duration: snapshot.duration,
       buffer: snapshot.buffer,
       bufferRanges: snapshot.bufferRanges,
+      hasRenderedFrame: snapshot.hasRenderedFrame,
     );
     _takeOperationOwnership(++_playheadOperations);
     _lastPositionWriter = _playheadOperations;
@@ -1287,9 +1297,6 @@ abstract class PlayerBase with PlayerStreamControllersMixin implements Player {
   bool get supportsSecondarySubtitles => true;
 
   @override
-  bool get attachesExternalSubtitlesAtOpen => false;
-
-  @override
   bool get detectsFpsAfterRender => false;
 
   @override
@@ -1319,7 +1326,22 @@ abstract class PlayerBase with PlayerStreamControllersMixin implements Player {
   /// chain back to 48 kHz float, so the conversion runs once on the buffered
   /// decode side. mpv's own `format` filter is used instead of lavfi
   /// `aformat` because the bundled Linux ffmpeg prunes lavfi filters.
-  static const _loudnormFilter = 'loudnorm=I=-14:TP=-3:LRA=4,format=srate=48000:format=floatp';
+  ///
+  /// Android downmixes to stereo *ahead* of loudnorm. The filter's f64/192 kHz
+  /// pass costs CPU per channel, and the Android SoCs measured cannot afford
+  /// the multichannel bill: on the 32-bit TV boxes (Fire TV Stick 4K Max,
+  /// Google TV Streamer, Box R 4K Plus) 8ch adds +2.62 CPU-s per media second
+  /// against ~1 core, so 5.1 holds 0.35–0.57x and 7.1 0.33x real time under an
+  /// underrun storm while stereo holds 0.985x; arm64 (Pixel 7, SHIELD) still
+  /// underruns 5–20 times a minute at 8ch. Downmixing at the AO
+  /// (`audio-channels=stereo`, the "Downmix to Stereo" setting) does not help
+  /// because it lands after the filter. Desktop and Apple measured clean at
+  /// 7.1 and keep the multichannel chain. `format=channels=` remixes through
+  /// swresample, so the downmix options (`audio-swresample-o`,
+  /// `audio-normalize-downmix`) apply to it as well.
+  static final String _loudnormFilter =
+      '${Platform.isAndroid ? 'format=channels=stereo,' : ''}'
+      'loudnorm=I=-14:TP=-3:LRA=4,format=srate=48000:format=floatp';
 
   @override
   Future<void> setAudioNormalization(bool enabled) async {

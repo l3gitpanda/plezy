@@ -13,10 +13,6 @@ class PerformanceStats {
   final int? videoHeight;
   final double? videoFps;
   final String? hwdecCurrent;
-
-  /// mpv's active video output (`current-vo`), when the producing platform
-  /// knows it. Null on the ExoPlayer path and wherever it is not polled.
-  final String? currentVo;
   final int? videoBitrate;
   final String? aspectName;
   final int? rotate;
@@ -78,7 +74,6 @@ class PerformanceStats {
     this.videoHeight,
     this.videoFps,
     this.hwdecCurrent,
-    this.currentVo,
     this.videoBitrate,
     this.aspectName,
     this.rotate,
@@ -124,56 +119,7 @@ class PerformanceStats {
   });
 
   /// Creates an empty stats object (used as initial state).
-  const PerformanceStats.empty()
-    : playerType = 'unknown',
-      videoCodec = null,
-      videoWidth = null,
-      videoHeight = null,
-      videoFps = null,
-      hwdecCurrent = null,
-      currentVo = null,
-      videoBitrate = null,
-      aspectName = null,
-      rotate = null,
-      videoDecoderName = null,
-      pixelformat = null,
-      hwPixelformat = null,
-      colormatrix = null,
-      primaries = null,
-      gamma = null,
-      maxLuma = null,
-      minLuma = null,
-      maxCll = null,
-      maxFall = null,
-      audioCodec = null,
-      audioSamplerate = null,
-      audioChannels = null,
-      audioBitrate = null,
-      audioDecoderName = null,
-      audioPassthroughFormat = null,
-      tunneledPlayback = false,
-      tunnelingStatus = null,
-      actualFps = null,
-      avsyncChange = null,
-      displayFps = null,
-      frameDropCount = null,
-      decoderFrameDropCount = null,
-      cacheUsed = null,
-      cacheLimit = null,
-      cacheSpeed = null,
-      cacheDuration = null,
-      bufferTargetBytes = null,
-      bufferMaxMs = null,
-      dvConversionActive = false,
-      dvConversionMode = '',
-      dvConvertedRpus = null,
-      dvRpuConversionFailures = null,
-      dvAvgRpuConversionUs = null,
-      dvAvgSampleProcessingUs = null,
-      dvSourceProfile = null,
-      dvPlaybackPath = null,
-      appMemoryBytes = null,
-      uiFps = null;
+  const PerformanceStats.empty() : this();
 
   /// Format video resolution as "WxH".
   String get resolution {
@@ -281,25 +227,15 @@ class PerformanceStats {
     return displayFps!.toStringAsFixed(0);
   }
 
-  /// Whether the active video output can count dropped frames at all.
-  ///
-  /// mpv's `frame-drop-count` only increments for a frame admitted after its
-  /// own end time (`vo.c`), and the fork's `vo_mediacodec` declares
-  /// `prepare_frame`, which makes mpv hand frames over a full preparation
-  /// lead *before* their pts - so that condition is never true in normal
-  /// playback. `decoder-frame-drop-count` is the `--framedrop=decoder` path,
-  /// which Plezy does not enable. A GL vo (`gpu`/`gpu-next`, every software
-  /// Android session and every desktop/Apple one) has no `prepare_frame` and
-  /// mpv's counters do work there.
-  bool get _voCountsDroppedFrames => currentVo != 'mediacodec';
-
   /// Format dropped frames count.
   ///
-  /// Reported unavailable rather than as a confident `0` where the vo cannot
-  /// produce the number: an overlay showing no drops through visible stutter
-  /// sent reporters and maintainers looking in the wrong place.
+  /// `frame-drop-count` is the video output's own count. A GL vo drops a
+  /// frame that is a whole duration late on admission; the fork's
+  /// `vo_mediacodec` never drops, so it counts what the viewer sees instead:
+  /// a frame that was due before it reached the codec, and a timed frame the
+  /// display confirms it showed off its vsync (Android 13+ feedback).
+  /// `decoder-frame-drop-count` is the `--framedrop=decoder` path.
   String get droppedFramesFormatted {
-    if (!_voCountsDroppedFrames) return t.common.notAvailable;
     final total = (frameDropCount ?? 0) + (decoderFrameDropCount ?? 0);
     return total.toString();
   }

@@ -18,7 +18,7 @@ One command releases to every channel:
 Phases (in order):
     preflight   validate tools, credentials, git state
     changelog   generate per-channel release notes via the claude CLI
-    bump        bump pubspec version, commit, push (replaces release.yml)
+    bump        bump pubspec version, commit, push
     farm_start  trigger .github/workflows/build.yml for a tagged draft release
     play        build AAB, upload symbols, publish to Google Play production
     amazon      build APK, upload via the App Submission API, commit the edit
@@ -141,10 +141,12 @@ RELEASE_ASSET_NAMES = frozenset(
         "plezy-android-x86_64.tar.gz",
         "plezy-ios.ipa",
         "plezy-linux-arm64.deb",
+        "plezy-linux-arm64.flatpak",
         "plezy-linux-arm64.pkg.tar.zst",
         "plezy-linux-arm64.rpm",
         "plezy-linux-arm64.tar.gz",
         "plezy-linux-x64.deb",
+        "plezy-linux-x64.flatpak",
         "plezy-linux-x64.pkg.tar.zst",
         "plezy-linux-x64.rpm",
         "plezy-linux-x64.tar.gz",

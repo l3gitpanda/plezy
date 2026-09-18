@@ -18,6 +18,43 @@ struct MpvLifecycleUnavailableError: LocalizedError {
   }
 }
 
+/// Runtime gate for the player's native debug logging.
+///
+/// Swift `print`/`NSLog` are not compiled out of a release build, and the
+/// caller builds the interpolated string before the call runs, so an ungated
+/// trace on a frame, layout, or surface callback costs real work on every
+/// user's device. Debug traces go through `MpvLog.debug`, whose `@autoclosure`
+/// message is never evaluated while the gate is shut.
+///
+/// The gate follows the app's "Debug Logging" setting: Dart pushes the mpv log
+/// level over `setLogLevel`, and a verbose level opens this too. DEBUG builds
+/// start open and release builds start silent, matching the `defaultLogLevel`
+/// that `createMpvContext` requests from mpv.
+enum MpvLog {
+  #if DEBUG
+    static var isDebugEnabled = true
+  #else
+    static var isDebugEnabled = false
+  #endif
+
+  /// Whether `level` - an mpv log level as delivered by `setLogLevel` - means
+  /// the user asked for verbose diagnostics.
+  static func isVerbose(_ level: String) -> Bool {
+    level == "v" || level == "debug" || level == "trace"
+  }
+
+  /// A diagnostic trace. Dropped - argument unevaluated - while the gate is shut.
+  static func debug(_ message: @autoclosure () -> String) {
+    guard isDebugEnabled else { return }
+    print(message())
+  }
+
+  /// A failure worth keeping in a release device log. Always emitted.
+  static func error(_ message: String) {
+    print(message)
+  }
+}
+
 protocol MpvPlayerDelegate: AnyObject {
   func onPropertyChange(name: String, value: Any?, sourceId: Int64?)
   func onEvent(name: String, data: [String: Any]?)
@@ -197,6 +234,17 @@ class MpvPlayerCoreBase: NSObject {
     /// (the `sourceId` that entry's events carry); nil for every other command.
     case command((Result<Int64?, Error>) -> Void)
     case getProperty((Result<String?, Error>) -> Void)
+
+    func fail(with error: Error) {
+      switch self {
+      case .void(let completion):
+        completion(.failure(error))
+      case .command(let completion):
+        completion(.failure(error))
+      case .getProperty(let completion):
+        completion(.failure(error))
+      }
+    }
   }
 
   private var pendingRequests: [UInt64: PendingRequest] = [:]
@@ -447,7 +495,7 @@ class MpvPlayerCoreBase: NSObject {
   /// an independent context and be created/destroyed at any time.
   func createMpvContext(configure: (OpaquePointer) -> Void) -> Bool {
     guard let mpv = mpv_create() else {
-      print("[MpvPlayerCore] Failed to create MPV context")
+      MpvLog.error("[MpvPlayerCore] Failed to create MPV context")
       return false
     }
 
@@ -462,7 +510,7 @@ class MpvPlayerCoreBase: NSObject {
 
     let initResult = mpv_initialize(mpv)
     if initResult < 0 {
-      print("[MpvPlayerCore] mpv_initialize failed: \(safeString(mpv_error_string(initResult)))")
+      MpvLog.error("[MpvPlayerCore] mpv_initialize failed: \(safeString(mpv_error_string(initResult)))")
       mpv_terminate_destroy(mpv)
       return false
     }
@@ -519,7 +567,7 @@ class MpvPlayerCoreBase: NSObject {
     #if targetEnvironment(simulator)
       if name == "hwdec" {
         if value != "no" {
-          print("[MpvPlayerCore] Simulator does not support hardware decoding; forcing hwdec=no")
+          MpvLog.debug("[MpvPlayerCore] Simulator does not support hardware decoding; forcing hwdec=no")
         }
         setRawStringPropertyAsync(name, value: "no", completion: completion)
         return
@@ -527,7 +575,7 @@ class MpvPlayerCoreBase: NSObject {
     #endif
 
     if isManagedRendererProperty(name) {
-      print("[MpvPlayerCore] Ignoring managed renderer property: \(name)=\(value)")
+      MpvLog.debug("[MpvPlayerCore] Ignoring managed renderer property: \(name)=\(value)")
       completeOnMain { completion(.success(())) }
       return
     }
@@ -606,7 +654,7 @@ class MpvPlayerCoreBase: NSObject {
 
     applyDvConversionModeEnvironment()
     if logEnabled {
-      print("[MpvPlayerCore] DV conversion mode: \(normalized)")
+      MpvLog.debug("[MpvPlayerCore] DV conversion mode: \(normalized)")
     }
   }
 
@@ -618,7 +666,7 @@ class MpvPlayerCoreBase: NSObject {
 
     applyDvConversionModeEnvironment()
     if enabled {
-      print("[MpvPlayerCore] DV conversion logging enabled (mode: \(mode))")
+      MpvLog.debug("[MpvPlayerCore] DV conversion logging enabled (mode: \(mode))")
     }
   }
 
@@ -653,7 +701,7 @@ class MpvPlayerCoreBase: NSObject {
     let sigPeak = cachedLastSigPeak
     cacheLock.unlock()
 
-    print("[MpvPlayerCore] HDR enabled: \(enabled)")
+    MpvLog.debug("[MpvPlayerCore] HDR enabled: \(enabled)")
 
     setRawStringPropertyAsync(
       "target-colorspace-hint",
@@ -680,7 +728,7 @@ class MpvPlayerCoreBase: NSObject {
       let value = enabled ? "yes" : "no"
       setRawStringPropertyAsync("avfoundation-pip-composite-osd", value: value) { result in
         if case .failure(let error) = result {
-          print(
+          MpvLog.debug(
             "[MpvPlayerCore] Failed to set PiP subtitle compositing "
               + "to \(value): \(error.localizedDescription)"
           )
@@ -948,14 +996,7 @@ class MpvPlayerCoreBase: NSObject {
     let error = MpvLifecycleUnavailableError("Player disposed")
     for (_, request) in pending {
       DispatchQueue.main.async {
-        switch request {
-        case .void(let completion):
-          completion(.failure(error))
-        case .command(let completion):
-          completion(.failure(error))
-        case .getProperty(let completion):
-          completion(.failure(error))
-        }
+        request.fail(with: error)
       }
     }
   }
@@ -1003,14 +1044,7 @@ class MpvPlayerCoreBase: NSObject {
     else {
       let error = lifecycleUnavailableError()
       completeOnMain {
-        switch request {
-        case .void(let completion):
-          completion(.failure(error))
-        case .command(let completion):
-          completion(.failure(error))
-        case .getProperty(let completion):
-          completion(.failure(error))
-        }
+        request.fail(with: error)
       }
       return
     }
@@ -1021,14 +1055,7 @@ class MpvPlayerCoreBase: NSObject {
     guard status < 0, let request = takeRequest(requestId) else { return }
     let error = mpvError(status)
     DispatchQueue.main.async {
-      switch request {
-      case .void(let completion):
-        completion(.failure(error))
-      case .command(let completion):
-        completion(.failure(error))
-      case .getProperty(let completion):
-        completion(.failure(error))
-      }
+      request.fail(with: error)
     }
   }
 
@@ -1201,7 +1228,7 @@ class MpvPlayerCoreBase: NSObject {
       }
 
     case MPV_EVENT_SHUTDOWN:
-      print("[MpvPlayerCore] MPV shutdown event")
+      MpvLog.debug("[MpvPlayerCore] MPV shutdown event")
 
     case MPV_EVENT_PLAYBACK_RESTART:
       // The first shown frame after a load or seek: the moment the presented
@@ -1643,7 +1670,7 @@ class MpvPlayerCoreBase: NSObject {
 
   func checkError(_ status: CInt) {
     if status < 0 {
-      print("[MpvPlayerCore] MPV error: \(safeString(mpv_error_string(status)))")
+      MpvLog.error("[MpvPlayerCore] MPV error: \(safeString(mpv_error_string(status)))")
     }
   }
 }

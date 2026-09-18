@@ -37,6 +37,22 @@ extension _VideoPlayerPlaybackServiceMethods on VideoPlayerScreenState {
         !mounted || _shuttingDown || player != currentPlayer || _firstFrame.rendered || _hasFatalPlaybackError;
     if (stale()) return;
 
+    // Only this attempt's own file can prove a frame. Between a reload's
+    // latch reset and the replacement's start-file the outgoing file is still
+    // the backend's active source, so its restart — or a position tick — would
+    // latch the replacement as rendered before it exists: display matching
+    // on the wrong stream, the first-frame effects on the wrong picture, the
+    // open watchdogs blind to the open. The outcome delimits signals at the
+    // backend's load start, so a caller parks on its first frame and the
+    // staleness re-check retires whichever one is late. A settled outcome —
+    // the frame already proven, or the open dead — leaves the raw signal
+    // alone: after a rolled-back reload the surviving file must still be
+    // able to latch.
+    final outcome = _playbackAttempt?.outcome;
+    if (outcome != null && !outcome.isSettled) {
+      if (!await outcome.firstFrame || stale()) return;
+    }
+
     // The open is negotiating the display from this frame: keep it behind
     // the loading UI until the mode switch (and decoder refresh) settled,
     // as the spinner did while the metadata pre-load switch ran. Concurrent
@@ -48,6 +64,16 @@ extension _VideoPlayerPlaybackServiceMethods on VideoPlayerScreenState {
     if (negotiation != null) {
       if (!await negotiation || stale()) return;
     }
+
+    // Effects that need the decoded picture — the persisted ambient-lighting
+    // restore, its subtitle placement after a swap, the NVScaler HDR skip —
+    // apply here, not in the open flow: mpv reports geometry and colour only
+    // once this frame reached the VO, and at start the surface is still
+    // behind the loading UI, so the viewer never sees the frame they
+    // replace. Concurrent callers await the same pass and re-check
+    // staleness after it.
+    await _visualEffects.onFirstFrame();
+    if (stale()) return;
 
     _firstFrame.markReady();
     // This request is proven: a later in-place switch that fails restores it.
@@ -187,9 +213,7 @@ extension _VideoPlayerPlaybackServiceMethods on VideoPlayerScreenState {
         _lastLogError = null;
         _fatalHttpStatuses.clear();
         _resetLiveLadderOnPlaybackRestart();
-        final markFirstFrameReady = _markFirstFrameReady(currentPlayer, settingsService);
-        _trackManager?.onPlaybackRestart();
-        await markFirstFrameReady;
+        await _markFirstFrameReady(currentPlayer, settingsService);
       }),
     );
 
@@ -283,6 +307,7 @@ extension _VideoPlayerPlaybackServiceMethods on VideoPlayerScreenState {
     }
     if (!mounted || _shuttingDown) return;
 
+    _visualEffects.disarmAmbientRestore();
     final ambientLightingService = _ambientLightingService;
     _ambientLightingService = null;
     if (ambientLightingService != null) {
@@ -550,13 +575,6 @@ extension _VideoPlayerPlaybackServiceMethods on VideoPlayerScreenState {
 
     await _mediaControls.syncAvailability();
     if (!mounted || player != currentPlayer || _mediaControlsManager != mediaControlsManager) return;
-
-    // Listen to playing state and update media controls
-    _mediaControlSubscriptions.add(
-      currentPlayer.streams.playing.listen((isPlaying) {
-        _mediaControls.pushPlaybackState();
-      }),
-    );
 
     // Listen to position updates for media controls and Discord
     _mediaControlSubscriptions.add(

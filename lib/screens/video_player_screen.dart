@@ -39,6 +39,7 @@ import '../models/transcode_quality_preset.dart';
 import '../media/media_source_info.dart';
 import '../media/stepped_seek.dart';
 import '../mixins/mounted_set_state_mixin.dart';
+import '../mixins/listenable_bindings_mixin.dart';
 import '../providers/download_provider.dart';
 import '../providers/multi_server_provider.dart';
 import '../providers/offline_mode_provider.dart';
@@ -494,7 +495,8 @@ class VideoPlayerScreen extends StatefulWidget {
   State<VideoPlayerScreen> createState() => VideoPlayerScreenState();
 }
 
-class VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindingObserver, MountedSetStateMixin {
+class VideoPlayerScreenState extends State<VideoPlayerScreen>
+    with WidgetsBindingObserver, MountedSetStateMixin, ListenableBindingsMixin {
   /// How close to the capture buffer's end counts as "live". A live-edge
   /// transcode starts behind the buffer's edge by tuner ingest and encoder
   /// start-up latency (10–20 s observed), so a tighter threshold would flag
@@ -553,27 +555,32 @@ class VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindin
   final Completer<void> _routeDisposed = Completer<void>();
   Future<void>? _nativeDisposal;
 
-  /// The generation the launch receipt describes. Follows in-place reloads
-  /// of the same item (quality, version, track switches) so the receipt keeps
-  /// reading the live session; a full restart or teardown leaves it behind.
+  /// The generation the launch receipt describes. Follows every attempt this
+  /// screen starts in place — same-item reloads (quality, version, track
+  /// switches), episode advances, Retry — so the receipt keeps reading the
+  /// live session; only a teardown leaves it behind.
   int? _observedLaunchGeneration;
 
   bool get _launchCurrent => (widget.isLaunchCurrent?.call() ?? true) && (widget.launchObserver?.isCurrent ?? true);
 
+  /// The receipt describes the playback session this screen hosts, not the
+  /// item it was launched with: an auto-advance or Next press replaces the
+  /// item in place and the session — the thing `playback.stop` must still be
+  /// able to stop — lives on. The snapshot names the item now playing.
   bool _ownsLaunchPlayback() =>
       mounted &&
       _activeRouteGuard.identityFor(this) != null &&
-      _currentMetadata.globalKey == widget.metadata.globalKey &&
       (_observedLaunchGeneration == null || _transitionGate.generation == _observedLaunchGeneration);
 
   /// Retire the launch receipt on the way out. A session this screen still
-  /// owns ends `stopped` — or `failed` when playback died on it, so a failed
-  /// open that the exit reaches before the error path marked it cannot read
-  /// as a user stop; one that moved on to another item (in-place episode
-  /// navigation, player→player replacement) ends `cancelled`, matching the
-  /// music service's replaced-source contract. A receipt that already ended
-  /// (completed, failed, blocked) keeps its stage. Idempotent: shutdown and
-  /// dispose both call it.
+  /// owns ends `completed` when its current item played out (a movie that
+  /// exited on EOF, a Play Next prompt dismissed with Back), `failed` when
+  /// playback died on it — so a failed open that the exit reaches before the
+  /// error path marked it cannot read as a user stop — and `stopped`
+  /// otherwise; one that was replaced by another owner (player→player
+  /// replacement) ends `cancelled`, matching the music service's
+  /// replaced-source contract. A receipt that already ended keeps its stage.
+  /// Idempotent: shutdown and dispose both call it.
   void _retireLaunchObserver() {
     final observer = widget.launchObserver;
     if (observer == null) return;
@@ -582,18 +589,33 @@ class VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindin
       return;
     }
     if (!observer.isTerminal) {
+      final state = player?.state;
       if (_hasFatalPlaybackError || _playerInitializationError != null) {
         observer.mark('failed', failure: observer.failure ?? 'playbackFailed');
+      } else if (state?.completed == true) {
+        // The duration stands in for the EOF position: the position stream
+        // can stop a beat short of it.
+        final durationMs = state!.duration.inMilliseconds > 0 ? state.duration.inMilliseconds : null;
+        observer.mark('completed', positionMs: durationMs, durationMs: durationMs, item: _launchItem());
       } else {
-        observer.mark('stopped');
+        observer.mark('stopped', item: _launchItem());
       }
     }
     observer.detach(stage: 'stopped');
   }
 
+  /// The item this session currently plays, in the shape `playback.start`
+  /// accepted it, so a status reader can tell an advanced episode from the
+  /// one it launched.
+  Map<String, dynamic> _launchItem() => {
+    'serverId': _currentMetadata.serverId,
+    'itemId': _currentMetadata.id,
+    'targetKind': widget.isLive ? 'channel' : 'item',
+  };
+
   Map<String, dynamic> _launchSnapshot() {
     final current = player;
-    if (!_launchCurrent || !mounted || _currentMetadata.globalKey != widget.metadata.globalKey) {
+    if (!_launchCurrent || !mounted) {
       return const {'stage': 'cancelled', 'playing': false, 'buffering': false};
     }
     if (_observedLaunchGeneration != null && _transitionGate.generation != _observedLaunchGeneration) {
@@ -607,6 +629,15 @@ class VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindin
         : (_showStillWatchingPrompt || _episode.showPlayNextDialog)
         ? 'confirmationRequired'
         : widget.launchObserver?.blocker;
+    // An EOF the screen is already acting on — resolving the adjacent
+    // episode, loading the next one — is the next item opening, not the
+    // session ending; `completed` is reserved for a session with nothing
+    // after it.
+    final advancing =
+        state?.completed == true &&
+        (_episode.isResolvingCompletionAdjacency ||
+            _episode.isLoadingNext ||
+            _transitionGate.transition != PlaybackTransition.idle);
     return {
       'stage': failed
           ? 'failed'
@@ -614,6 +645,8 @@ class VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindin
           ? 'stopped'
           : blocker != null
           ? 'blocked'
+          : advancing
+          ? 'opening'
           : state?.completed == true
           ? 'completed'
           : ready && state?.buffering == true
@@ -623,6 +656,7 @@ class VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindin
           : ready
           ? 'paused'
           : 'opening',
+      'item': _launchItem(),
       'ready': ready,
       'playing': ready && state?.isActive == true && !failed && !_shuttingDown,
       'buffering': state?.buffering ?? false,
@@ -910,7 +944,13 @@ class VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindin
   bool _pipInitialized = false;
   ShaderService? _shaderService;
   AmbientLightingService? _ambientLightingService;
-  bool _fullscreenListenerAttached = false;
+
+  /// Releases the Windows fullscreen-change binding (see [_onFullscreenChanged]).
+  VoidCallback? _releaseFullscreenListener;
+
+  /// Releases the PiP state binding; attached and detached with the PiP
+  /// feature (see [_attachPipStateListener]).
+  VoidCallback? _releasePipStateListener;
   Size? _lastVideoLayoutSize;
   Size? _pendingVideoLayoutSize;
   Player? _lastVideoLayoutPlayer;
@@ -1035,11 +1075,14 @@ class VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindin
     final trackMutationDrain = _trackManager?.invalidatePendingSelection() ?? Future<void>.value();
     final previousGeneration = _transitionGate.generation;
     final generation = _transitionGate.beginGeneration(isMediaReload: isMediaReload);
-    // An in-place reload continues the observed session under a new
-    // generation; the receipt follows it. Anything else observes only the
-    // first attempt.
-    if (isMediaReload && _observedLaunchGeneration == previousGeneration) {
+    // Every attempt this screen starts in place continues the observed
+    // session under a new generation, and one that follows a terminal mark
+    // (Retry after a failed open) reopens the receipt; the failure code it
+    // carried belongs to the attempt that failed.
+    if (_observedLaunchGeneration == previousGeneration) {
       _observedLaunchGeneration = generation;
+      final observer = widget.launchObserver;
+      if (observer != null && observer.isTerminal && _ownsLaunchPlayback()) observer.mark('opening');
     } else {
       _observedLaunchGeneration ??= generation;
     }
@@ -1076,8 +1119,8 @@ class VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindin
   }
 
   /// Collapse every waiter armed for the current open: the attempt's outcome
-  /// (frame-rate startup gate, post-open subtitle readiness, sidecar guard),
-  /// the track manager's pending automatic selection, and the 503 watchdog.
+  /// (frame-rate startup gate, sidecar guard), the track manager's pending
+  /// automatic selection, and the 503 watchdog.
   /// Idempotent. Called from the terminal player-error branches, shutdown,
   /// and dispose — before the player closes its streams, so nothing waits on
   /// a `Stream.first` that can only die with them.
@@ -1176,6 +1219,13 @@ class VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindin
   @visibleForTesting
   Future<void> debugWirePlayerStreamsForTesting() =>
       _wirePlayerStreams(currentPlayer: player!, settingsService: SettingsService.instance, useExoPlayer: false);
+
+  /// Adjacency otherwise arrives from the backend's queue containers, which
+  /// no widget test stands up; this seeds what [_loadAdjacentEpisodes] would
+  /// have committed so an EOF can take the present-next path.
+  @visibleForTesting
+  void debugCommitAdjacentEpisodesForTesting(AdjacentEpisodes adjacent) =>
+      _commitAdjacentEpisodes(_currentMetadata, adjacent, null);
 
   /// The same router the OS media-session subscription feeds, built without
   /// standing up the full service layer.
@@ -1654,10 +1704,7 @@ class VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindin
         _displayModeService = DisplayModeService(settingsService, FullscreenStateManager());
         await _displayModeService!.syncWithNative();
         if (!_isPlayerInitializationCurrent(generation)) return;
-        if (!_fullscreenListenerAttached) {
-          FullscreenStateManager().addListener(_onFullscreenChanged);
-          _fullscreenListenerAttached = true;
-        }
+        _releaseFullscreenListener ??= bindListenable(FullscreenStateManager(), _onFullscreenChanged);
       }
 
       // One-native-instance rule: a live music session owns the only audio
@@ -2356,10 +2403,10 @@ class VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindin
     DiscordRPCService.instance.stopPlayback();
     TrackerCoordinator.instance.stopPlayback();
 
-    if (_fullscreenListenerAttached) {
-      FullscreenStateManager().removeListener(_onFullscreenChanged);
-      _fullscreenListenerAttached = false;
-    }
+    // Released before the scope closes and the display mode is restored, so
+    // neither can re-enter the handler on a screen that is going away.
+    _releaseFullscreenListener?.call();
+    _releaseFullscreenListener = null;
     FullscreenStateManager().endScope();
     // Not _restoreWindowsDisplayMode(): that helper waits 200ms after clearing
     // the HDR hint before restoring, which dispose() cannot do. Fire the hint
