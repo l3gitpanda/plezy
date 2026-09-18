@@ -397,6 +397,7 @@ class _PlaybackOpenRequest {
     resumePosition: position,
   );
 }
+
 /// Builds a [TrackPreferencePersister] that writes the per-episode stream
 /// selection out to [client], so the [TrackManager] doesn't have to import
 /// [PlexClient] itself. Reports the server's verdict: the PUT throws on a
