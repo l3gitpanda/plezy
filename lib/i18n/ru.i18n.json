@@ -2205,6 +2205,22 @@
       "other": ""
     },
     "importedNothing": "",
+    "syncChannels": "",
+    "syncChannelsDescription": "",
+    "syncConfirm": "",
+    "syncConfirmBody": "",
+    "syncApply": "",
+    "syncedChannels": "",
+    "syncUnchanged": "",
+    "syncEmpty": "",
+    "manageChannels": "",
+    "manageChannelsCount": {
+      "one": "",
+      "other": ""
+    },
+    "manageChannelsEmpty": "",
+    "removeChannel": "",
+    "removeChannelBody": "",
     "seedEmpty": "",
     "seedNotAdmin": "",
     "seedUnsupported": "",

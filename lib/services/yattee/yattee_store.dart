@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
+
 import '../../models/yattee/yattee_session.dart';
 import '../../models/yattee/yattee_watch_progress.dart';
 import '../../profiles/profile.dart';
@@ -29,6 +31,16 @@ class YatteeStore {
   static final SerialFutureQueue _persistence = SerialFutureQueue();
 
   const YatteeStore();
+
+  /// Drop anything still queued on the shared persistence queue. Test-only.
+  ///
+  /// The queue is static so that a profile switch cannot interleave writes,
+  /// which means it also outlives any one test. A widget test that starts a
+  /// write inside its fake-async zone leaves that write pending forever once
+  /// the zone ends, and every later test in the file would then queue behind
+  /// it and hang.
+  @visibleForTesting
+  static void resetForTesting() => _persistence.reset();
 
   String _scopedKey(String userUuid, String baseKey) => profileScopedPrefsKey(userUuid, baseKey);
 

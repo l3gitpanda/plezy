@@ -5507,6 +5507,48 @@ class Translations$yattee$en {
 	/// en: 'No new channels to import'
 	String get importedNothing => 'No new channels to import';
 
+	/// en: 'Sync channels with server'
+	String get syncChannels => 'Sync channels with server';
+
+	/// en: 'Replaces your YouTube channels with the ones the server is tracking. Twitch channels are left alone.'
+	String get syncChannelsDescription => 'Replaces your YouTube channels with the ones the server is tracking. Twitch channels are left alone.';
+
+	/// en: 'Sync YouTube channels?'
+	String get syncConfirm => 'Sync YouTube channels?';
+
+	/// en: 'Adding ${added}, removing ${removed}. Removed channels stay on the server; only this device's list changes.'
+	String syncConfirmBody({required Object added, required Object removed}) => 'Adding ${added}, removing ${removed}. Removed channels stay on the server; only this device\'s list changes.';
+
+	/// en: 'Sync'
+	String get syncApply => 'Sync';
+
+	/// en: 'Synced: added ${added}, removed ${removed}'
+	String syncedChannels({required Object added, required Object removed}) => 'Synced: added ${added}, removed ${removed}';
+
+	/// en: 'Already in step with the server'
+	String get syncUnchanged => 'Already in step with the server';
+
+	/// en: 'The server is not tracking any YouTube channels, so there is nothing to sync to. Nothing was changed.'
+	String get syncEmpty => 'The server is not tracking any YouTube channels, so there is nothing to sync to. Nothing was changed.';
+
+	/// en: 'Subscribed channels'
+	String get manageChannels => 'Subscribed channels';
+
+	/// en: '(one) {${n} channel} (other) {${n} channels}'
+	String manageChannelsCount({required num n}) => (_root.$meta.cardinalResolver ?? PluralResolvers.cardinal('en'))(n,
+		one: '${n} channel',
+		other: '${n} channels',
+	);
+
+	/// en: 'No channels yet. Import them from the server, or subscribe from a video.'
+	String get manageChannelsEmpty => 'No channels yet. Import them from the server, or subscribe from a video.';
+
+	/// en: 'Unsubscribe from ${channel}?'
+	String removeChannel({required Object channel}) => 'Unsubscribe from ${channel}?';
+
+	/// en: 'Its videos stop appearing in Plezy. The channel itself is untouched.'
+	String get removeChannelBody => 'Its videos stop appearing in Plezy. The channel itself is untouched.';
+
 	/// en: 'This server has no channels recorded yet. Open Yattee on another device and refresh its subscriptions, then try again.'
 	String get seedEmpty => 'This server has no channels recorded yet. Open Yattee on another device and refresh its subscriptions, then try again.';
 
@@ -9254,6 +9296,19 @@ extension on Translations {
 			'yattee.twitchChannelFailed' => ({required Object error}) => 'Couldn\'t find that channel: ${error}',
 			'yattee.importedChannels' => ({required num n}) => (_root.$meta.cardinalResolver ?? PluralResolvers.cardinal('en'))(n, one: 'Imported ${n} channel', other: 'Imported ${n} channels', ), 
 			'yattee.importedNothing' => 'No new channels to import',
+			'yattee.syncChannels' => 'Sync channels with server',
+			'yattee.syncChannelsDescription' => 'Replaces your YouTube channels with the ones the server is tracking. Twitch channels are left alone.',
+			'yattee.syncConfirm' => 'Sync YouTube channels?',
+			'yattee.syncConfirmBody' => ({required Object added, required Object removed}) => 'Adding ${added}, removing ${removed}. Removed channels stay on the server; only this device\'s list changes.',
+			'yattee.syncApply' => 'Sync',
+			'yattee.syncedChannels' => ({required Object added, required Object removed}) => 'Synced: added ${added}, removed ${removed}',
+			'yattee.syncUnchanged' => 'Already in step with the server',
+			'yattee.syncEmpty' => 'The server is not tracking any YouTube channels, so there is nothing to sync to. Nothing was changed.',
+			'yattee.manageChannels' => 'Subscribed channels',
+			'yattee.manageChannelsCount' => ({required num n}) => (_root.$meta.cardinalResolver ?? PluralResolvers.cardinal('en'))(n, one: '${n} channel', other: '${n} channels', ), 
+			'yattee.manageChannelsEmpty' => 'No channels yet. Import them from the server, or subscribe from a video.',
+			'yattee.removeChannel' => ({required Object channel}) => 'Unsubscribe from ${channel}?',
+			'yattee.removeChannelBody' => 'Its videos stop appearing in Plezy. The channel itself is untouched.',
 			'yattee.seedEmpty' => 'This server has no channels recorded yet. Open Yattee on another device and refresh its subscriptions, then try again.',
 			'yattee.seedNotAdmin' => 'This account isn\'t an administrator of the Yattee Server, so Plezy can\'t read its channel list. Sign in with the admin account, or subscribe from Search.',
 			'yattee.seedUnsupported' => 'This Yattee Server version doesn\'t expose its channel list. Subscribe from Search instead.',
@@ -9309,6 +9364,8 @@ extension on Translations {
 			'services.libraryFilter.subtitleAllowed' => ({required Object count}) => '${count} allowed',
 			'services.libraryFilter.mode' => 'Filter mode',
 			'services.libraryFilter.modeBlacklist' => 'Blacklist',
+			_ => null,
+		} ?? switch (path) {
 			'services.libraryFilter.modeWhitelist' => 'Whitelist',
 			'services.libraryFilter.modeHintBlacklist' => 'Sync every library except the ones checked below.',
 			'services.libraryFilter.modeHintWhitelist' => 'Sync only the libraries checked below.',
@@ -9322,8 +9379,6 @@ extension on Translations {
 			'addServer.localMediaBrowserServers' => ({required Object product}) => 'Local ${product} servers',
 			'addServer.username' => 'Username',
 			'addServer.password' => 'Password',
-			_ => null,
-		} ?? switch (path) {
 			'addServer.signIn' => 'Sign in',
 			'addServer.change' => 'Change',
 			'addServer.required' => 'Required',

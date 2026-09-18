@@ -43,6 +43,45 @@ enum YatteeSeedOutcome {
   failed,
 }
 
+/// A reconcile of one site's local subscriptions against the server's channel
+/// list, worked out but not yet applied.
+///
+/// Built by [YatteeAccountProvider.planSubscriptionSync] and applied by
+/// [YatteeAccountProvider.applySubscriptionSync]. Split in two because the
+/// sync removes channels: the user is shown what would go before anything
+/// does.
+class YatteeSyncPlan {
+  /// How reading the server's channel list went.
+  ///
+  /// [YatteeSeedOutcome.imported] means channels would be added or removed —
+  /// the case worth confirming. [YatteeSeedOutcome.alreadyKnown] means the
+  /// membership already matches, though the rows may still carry fresher
+  /// names. Every other value is a reason nothing can be done.
+  final YatteeSeedOutcome outcome;
+
+  /// Which site was reconciled. Only this site's subscriptions are touched.
+  final YatteeSite site;
+
+  final List<YatteeSubscription> added;
+  final List<YatteeSubscription> removed;
+
+  /// The full subscription list to adopt, other sites included and unchanged.
+  final List<YatteeSubscription> result;
+
+  final String? error;
+
+  const YatteeSyncPlan({
+    required this.outcome,
+    required this.site,
+    this.added = const [],
+    this.removed = const [],
+    this.result = const [],
+    this.error,
+  });
+
+  bool get hasChanges => added.isNotEmpty || removed.isNotEmpty;
+}
+
 /// Outcome of [YatteeAccountProvider.seedSubscriptionsFromServer].
 class YatteeSeedResult {
   final YatteeSeedOutcome outcome;
@@ -307,28 +346,9 @@ class YatteeAccountProvider extends ChangeNotifier with DisposableChangeNotifier
     if (client == null) return const YatteeSeedResult(YatteeSeedOutcome.failed);
     final userUuid = _activeUserUuid;
     final generation = _bindingGeneration;
-    final List<YatteeSubscription> discovered;
-    try {
-      discovered = await client.fetchWatchedChannels();
-    } on YatteeAuthException catch (e) {
-      // 401 only: the credentials themselves were refused.
-      appLogger.w('Yattee: the server refused the credentials (HTTP ${e.statusCode})');
-      return YatteeSeedResult(YatteeSeedOutcome.failed, error: e.message);
-    } on YatteeApiException catch (e) {
-      appLogger.w('Yattee: the server rejected the channel list request (HTTP ${e.statusCode})');
-      // 403 is "Admin privileges required" — the channel list is admin-only,
-      // so a secondary account on a shared server can never read it. It
-      // arrives here rather than as an auth failure because the account is
-      // fine; it simply lacks the role.
-      return YatteeSeedResult(switch (e.statusCode) {
-        403 => YatteeSeedOutcome.notAdmin,
-        404 => YatteeSeedOutcome.unsupported,
-        _ => YatteeSeedOutcome.failed,
-      }, error: e.message);
-    } catch (e, stackTrace) {
-      appLogger.w('Yattee: seeding subscriptions from the server failed', error: e, stackTrace: stackTrace);
-      return YatteeSeedResult(YatteeSeedOutcome.failed, error: e.toString());
-    }
+    final read = await _readServerChannels(client);
+    final discovered = read.channels;
+    if (discovered == null) return YatteeSeedResult(read.failure, error: read.error);
     if (!_isCurrentBinding(userUuid, generation)) return const YatteeSeedResult(YatteeSeedOutcome.failed);
     if (discovered.isEmpty) return const YatteeSeedResult(YatteeSeedOutcome.empty);
     final known = {for (final subscription in _subscriptions) (subscription.site, subscription.channelId)};
@@ -342,6 +362,127 @@ class YatteeAccountProvider extends ChangeNotifier with DisposableChangeNotifier
     await _persistSubscriptions();
     appLogger.i('Yattee: seeded ${added.length} subscription(s) from the server');
     return YatteeSeedResult(YatteeSeedOutcome.imported, added: added.length);
+  }
+
+  /// Read the server's channel list, classifying a failure rather than
+  /// throwing.
+  ///
+  /// `channels == null` means it could not be read and [failure] says why.
+  /// Shared by the seed and the sync: both read the same admin-only route and
+  /// fail it the same ways.
+  Future<({List<YatteeSubscription>? channels, YatteeSeedOutcome failure, String? error})> _readServerChannels(
+    YatteeClient client,
+  ) async {
+    try {
+      return (channels: await client.fetchWatchedChannels(), failure: YatteeSeedOutcome.failed, error: null);
+    } on YatteeAuthException catch (e) {
+      // 401 only: the credentials themselves were refused.
+      appLogger.w('Yattee: the server refused the credentials (HTTP ${e.statusCode})');
+      return (channels: null, failure: YatteeSeedOutcome.failed, error: e.message);
+    } on YatteeApiException catch (e) {
+      appLogger.w('Yattee: the server rejected the channel list request (HTTP ${e.statusCode})');
+      // 403 is "Admin privileges required" — the channel list is admin-only,
+      // so a secondary account on a shared server can never read it. It
+      // arrives here rather than as an auth failure because the account is
+      // fine; it simply lacks the role.
+      return (
+        channels: null,
+        failure: switch (e.statusCode) {
+          403 => YatteeSeedOutcome.notAdmin,
+          404 => YatteeSeedOutcome.unsupported,
+          _ => YatteeSeedOutcome.failed,
+        },
+        error: e.message,
+      );
+    } catch (e, stackTrace) {
+      appLogger.w('Yattee: reading the server channel list failed', error: e, stackTrace: stackTrace);
+      return (channels: null, failure: YatteeSeedOutcome.failed, error: e.toString());
+    }
+  }
+
+  /// Work out what it would take for one site's subscriptions to match the
+  /// server's channel list. Changes nothing — see [applySubscriptionSync].
+  ///
+  /// Scoped to a single site because the reconcile is only meaningful for one.
+  /// Every non-YouTube channel is stored with a `channel_url` the feed cannot
+  /// synthesise, and the server's list is global rather than per-user, so
+  /// replacing another site's subscriptions from it would drop channels only
+  /// this device knows how to ask for.
+  ///
+  /// An empty server list is refused rather than obeyed: the server prunes a
+  /// channel nothing has asked about for 14 days, and a freshly restarted or
+  /// freshly pruned instance answering with nothing would otherwise take every
+  /// subscription on the device with it.
+  Future<YatteeSyncPlan> planSubscriptionSync({YatteeSite site = YatteeSite.youtube}) async {
+    if (isDisposed) return YatteeSyncPlan(outcome: YatteeSeedOutcome.failed, site: site);
+    final client = _client;
+    if (client == null) return YatteeSyncPlan(outcome: YatteeSeedOutcome.failed, site: site);
+    final userUuid = _activeUserUuid;
+    final generation = _bindingGeneration;
+    final read = await _readServerChannels(client);
+    final discovered = read.channels;
+    if (discovered == null) {
+      return YatteeSyncPlan(outcome: read.failure, site: site, error: read.error);
+    }
+    if (!_isCurrentBinding(userUuid, generation)) {
+      return YatteeSyncPlan(outcome: YatteeSeedOutcome.failed, site: site);
+    }
+    final fromServer = [
+      for (final subscription in discovered)
+        if (subscription.site == site) subscription,
+    ];
+    if (fromServer.isEmpty) return YatteeSyncPlan(outcome: YatteeSeedOutcome.empty, site: site);
+
+    final serverById = {for (final subscription in fromServer) subscription.channelId: subscription};
+    final localIds = {
+      for (final subscription in _subscriptions)
+        if (subscription.site == site) subscription.channelId,
+    };
+    final added = [
+      for (final subscription in fromServer)
+        if (!localIds.contains(subscription.channelId)) subscription,
+    ];
+    final removed = [
+      for (final subscription in _subscriptions)
+        if (subscription.site == site && !serverById.containsKey(subscription.channelId)) subscription,
+    ];
+    final result = [
+      // A survivor keeps its position but takes the server's row, so a channel
+      // renamed there is renamed here too; one the server no longer lists
+      // resolves to null and drops out, which is the removal.
+      for (final subscription in _subscriptions)
+        if (subscription.site != site) subscription else ?serverById[subscription.channelId],
+      ...added,
+    ];
+    return YatteeSyncPlan(
+      outcome: added.isEmpty && removed.isEmpty ? YatteeSeedOutcome.alreadyKnown : YatteeSeedOutcome.imported,
+      site: site,
+      added: added,
+      removed: removed,
+      result: result,
+    );
+  }
+
+  /// Adopt a plan built by [planSubscriptionSync].
+  ///
+  /// Ignores a plan that could not be built, so a caller can hand back
+  /// whatever it was given without checking first.
+  ///
+  /// A plan with no membership change ([YatteeSeedOutcome.alreadyKnown]) is
+  /// still worth applying: its rows carry the server's current names and
+  /// avatars, so a channel renamed there is renamed here. That is not a change
+  /// worth confirming — nothing is lost — which is why only
+  /// [YatteeSeedOutcome.imported] is the case the UI stops to ask about.
+  Future<void> applySubscriptionSync(YatteeSyncPlan plan) async {
+    if (isDisposed) return;
+    if (plan.outcome != YatteeSeedOutcome.imported && plan.outcome != YatteeSeedOutcome.alreadyKnown) return;
+    _subscriptions = plan.result;
+    safeNotifyListeners();
+    await _persistSubscriptions();
+    appLogger.i(
+      'Yattee: synced ${plan.site.id} subscriptions from the server '
+      '(+${plan.added.length}, -${plan.removed.length})',
+    );
   }
 
   /// Persist and bind a session the connect screen established.

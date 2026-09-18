@@ -2181,6 +2181,22 @@
       "other": "Imported ${n} channels"
     },
     "importedNothing": "No new channels to import",
+    "syncChannels": "Sync channels with server",
+    "syncChannelsDescription": "Replaces your YouTube channels with the ones the server is tracking. Twitch channels are left alone.",
+    "syncConfirm": "Sync YouTube channels?",
+    "syncConfirmBody": "Adding ${added}, removing ${removed}. Removed channels stay on the server; only this device's list changes.",
+    "syncApply": "Sync",
+    "syncedChannels": "Synced: added ${added}, removed ${removed}",
+    "syncUnchanged": "Already in step with the server",
+    "syncEmpty": "The server is not tracking any YouTube channels, so there is nothing to sync to. Nothing was changed.",
+    "manageChannels": "Subscribed channels",
+    "manageChannelsCount": {
+      "one": "${n} channel",
+      "other": "${n} channels"
+    },
+    "manageChannelsEmpty": "No channels yet. Import them from the server, or subscribe from a video.",
+    "removeChannel": "Unsubscribe from ${channel}?",
+    "removeChannelBody": "Its videos stop appearing in Plezy. The channel itself is untouched.",
     "seedEmpty": "This server has no channels recorded yet. Open Yattee on another device and refresh its subscriptions, then try again.",
     "seedNotAdmin": "This account isn't an administrator of the Yattee Server, so Plezy can't read its channel list. Sign in with the admin account, or subscribe from Search.",
     "seedUnsupported": "This Yattee Server version doesn't expose its channel list. Subscribe from Search instead.",
