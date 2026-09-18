@@ -18,6 +18,7 @@ import '../../widgets/focusable_list_tile.dart';
 import '../../widgets/settings_page.dart';
 import '../../widgets/settings_section.dart';
 import '../settings/settings_utils.dart';
+import 'yattee_channels_screen.dart';
 
 /// Connected-state settings for the Yattee Server: who is signed in, which
 /// instance, the playback quality cap, and disconnect.
@@ -69,6 +70,55 @@ class YatteeSettingsScreen extends StatelessWidget {
       // enough time to read one on a TV across the room.
       duration: result.outcome == YatteeSeedOutcome.imported ? null : const Duration(seconds: 10),
     );
+  }
+
+  /// Reconcile the YouTube channel list against the server's, removals
+  /// included — the part [_importChannels] deliberately will not do.
+  ///
+  /// The plan is worked out and shown before anything is applied, because
+  /// this is the one action here that can take channels away.
+  Future<void> _syncChannels(BuildContext context, YatteeAccountProvider account) async {
+    // Reading the channel list is a round trip, and the first thing the user
+    // would otherwise see is a dialog appearing out of nowhere some seconds
+    // after the tap.
+    final loading = ScopedLoadingDialogController()
+      ..show(
+        context,
+        builder: (_) => const PopScope(canPop: false, child: Center(child: CircularProgressIndicator())),
+      );
+    final YatteeSyncPlan plan;
+    try {
+      plan = await account.planSubscriptionSync();
+    } finally {
+      await loading.dismiss();
+    }
+    if (!context.mounted) return;
+    if (plan.outcome != YatteeSeedOutcome.imported) {
+      // Nothing to confirm, but an already-matching plan still carries the
+      // server's current names — adopt them before reporting.
+      if (plan.outcome == YatteeSeedOutcome.alreadyKnown) await account.applySubscriptionSync(plan);
+      if (!context.mounted) return;
+      showAppSnackBar(context, switch (plan.outcome) {
+        YatteeSeedOutcome.alreadyKnown => t.yattee.syncUnchanged,
+        YatteeSeedOutcome.empty => t.yattee.syncEmpty,
+        YatteeSeedOutcome.notAdmin => t.yattee.seedNotAdmin,
+        YatteeSeedOutcome.unsupported => t.yattee.seedUnsupported,
+        // Unreachable: `imported` is the branch below.
+        YatteeSeedOutcome.imported || YatteeSeedOutcome.failed => t.yattee.seedFailed(error: plan.error ?? ''),
+      }, duration: plan.outcome == YatteeSeedOutcome.alreadyKnown ? null : const Duration(seconds: 10));
+      return;
+    }
+    final confirmed = await showConfirmDialog(
+      context,
+      title: t.yattee.syncConfirm,
+      message: t.yattee.syncConfirmBody(added: plan.added.length, removed: plan.removed.length),
+      confirmText: t.yattee.syncApply,
+      isDestructive: plan.removed.isNotEmpty,
+    );
+    if (!confirmed) return;
+    await account.applySubscriptionSync(plan);
+    if (!context.mounted) return;
+    showAppSnackBar(context, t.yattee.syncedChannels(added: plan.added.length, removed: plan.removed.length));
   }
 
   /// Subscribe to a Twitch channel by name.
@@ -189,6 +239,20 @@ class YatteeSettingsScreen extends StatelessWidget {
                   title: Text(t.yattee.importChannels),
                   subtitle: Text(t.yattee.importChannelsDescription),
                   onTap: () => unawaited(_importChannels(context, account)),
+                ),
+                FocusableListTile(
+                  leading: const AppIcon(Symbols.sync_rounded, fill: 1),
+                  title: Text(t.yattee.syncChannels),
+                  subtitle: Text(t.yattee.syncChannelsDescription),
+                  onTap: () => unawaited(_syncChannels(context, account)),
+                ),
+                FocusableListTile(
+                  leading: const AppIcon(Symbols.subscriptions_rounded, fill: 1),
+                  title: Text(t.yattee.manageChannels),
+                  subtitle: Text(t.yattee.manageChannelsCount(n: account.subscriptions.length)),
+                  onTap: () => unawaited(
+                    Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const YatteeChannelsScreen())),
+                  ),
                 ),
                 FocusableListTile(
                   leading: const AppIcon(Symbols.sensors_rounded, fill: 1),
