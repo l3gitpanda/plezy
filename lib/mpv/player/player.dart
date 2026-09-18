@@ -127,12 +127,6 @@ abstract class Player {
   /// Whether this player backend supports secondary subtitle tracks.
   bool get supportsSecondarySubtitles;
 
-  /// Whether this backend ingests external subtitles in [open] (single
-  /// prepare(), safe to auto-play immediately). Backends returning false
-  /// need external subtitles added after open via [addSubtitleTrack] while
-  /// paused, and the caller resumes once the tracks are selected.
-  bool get attachesExternalSubtitlesAtOpen;
-
   /// Whether the backend detects container fps from rendered frame
   /// timestamps, so `container-fps` only becomes available a few frames
   /// after playback starts (retry the property read instead of giving up).
@@ -148,14 +142,6 @@ abstract class Player {
   /// fallback). Backends returning false are sampled via mpv property
   /// reads instead.
   bool get providesNativeStats;
-
-  /// Add an external subtitle track.
-  ///
-  /// [uri] - URL or path to the subtitle file.
-  /// [title] - Optional display title.
-  /// [language] - Optional language code.
-  /// [select] - Whether to select this track immediately.
-  Future<void> addSubtitleTrack({required String uri, String? title, String? language, bool select = false});
 
   /// Set the playback volume.
   ///
