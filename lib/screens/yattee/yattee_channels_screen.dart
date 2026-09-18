@@ -30,6 +30,11 @@ class YatteeChannelsScreen extends StatelessWidget {
     YatteeSite.twitch => Symbols.sensors_rounded,
   };
 
+  static String _siteLabel(YatteeSite site) => switch (site) {
+    YatteeSite.youtube => t.yattee.title,
+    YatteeSite.twitch => t.yattee.rows.twitch,
+  };
+
   Future<void> _remove(BuildContext context, YatteeAccountProvider account, YatteeSubscription subscription) async {
     final confirmed = await showConfirmDialog(
       context,
@@ -46,27 +51,34 @@ class YatteeChannelsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Consumer<YatteeAccountProvider>(
       builder: (context, account, _) {
-        // Grouped by site, and within a site in the order they were stored:
-        // the rows on the tab are per site too, so this reads the same way.
-        final subscriptions = [for (final site in YatteeSite.values) ...account.subscriptionsFor(site)];
+        // One group per site, each headed by its own count. Sync reconciles a
+        // single site, and the count worth comparing against another client is
+        // per site too — a combined total answers neither question.
+        final grouped = [
+          for (final site in YatteeSite.values)
+            if (account.subscriptionsFor(site) case final subscriptions when subscriptions.isNotEmpty)
+              (site, subscriptions),
+        ];
         return SettingsPage(
           title: Text(t.yattee.manageChannels),
           children: [
-            if (subscriptions.isEmpty)
+            if (grouped.isEmpty)
               EmptyStateWidget(icon: Symbols.subscriptions_rounded, message: t.yattee.manageChannelsEmpty)
             else
-              SettingsGroup(
-                children: [
-                  for (final subscription in subscriptions)
-                    FocusableListTile(
-                      leading: AppIcon(_icon(subscription.site), fill: 1),
-                      title: Text(subscription.name),
-                      subtitle: Text(subscription.channelId),
-                      trailing: const AppIcon(Symbols.close_rounded),
-                      onTap: () => unawaited(_remove(context, account, subscription)),
-                    ),
-                ],
-              ),
+              for (final (site, subscriptions) in grouped)
+                SettingsGroup(
+                  title: '${_siteLabel(site)} · ${t.yattee.manageChannelsCount(n: subscriptions.length)}',
+                  children: [
+                    for (final subscription in subscriptions)
+                      FocusableListTile(
+                        leading: AppIcon(_icon(site), fill: 1),
+                        title: Text(subscription.name),
+                        subtitle: Text(subscription.channelId),
+                        trailing: const AppIcon(Symbols.close_rounded),
+                        onTap: () => unawaited(_remove(context, account, subscription)),
+                      ),
+                  ],
+                ),
             const SizedBox(height: 24),
           ],
         );
