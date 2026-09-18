@@ -63,6 +63,8 @@ import '../services/playback_subtitle_resolver.dart';
 import '../services/mpv_sidecar_open_guard.dart';
 import '../services/playback_open_outcome.dart';
 import '../services/playback_progress_tracker.dart';
+import '../services/yattee/youtube_watch_session.dart';
+import '../providers/yattee/yattee_account_provider.dart';
 import '../services/playback_source_resolver.dart';
 import '../services/multi_server_manager.dart';
 import '../services/offline_watch_sync_service.dart';
@@ -107,6 +109,8 @@ import 'video_player/live_stream_retry.dart';
 import 'video_player/live_timeline_report.dart';
 import 'video_player/wakelock_controller.dart';
 import 'video_player/playback_failure_action.dart';
+import 'video_player/network_stream_tuning_policy.dart';
+import 'video_player/playback_open_timing.dart';
 import 'video_player/playback_transition_gate.dart';
 import 'video_player/open_http_503_watchdog.dart';
 import 'video_player/open_failure_log.dart';
@@ -116,6 +120,7 @@ import 'video_player/tv_background_suspend_policy.dart';
 import 'video_player/tv_background_suspend_state.dart';
 import 'video_player/visual_effects_controller.dart';
 import 'video_player/widgets/player_prompt_overlays.dart';
+import 'video_player/youtube_session_args.dart';
 import '../widgets/overlay_sheet.dart';
 import '../widgets/video_controls/player_chrome_controller.dart';
 import '../widgets/video_controls/video_controls.dart';
@@ -146,6 +151,7 @@ part 'video_player/parts/playback_start.dart';
 part 'video_player/parts/seeking.dart';
 part 'video_player/parts/build.dart';
 part 'video_player/parts/watch_together.dart';
+part 'video_player/parts/youtube.dart';
 
 final WakelockController _wakelockController = WakelockController();
 
@@ -392,24 +398,6 @@ class _PlaybackOpenRequest {
   );
 }
 
-class _PlaybackOpenTiming {
-  final Duration? mediaStart;
-  final Duration? timelineDuration;
-
-  const _PlaybackOpenTiming({this.mediaStart, this.timelineDuration});
-}
-
-_PlaybackOpenTiming _playbackOpenTiming({
-  required bool isTranscoding,
-  required Duration? resumePosition,
-  required int? durationMs,
-}) {
-  return _PlaybackOpenTiming(
-    mediaStart: resumePosition,
-    timelineDuration: isTranscoding && durationMs != null ? Duration(milliseconds: durationMs) : null,
-  );
-}
-
 /// Builds a [TrackPreferencePersister] that writes the per-episode stream
 /// selection out to [client], so the [TrackManager] doesn't have to import
 /// [PlexClient] itself. Reports the server's verdict: the PUT throws on a
@@ -477,6 +465,12 @@ class VideoPlayerScreen extends StatefulWidget {
 
   bool get isLive => live != null;
 
+  /// Present iff this screen plays a YouTube video through a Yattee Server;
+  /// carries the pre-resolved streams (see [YouTubeSessionArgs]).
+  final YouTubeSessionArgs? youtube;
+
+  bool get isYouTube => youtube != null;
+
   const VideoPlayerScreen({
     super.key,
     required this.metadata,
@@ -490,6 +484,7 @@ class VideoPlayerScreen extends StatefulWidget {
     this.selectedQualityPreset,
     this.selectedAudioStreamId,
     this.live,
+    this.youtube,
     this.watchTogetherLease,
     this.initialPosition,
     this.strictMediaSelection = false,
@@ -829,7 +824,9 @@ class VideoPlayerScreenState extends State<VideoPlayerScreen>
   // on an item change; user-initiated retries (play/seek) are always allowed
   // and never consume it.
   late final SpuriousEofRecovery _eofRecovery = SpuriousEofRecovery(
-    isLive: widget.isLive,
+    // A YouTube livestream EOFs for real when the broadcast ends; there is
+    // nothing to reload in place, so it opts out with live TV.
+    isLive: widget.isLive || _isYouTubeLive,
     isOffline: () => _isOfflinePlayback,
     transitionGate: _transitionGate,
     player: () => player,
@@ -919,7 +916,9 @@ class VideoPlayerScreenState extends State<VideoPlayerScreen>
     manager: () => _mediaControlsManager,
     player: () => player,
     isMounted: () => mounted && !_shuttingDown,
-    isLive: widget.isLive,
+    // Drops seek and speed from the OS media controls — a sliding window has
+    // nowhere to seek to and no rate to hold.
+    isLive: widget.isLive || _isYouTubeLive,
     shouldSkipForPip: () => _shouldSkipForPip,
     isPlayerInitialized: () => _isPlayerInitialized,
     metadata: () => _currentMetadata,
@@ -937,6 +936,11 @@ class VideoPlayerScreenState extends State<VideoPlayerScreen>
   );
   ({bool canControlPlayback, bool canNavigateMediaItems})? _lastMediaControlAuthority;
   PlaybackProgressTracker? _progressTracker;
+
+  /// Records the resume point for a YouTube session. Separate from
+  /// [_progressTracker] because there is no media server behind a YouTube
+  /// item to report to — the record is local (see [YouTubeWatchSession]).
+  YouTubeWatchSession? _youTubeWatch;
   VideoFilterManager? _videoFilterManager;
   bool _pipInitialized = false;
   ShaderService? _shaderService;
@@ -999,6 +1003,16 @@ class VideoPlayerScreenState extends State<VideoPlayerScreen>
   // keep their historical names; live TV (no session) gets the defaults.
   PlaybackContext? get _playbackContext => _playbackSession?.context;
   bool get _isTranscoding => _playbackSession?.isTranscoding ?? false;
+
+  /// Whether this screen is playing a YouTube livestream.
+  ///
+  /// Read from the widget rather than the session so the live-aware branches
+  /// are correct on the very first build, before the session commits.
+  /// Deliberately separate from [widget.isLive], which additionally gates the
+  /// Plex/Jellyfin tuner machinery (channel zapping, EPG, session keepalive)
+  /// that a YouTube stream has no equivalent of: the two are OR-ed together
+  /// only at the sites that care purely about "no fixed duration".
+  bool get _isYouTubeLive => widget.youtube?.isLive ?? false;
   bool get _effectiveIsOffline => _playbackSession?.isOffline ?? false;
   String? get _playbackPlaySessionId => _playbackSession?.playSessionId;
   String? get _playbackPlayMethod => _playbackSession?.playMethod;
@@ -1287,7 +1301,11 @@ class VideoPlayerScreenState extends State<VideoPlayerScreen>
         selectedMediaSourceId: widget.selectedMediaSourceId,
         selectedQualityPreset: widget.selectedQualityPreset,
         isOffline: widget.isOffline,
-        routeKind: widget.isLive ? VideoPlayerRouteKind.liveTv : VideoPlayerRouteKind.vod,
+        routeKind: widget.isYouTube
+            ? VideoPlayerRouteKind.youTube
+            : widget.isLive
+            ? VideoPlayerRouteKind.liveTv
+            : VideoPlayerRouteKind.vod,
       ),
     );
     _effectiveSelectedMediaIndex = widget.selectedMediaIndex;
@@ -1613,7 +1631,14 @@ class VideoPlayerScreenState extends State<VideoPlayerScreen>
       // and the reads below.
       // Skipped for live TV (has its own tune path — only the quality preset
       // is resolved below) and offline (its own branch in _startPlayback).
-      if (!widget.isLive && !_offlineLibraryMode) {
+      if (widget.isYouTube) {
+        // YouTube: the streams were resolved before this screen was pushed
+        // (see YouTubeSessionArgs) and there is no media server to consult,
+        // transcode on, or report to.
+        _serverSupportsTranscoding = false;
+        _selectedQualityPreset = TranscodeQualityPreset.original;
+        _playbackDataFuture = Future.value(widget.youtube!.toPlaybackContext(_currentMetadata));
+      } else if (!widget.isLive && !_offlineLibraryMode) {
         // Backend-neutral lookup so Jellyfin items also flow through here.
         // Plex-specific transcoder caching is gated on capabilities below;
         // Jellyfin's `streamHeaders` is empty because it embeds api_key in
@@ -2325,6 +2350,7 @@ class VideoPlayerScreenState extends State<VideoPlayerScreen>
     // Disposing the tracker stops producers, not its retained terminal report.
     _progressTracker?.stopTracking();
     _progressTracker?.dispose();
+    _youTubeWatch?.stop();
     _stopLiveTimelineUpdates();
 
     _detachPipStateListener();
@@ -2788,6 +2814,7 @@ class VideoPlayerScreenState extends State<VideoPlayerScreen>
     _live.resumeTimelineOnResume = false;
     _stopLiveTimelineUpdates();
     _progressTracker?.stopTracking();
+    _youTubeWatch?.stop();
     _companionRemote.unbind();
     _detachFromWatchTogetherSession(exiting: true);
     _detachPipStateListener();
@@ -2803,10 +2830,14 @@ class VideoPlayerScreenState extends State<VideoPlayerScreen>
     // yielding. Native stop may reset them. This also retains offline writes
     // and the tracker's terminal watched-state settlement.
     final stoppedReport = _sendStoppedProgressOnce(positionOverride: currentPlayer?.state.position);
+    // Same reason the stopped report is taken here: the final position has to
+    // be read before the native stop resets it.
+    final youTubeWatch = _flushYouTubeWatch();
     unawaited(() async {
       try {
         await Future.wait<void>([
           stoppedReport,
+          youTubeWatch,
           if (currentPlayer != null)
             pauseForRouteExit ? _pauseAndHidePlayerForRouteExit(currentPlayer) : currentPlayer.stop(),
           ...cancellations,
@@ -2817,6 +2848,18 @@ class VideoPlayerScreenState extends State<VideoPlayerScreen>
       }
     }());
     return completer.future;
+  }
+
+  /// Take the terminal reading for a YouTube session, if this is one.
+  ///
+  /// Never fails the shutdown: a resume point that could not be written is
+  /// worth a log line and nothing more.
+  Future<void> _flushYouTubeWatch() {
+    final watch = _youTubeWatch;
+    if (watch == null) return Future<void>.value();
+    return watch.flush().catchError((Object e, StackTrace st) {
+      appLogger.d('YouTube watch flush failed', error: e, stackTrace: st);
+    });
   }
 
   Future<void> _sendStoppedProgressOnce({Duration? positionOverride}) {

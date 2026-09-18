@@ -228,7 +228,7 @@ extension _VideoPlayerLifecycleMethods on VideoPlayerScreenState {
     if (!shouldSuspendPlayerForTvBackground(
       isAndroid: Platform.isAndroid,
       isTv: PlatformDetector.isTV(),
-      isLive: widget.isLive,
+      isLive: widget.isLive || _isYouTubeLive,
       alreadySuspended: _tvSuspend.suspended,
     )) {
       return false;
@@ -257,8 +257,11 @@ extension _VideoPlayerLifecycleMethods on VideoPlayerScreenState {
     final currentPlayer = player;
     if (!mounted || _shuttingDown || currentPlayer == null || !_isPlayerInitialized) return;
     // A live stream's tuned session is also its time-shift buffer. Stopping
-    // it would force a re-tune at the live edge and discard pause state.
-    if (widget.isLive) return;
+    // it would force a re-tune at the live edge and discard pause state. A
+    // YouTube livestream has no session to keep, but the restore path reloads
+    // through the media-server resolver it was never launched from, so it
+    // stays out of the suspend/restore cycle too.
+    if (widget.isLive || _isYouTubeLive) return;
     if (_tvSuspend.suspended || _shouldSkipForPip) return;
     final lifecycleState = WidgetsBinding.instance.lifecycleState;
     if (lifecycleState == AppLifecycleState.resumed || lifecycleState == AppLifecycleState.inactive) return;

@@ -1,0 +1,194 @@
+import '../../i18n/strings.g.dart';
+import '../../media/media_backend.dart';
+import '../../media/media_item.dart';
+import '../../media/media_kind.dart';
+import '../../utils/formatters.dart';
+import 'yattee_site.dart';
+import 'yattee_video.dart';
+
+/// Builds the rendering-only [MediaItem] stand-ins the YouTube tab feeds
+/// into the shared shelf/card stack, and recognizes them again on the way
+/// back (taps, long-presses, the player's metadata).
+///
+/// Same shape as `CatalogItem.toMediaItem`: no server id, an absolute
+/// thumbnail URL, and a `raw` marker so the tap sinks can route to the
+/// YouTube flow instead of a server-backed detail screen.
+abstract final class YouTubeMediaItems {
+  /// `raw` key under which the source [YatteeVideoSummary]'s identity lives.
+  static const String rawKey = 'plezyYouTube';
+
+  /// How coarsely a live preview's cache-busting stamp advances.
+  ///
+  /// The image cache keys on the URL, so a stable URL is fetched once and
+  /// held forever. A stamp that changed every second would make a new cache
+  /// entry per rebuild; five minutes keeps a broadcast preview current enough
+  /// to be useful while bounding what the cache accumulates.
+  static const Duration livePreviewInterval = Duration(minutes: 5);
+
+  /// Cache-busted [url] for a live preview, or [url] unchanged.
+  ///
+  /// Twitch serves a broadcast's preview from a fixed path — the picture
+  /// behind `live_user_<name>-<w>x<h>.jpg` changes, the address does not — so
+  /// without this the thumbnail stays on whatever frame was showing the first
+  /// time it loaded. [now] is passed in rather than read here so the mapping
+  /// stays a pure function of its inputs.
+  static String livePreviewUrl(String url, DateTime now) {
+    final bucket = now.millisecondsSinceEpoch ~/ livePreviewInterval.inMilliseconds;
+    final parsed = Uri.tryParse(url);
+    if (parsed == null) return url;
+    return parsed.replace(queryParameters: {...parsed.queryParameters, 'plezy': '$bucket'}).toString();
+  }
+
+  static MediaItem fromSummary(YatteeVideoSummary video, {DateTime? now}) {
+    final thumbnail = video.thumbnail;
+    // A live preview is a moving picture behind an unchanging URL; everything
+    // else is a still that never needs refetching.
+    final thumbnailUrl = thumbnail == null
+        ? null
+        : video.liveNow
+        ? livePreviewUrl(thumbnail.url, now ?? DateTime.now())
+        : thumbnail.url;
+    return MediaItem(
+      id: 'youtube:${video.videoId}',
+      // A backend is mandatory on the union; Plex is the catalog convention
+      // for synthetic items and nothing downstream reads it without a
+      // server id.
+      backend: MediaBackend.plex,
+      kind: MediaKind.clip,
+      title: video.title,
+      // The card's default subtitle line is `parentTitle`, which is where a
+      // clip's channel name belongs.
+      parentTitle: video.author,
+      summary: metadataLine(video),
+      durationMs: video.lengthSeconds > 0 ? video.lengthSeconds * 1000 : null,
+      thumbPath: thumbnailUrl,
+      artPath: thumbnailUrl,
+      raw: {
+        rawKey: {
+          'videoId': video.videoId,
+          'channelId': video.authorId,
+          'channel': video.author,
+          'site': video.site.id,
+          // How this video is fetched for playback. YouTube takes the bare
+          // id; every other site is reached by its own URL, and without one
+          // there is nothing to open.
+          'videoUrl': ?video.videoUrl,
+          // Carried so the card can badge the poster without re-fetching.
+          if (video.liveNow) 'live': true,
+          if (video.isUpcoming) 'upcoming': true,
+        },
+      },
+    );
+  }
+
+  /// A channel search hit as a square-card stand-in: the avatar where a
+  /// music artist's portrait would go, the subscriber count as the subtitle.
+  static MediaItem fromChannel(YatteeChannel channel) {
+    return MediaItem(
+      id: 'youtube-channel:${channel.authorId}',
+      backend: MediaBackend.plex,
+      kind: MediaKind.artist,
+      title: channel.author,
+      parentTitle: channel.subCountText,
+      summary: channel.description,
+      thumbPath: channel.avatar?.url,
+      raw: {
+        rawKey: {'channelId': channel.authorId, 'channel': channel.author},
+      },
+    );
+  }
+
+  /// "1.2M views • 3 days ago", from whichever of the server's text/numeric
+  /// fields is present. Live and upcoming rows carry no view count.
+  ///
+  /// A live or upcoming row leads with its state instead: neither reports a
+  /// length, so without it the card is indistinguishable from a short upload
+  /// whose duration the server happened to omit. Both labels are borrowed
+  /// from the live TV and explore surfaces rather than duplicated, so they
+  /// stay consistent and are already translated everywhere.
+  static String? metadataLine(YatteeVideoSummary video) {
+    final parts = <String>[
+      if (video.liveNow) t.liveTv.live else if (video.isUpcoming) t.explore.status.upcoming,
+      if (video.viewCountText case final text? when text.isNotEmpty)
+        text
+      else if (video.viewCount case final count?)
+        formatCompactViewCount(count),
+      if (video.publishedText case final text? when text.isNotEmpty)
+        text
+      else if (video.published case final epoch?)
+        formatRelativeDayLabel(DateTime.fromMillisecondsSinceEpoch(epoch * 1000)),
+    ];
+    return parts.isEmpty ? null : parts.join(' • ');
+  }
+
+  /// `1.2M views`; YouTube's own abbreviation scale.
+  static String formatCompactViewCount(int count) => t.yattee.views(count: formatCompactCount(count));
+
+  /// `1.2M`, `43K`, `987`.
+  static String formatCompactCount(int count) {
+    if (count >= 1000000000) return '${_trim(count / 1000000000)}B';
+    if (count >= 1000000) return '${_trim(count / 1000000)}M';
+    if (count >= 1000) return '${_trim(count / 1000)}K';
+    return '$count';
+  }
+
+  static String _trim(double value) {
+    final text = value >= 10 ? value.round().toString() : value.toStringAsFixed(1);
+    return text.endsWith('.0') ? text.substring(0, text.length - 2) : text;
+  }
+}
+
+/// Recognizes [MediaItem]s synthesized by [YouTubeMediaItems].
+extension YouTubeMediaItemX on MediaItem {
+  bool get isYouTubeItem => raw?[YouTubeMediaItems.rawKey] != null;
+
+  Map<String, Object?>? get _youTube {
+    final data = raw?[YouTubeMediaItems.rawKey];
+    return data is Map ? data.cast<String, Object?>() : null;
+  }
+
+  /// Null for channel stand-ins.
+  String? get youTubeVideoId => _youTube?['videoId'] as String?;
+
+  String? get youTubeChannelId => _youTube?['channelId'] as String?;
+
+  String? get youTubeChannelName => _youTube?['channel'] as String?;
+
+  /// Which source this stand-in came from; [YatteeSite.youtube] for anything
+  /// built before sites existed.
+  YatteeSite get youTubeSite => YatteeSite.fromId(_youTube?['site'] as String?);
+
+  /// The video's own URL, for sites fetched by URL rather than by id.
+  String? get youTubeVideoUrl => _youTube?['videoUrl'] as String?;
+
+  /// Whether this stand-in is a broadcast that is on air.
+  bool get youTubeIsLive => _youTube?['live'] == true;
+
+  /// `12:34`-style runtime for the card's poster, or null when there is none
+  /// to show.
+  ///
+  /// Null covers more than a missing field: a live broadcast and an unstarted
+  /// premiere both report a length of zero, and [YouTubeMediaItems.fromSummary]
+  /// stores no duration for them — so the badge stays off exactly where a
+  /// runtime would be a lie, and the LIVE badge speaks instead.
+  String? get youTubeDurationLabel {
+    if (!isYouTubeItem) return null;
+    final ms = durationMs;
+    if (ms == null || ms <= 0) return null;
+    return formatDurationTimestamp(Duration(milliseconds: ms));
+  }
+
+  /// Poster badge for a broadcast: LIVE, Upcoming, or none.
+  ///
+  /// A live or upcoming video reports no length, so without this it is
+  /// indistinguishable on the shelf from a short upload — and tapping one is
+  /// the only other way to find out. Reuses the live TV and explore strings
+  /// rather than adding YouTube copies of them.
+  String? get youTubeBroadcastBadge {
+    final data = _youTube;
+    if (data == null) return null;
+    if (data['live'] == true) return t.liveTv.live;
+    if (data['upcoming'] == true) return t.explore.status.upcoming;
+    return null;
+  }
+}

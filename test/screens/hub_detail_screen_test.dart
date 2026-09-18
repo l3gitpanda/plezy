@@ -15,6 +15,8 @@ import 'package:plezy/providers/multi_server_provider.dart';
 import 'package:plezy/screens/hub_detail_screen.dart';
 import 'package:plezy/services/multi_server_manager.dart';
 import 'package:plezy/services/settings_service.dart';
+import 'package:plezy/utils/platform_detector.dart';
+import 'package:plezy/widgets/app_bar_back_button.dart';
 import 'package:plezy/theme/mono_theme.dart';
 import 'package:plezy/utils/media_server_http_client.dart';
 import 'package:plezy/utils/grid_size_calculator.dart';
@@ -34,6 +36,50 @@ void main() {
     resetSharedPreferencesForTest();
     SettingsService.resetForTesting();
     LocaleSettings.setLocaleSync(AppLocale.en);
+  });
+
+  group('TV back affordance', () {
+    tearDown(() => TvDetectionService.debugSetAppleTVOverride(false));
+
+    // The app bar's chevron is focusable, but nothing on TV navigates to it:
+    // Up from the grid lands on the action bar and there is no way left out
+    // of it, which left the screen with no selectable exit.
+    Future<void> pumpGrid(WidgetTester tester, {required bool tv}) async {
+      if (tv) TvDetectionService.debugSetAppleTVOverride(true);
+      final items = List.generate(4, (index) => _item(index, backend: MediaBackend.plex));
+      final harness = await _createHarness(items, backend: MediaBackend.plex);
+      await tester.pumpWidget(
+        harness.wrap(
+          HubDetailScreen(
+            hub: MediaHub(
+              id: 'youtube:trending',
+              title: 'Trending',
+              type: 'clip',
+              items: items,
+              size: items.length,
+              more: true,
+            ),
+            loadItems: () async => items,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('the app bar offers a selectable Back action on TV', (tester) async {
+      await pumpGrid(tester, tv: true);
+      expect(find.byTooltip(t.common.back), findsOneWidget);
+      expect(find.byTooltip(t.libraries.sort), findsOneWidget);
+      // Exactly one back affordance: the chevron is replaced, not joined, or
+      // the screen shows two arrows and only one of them can be picked.
+      expect(find.byType(AppBarBackButton), findsNothing);
+    });
+
+    testWidgets('and adds none off TV, where the chevron is reachable', (tester) async {
+      await pumpGrid(tester, tv: false);
+      expect(find.byTooltip(t.common.back), findsNothing);
+      expect(find.byTooltip(t.libraries.sort), findsOneWidget);
+    });
   });
 
   testWidgets('Jellyfin hub advances by raw page size after screen filtering', (tester) async {

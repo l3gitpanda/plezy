@@ -87,6 +87,16 @@ class _HubDetailScreenState extends State<HubDetailScreen>
   @override
   List<FocusableAction> getAppBarActions() {
     return [
+      // The app bar's own back chevron is focusable but unreachable by D-pad:
+      // Up from the grid lands on this action bar, and nothing navigates left
+      // out of it. On TV that left the screen with no selectable way out, so
+      // Back joins the actions, where focus already goes.
+      if (PlatformDetector.isTV())
+        FocusableAction(
+          icon: Symbols.arrow_back_rounded,
+          tooltip: t.common.back,
+          onPressed: () => Navigator.of(context).maybePop(),
+        ),
       FocusableAction(icon: Symbols.swap_vert_rounded, tooltip: t.libraries.sort, onPressed: _showSortBottomSheet),
     ];
   }
@@ -526,7 +536,15 @@ class _HubDetailScreenState extends State<HubDetailScreen>
             primary: true,
             clipBehavior: Clip.none,
             slivers: [
-              CustomAppBar(title: Text(widget.hub.title), pinned: true, actions: buildFocusableAppBarActions()),
+              CustomAppBar(
+                title: Text(widget.hub.title),
+                pinned: true,
+                // On TV the chevron is replaced, not joined, by the Back
+                // action below: D-pad never reaches the leading slot, so
+                // leaving it there is a second arrow that cannot be picked.
+                automaticallyImplyLeading: !PlatformDetector.isTV(),
+                actions: buildFocusableAppBarActions(),
+              ),
               if (_errorMessage != null)
                 SliverErrorState(message: _errorMessage!, onRetry: _loadMoreItems)
               else if (_filteredItems.isEmpty && _isLoading)

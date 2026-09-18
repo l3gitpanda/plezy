@@ -12,6 +12,7 @@ import '../focus/focus_theme.dart';
 import '../focus/input_mode_tracker.dart';
 import '../i18n/app_locale_utils.dart';
 import '../media/catalog_item_ref.dart';
+import '../models/yattee/youtube_media_item.dart';
 import '../media/media_item.dart';
 import '../media/media_item_types.dart';
 import '../media/media_kind.dart';
@@ -495,8 +496,11 @@ class MediaCardState extends State<MediaCard> with ContextMenuTapMixin<MediaCard
     // Catalog stand-ins (Explore tab) have no server-backed actions — every
     // entry in the context menu would break on serverId == null. Long-press
     // no-ops on them; taps route through the catalog branch in
-    // navigateToMediaItem.
-    if ((item is MediaItem && item.isCatalogItem) || widget.onLongPress != null) return cardWidget;
+    // navigateToMediaItem. YouTube stand-ins are serverless the same way and
+    // get their own long-press sheet from the surfaces that render them.
+    if ((item is MediaItem && (item.isCatalogItem || item.isYouTubeItem)) || widget.onLongPress != null) {
+      return cardWidget;
+    }
 
     // MediaContextMenu as a non-widget helper — only wrap with its key for
     // programmatic context menu access; gesture callbacks are on InkWell directly.
@@ -526,7 +530,14 @@ class MediaCardState extends State<MediaCard> with ContextMenuTapMixin<MediaCard
   }) {
     final catalogItem = _catalogItem;
     final now = catalogItem?.nextEpisode == null ? null : DateTime.now();
-    final badgeLabels = _buildCatalogBadgeLabels(catalogItem, now);
+    // YouTube shares this overlay rather than growing its own: a broadcast
+    // reports no length, so the badge is the only thing on the poster that
+    // says it is live. The two sources never coexist — a catalog item is
+    // never a YouTube stand-in.
+    final badgeLabels = [
+      ..._buildCatalogBadgeLabels(catalogItem, now),
+      if (item is MediaItem) ?item.youTubeBroadcastBadge,
+    ];
     final Widget card;
     if (widget.fullBleedImage) {
       card = LayoutBuilder(
@@ -596,6 +607,7 @@ class MediaCardState extends State<MediaCard> with ContextMenuTapMixin<MediaCard
                   ),
                   if (item is MediaItem && _showsWatchedIndicator(item)) WatchedIndicator(item: item),
                   if (badgeLabels.isNotEmpty) _CatalogBadges(labels: badgeLabels),
+                  if (item is MediaItem) ?_durationBadge(item),
                 ],
               ),
             ),
@@ -642,6 +654,7 @@ class MediaCardState extends State<MediaCard> with ContextMenuTapMixin<MediaCard
             ),
             if (item is MediaItem && _showsWatchedIndicator(item)) WatchedIndicator(item: item),
             if (badgeLabels.isNotEmpty) _CatalogBadges(labels: badgeLabels),
+            if (item is MediaItem) ?_durationBadge(item),
           ],
         ),
       ),
@@ -1436,6 +1449,33 @@ List<String> _buildCatalogBadgeLabels(CatalogItem? item, DateTime? now) {
 
   add(_catalogEpisodeBadge(item));
   return labels;
+}
+
+/// Runtime chip for a YouTube stand-in, bottom-right of the poster.
+///
+/// Only YouTube items: a server-backed one reaches a detail screen that states
+/// its runtime, while these play straight from the card, so the length is
+/// worth knowing before committing to one. Bottom-right is the free corner —
+/// the watched check sits top-right and the badges top-left.
+Widget? _durationBadge(MediaItem item) {
+  final label = item.youTubeDurationLabel;
+  if (label == null) return null;
+  return Positioned(
+    key: const Key('media-card-duration'),
+    right: 6,
+    bottom: 6,
+    child: DecoratedBox(
+      decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.76), borderRadius: BorderRadius.circular(4)),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
+        child: Text(
+          label,
+          maxLines: 1,
+          style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: .w700, height: 1),
+        ),
+      ),
+    ),
+  );
 }
 
 class _CatalogBadges extends StatelessWidget {
