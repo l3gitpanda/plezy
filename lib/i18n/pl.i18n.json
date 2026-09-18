@@ -2276,6 +2276,8 @@
     "manageChannels": "",
     "manageChannelsCount": {
       "one": "",
+      "few": "",
+      "many": "",
       "other": ""
     },
     "manageChannelsEmpty": "",
