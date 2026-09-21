@@ -12,9 +12,17 @@ name: Build tvOS IPA
 # Re-sign it with your own Apple ID before installing (Xcode's Devices window,
 # iOS App Signer, or Sideloadly), then deploy it to the Apple TV.
 
+# This file is kept on BOTH the default branch and the yattee branch, because
+# the two triggers below resolve differently: a push runs the copy that exists
+# on the pushed branch, while workflow_dispatch is only listed in the Actions
+# UI when the file is on the default branch.
 on:
   workflow_dispatch:
     inputs:
+      ref:
+        description: Branch, tag or SHA to build
+        default: claude/yattee-plezy-youtube-streaming-vff4sh
+        type: string
       configuration:
         description: Xcode build configuration
         default: Release
@@ -22,12 +30,14 @@ on:
         options:
           - Release
           - Debug
-  # workflow_dispatch only appears in the Actions UI once the file is on the
-  # default branch, so a branch-scoped push trigger is what actually reaches an
-  # unmerged branch. Drop this block once the workflow lands on main.
+  # Automatic builds are scoped to the one branch that is actually run on a
+  # device, so a push there — including a replay by the sync sweep — leaves a
+  # fresh IPA waiting. Every other ref is built on demand through the input
+  # above; widening this list would spend macOS minutes, billed at 10x, on
+  # branches nobody is going to sideload.
   push:
     branches:
-      - "claude/**"
+      - claude/yattee-plezy-youtube-streaming-vff4sh
 
 permissions:
   contents: read
@@ -45,6 +55,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          # Empty on a push, which leaves checkout on the ref that triggered it.
+          ref: ${{ inputs.ref }}
           persist-credentials: false
 
       - name: Setup Flutter
