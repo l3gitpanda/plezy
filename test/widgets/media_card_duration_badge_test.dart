@@ -23,7 +23,7 @@ MediaItem _youTube({int lengthSeconds = 212, bool liveNow = false}) => YouTubeMe
 );
 
 /// [fullBleed] selects the other grid builder. Both matter: the TV browse
-/// rail renders cards with `forceGridMode`, and switches to the full-bleed
+/// rail renders cards with `viewModeOverride: ViewMode.grid`, and switches to the full-bleed
 /// one under the TV full-card layout setting — so the badge has to survive
 /// both or it vanishes on exactly the surface it was asked for.
 Future<void> pumpGridCard(WidgetTester tester, MediaItem item, {bool fullBleed = false}) {
@@ -36,7 +36,13 @@ Future<void> pumpGridCard(WidgetTester tester, MediaItem item, {bool fullBleed =
             child: SizedBox(
               width: 200,
               height: 160,
-              child: MediaCard(item: item, width: 200, height: 120, forceGridMode: true, fullBleedImage: fullBleed),
+              child: MediaCard(
+                item: item,
+                width: 200,
+                height: 120,
+                viewModeOverride: ViewMode.grid,
+                fullBleedImage: fullBleed,
+              ),
             ),
           ),
         ),

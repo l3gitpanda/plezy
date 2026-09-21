@@ -681,7 +681,7 @@ class YouTubeScreenState extends State<YouTubeScreen>
       return FocusableMediaCard(
         key: Key(item.globalKey),
         item: item,
-        forceListMode: true,
+        viewModeOverride: ViewMode.list,
         disableScale: true,
         focusNode: index == 0 ? firstResultFocusNode : null,
         onNavigateLeft: _navigateToSidebar,

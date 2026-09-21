@@ -8,6 +8,7 @@ import '../../focus/focusable_button.dart';
 import '../../i18n/strings.g.dart';
 import '../../media/media_item.dart';
 import '../../mixins/mounted_set_state_mixin.dart';
+import '../../services/settings_service.dart';
 import '../../models/yattee/youtube_media_item.dart';
 import '../../models/yattee/yattee_session.dart';
 import '../../models/yattee/yattee_video.dart';
@@ -181,7 +182,7 @@ class _YouTubeChannelScreenState extends State<YouTubeChannelScreen> with Mounte
                 return FocusableMediaCard(
                   key: Key(item.globalKey),
                   item: item,
-                  forceListMode: true,
+                  viewModeOverride: ViewMode.list,
                   disableScale: true,
                   onNavigateUp: index == 0 ? _subscribeFocus.requestFocus : null,
                 );

@@ -14,6 +14,7 @@ import '../../widgets/focusable_media_card.dart';
 import '../../widgets/focused_scroll_scaffold.dart';
 import '../../widgets/loading_indicator_box.dart';
 import '../../widgets/search_input_field.dart';
+import '../../services/settings_service.dart';
 import '../libraries/state_messages.dart';
 
 /// Turns a mixed `/search` answer into the stand-ins the shared card stack
@@ -97,7 +98,7 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen> with Debounce
             return FocusableMediaCard(
               key: Key(item.globalKey),
               item: item,
-              forceListMode: true,
+              viewModeOverride: ViewMode.list,
               disableScale: true,
               focusNode: index == 0 ? firstResultFocusNode : null,
               onNavigateUp: index == 0 ? searchFocusNode.requestFocus : null,
