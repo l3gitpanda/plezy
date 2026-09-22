@@ -1,0 +1,368 @@
+name: Sync Fork
+
+# Keeps this fork current with the repository it was forked from, then carries
+# the refreshed tracked branch into the long-lived topic branches.
+#
+#   1. sync-tracked-branch — replays this fork's own commits on top of upstream
+#      and force-pushes the result, so main reads as upstream's history with a
+#      single fork-only commit on the end.
+#   2. update-branches — merges the refreshed main into every eligible branch
+#      and pushes the result. Manual only, from the Actions tab: see the job.
+#
+# Why a rebase rather than the "Sync fork" button's merge. main cannot
+# fast-forward while it carries fork-only files, so every merge-based sync left
+# another "Merge branch 'edde746:main' into main" commit behind, and the count
+# of commits this fork was "ahead" grew forever. Replaying instead keeps main at
+# exactly upstream plus this fork's own commit: no merge commits, every upstream
+# commit reading with its original author, and a constant one-commit lead.
+#
+# This rewrites main's history on every run that has something to replay. That
+# is safe here because pull requests are branched from upstream/main, never from
+# this fork's main — branching a PR off this branch is what drags fork-only
+# commits into an upstream diff. It also means job 2's merges see a rewritten
+# main, so a topic branch that already absorbed an older main may conflict;
+# that job is manual for other reasons anyway.
+#
+# `git rebase` drops merge commits. main is expected to be a linear
+# upstream-plus-fork-commits branch, which it is as long as nothing merges into
+# it by hand — do not merge upstream into main, let this workflow replay it.
+#
+# This file has to live on the default branch: GitHub only ever runs the copy
+# of a scheduled workflow that exists on the default branch, and it ignores the
+# schedule everywhere else. That is also precisely why main carries a fork-only
+# commit at all, and so why it can never fast-forward.
+#
+# Requires the SYNC_TOKEN secret: a personal access token with write access to
+# contents and workflows. GITHUB_TOKEN is refused any push that changes a file
+# under .github/workflows/, and upstream edits those files often, so without
+# SYNC_TOKEN the replay fails whenever upstream touches one — and the commits it
+# does land are attributed to github-actions[bot] rather than to the account
+# that owns the fork.
+
+on:
+  schedule:
+    # Six-hourly. Safe to run unattended now that SYNC_TOKEN exists: before it
+    # did, every run that met an upstream workflow change failed and mailed a
+    # failure, which is why this trigger was removed once.
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Report what each branch would do without pushing anything
+        default: false
+        type: boolean
+      branches:
+        description: Space-separated branches to update; empty means every eligible branch
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  # Two syncs racing would fight over the same refs.
+  group: sync-fork
+  cancel-in-progress: false
+
+env:
+  # The branch tracked on both sides of the fork relationship.
+  TRACKED_BRANCH: main
+  # Branches the propagation job never touches, as space-separated shell globs.
+  EXCLUDED_BRANCHES: "tmp/* revert-*"
+
+jobs:
+  sync-tracked-branch:
+    name: Replay main onto upstream
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout the tracked branch with full history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: main
+          # The rebase needs every commit on both sides, not a shallow tip.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Replay the fork-only commits on top of upstream
+        env:
+          GH_TOKEN: ${{ secrets.SYNC_TOKEN || github.token }}
+          PUSH_TOKEN: ${{ secrets.SYNC_TOKEN || github.token }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+
+          PARENT=$(gh api "repos/$GITHUB_REPOSITORY" --jq '.parent.full_name // empty')
+          if [ -z "$PARENT" ]; then
+            echo "::error::$GITHUB_REPOSITORY is not a fork, so there is no upstream to sync from."
+            exit 1
+          fi
+
+          # Only the committer of the replayed commits. Their author is carried
+          # through the rebase untouched, which is what GitHub displays and what
+          # keeps credit with whoever actually wrote each commit.
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git remote add upstream "https://github.com/$PARENT.git"
+          git fetch --quiet upstream "$TRACKED_BRANCH"
+
+          BEFORE=$(git rev-parse HEAD)
+          UPSTREAM=$(git rev-parse FETCH_HEAD)
+
+          if ! git rebase "$UPSTREAM"; then
+            git rebase --abort || true
+            {
+              echo "### Upstream sync"
+              echo
+              echo "Replaying \`$TRACKED_BRANCH\` onto \`$PARENT\` hit a conflict: a fork-only commit"
+              echo "clashes with an upstream change. Resolve it once by hand — rebase locally, force"
+              echo "push — and later runs go back to replaying cleanly."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::replay onto $PARENT failed for $TRACKED_BRANCH."
+            exit 1
+          fi
+
+          AFTER=$(git rev-parse HEAD)
+          GAINED=$(git rev-list --count "$BEFORE..$UPSTREAM")
+          LEAD=$(git rev-list --count "$UPSTREAM..$AFTER")
+
+          if [ "$AFTER" = "$BEFORE" ]; then
+            {
+              echo "### Upstream sync"
+              echo
+              echo "\`$TRACKED_BRANCH\` is already sitting on \`$PARENT\`'s tip — nothing to replay."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          if [ "$DRY_RUN" = "true" ]; then
+            {
+              echo "### Upstream sync (dry run)"
+              echo
+              echo "Would take **$GAINED** commit(s) from \`$PARENT\` and replay **$LEAD** fork-only"
+              echo "commit(s) on top. Nothing was pushed."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # Never echoed, and kept out of the remote URL so it cannot leak through
+          # a push error message.
+          AUTH_HEADER="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$PUSH_TOKEN" | base64 -w0)"
+
+          # The lease pins the push to the tip this job actually rebased, so a
+          # force push can never discard something that landed meanwhile.
+          PUSH_STATUS=0
+          PUSH_OUTPUT=$(
+            git -c http.extraheader="$AUTH_HEADER" push \
+              --force-with-lease="$TRACKED_BRANCH:$BEFORE" \
+              origin "HEAD:refs/heads/$TRACKED_BRANCH" 2>&1
+          ) || PUSH_STATUS=$?
+
+          if [ "$PUSH_STATUS" -ne 0 ]; then
+            echo "$PUSH_OUTPUT"
+            {
+              echo "### Upstream sync"
+              echo
+              if printf '%s' "$PUSH_OUTPUT" | grep -q 'workflow'; then
+                echo "The replay changes a workflow file and the token may not push one. Add a"
+                echo "SYNC_TOKEN secret with contents and workflows write access."
+              else
+                echo "Pushing \`$TRACKED_BRANCH\` failed; see the job log."
+              fi
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::pushing $TRACKED_BRANCH failed."
+            exit 1
+          fi
+
+          {
+            echo "### Upstream sync"
+            echo
+            echo "\`$TRACKED_BRANCH\` replayed onto \`$PARENT\`: took **$GAINED** upstream commit(s),"
+            echo "kept **$LEAD** fork-only commit(s) on top. No merge commit."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  update-branches:
+    name: Replay topic branches onto upstream
+    needs: sync-tracked-branch
+    # Runs on every sync, including the scheduled one: a branch that is already
+    # current costs nothing, and one that has drifted is cheapest to move before
+    # the drift turns into a conflict.
+    #
+    # Branches are replayed onto UPSTREAM, not onto this fork's main. main
+    # carries a fork-only commit, so rebasing onto it would plant that commit in
+    # every branch — and a topic branch is the head of a pull request against the
+    # parent, where a fork-only commit has no business being. Rebasing onto
+    # upstream instead is what those pull requests actually want, and it removes
+    # the need to strip anything back out afterwards.
+    #
+    # Nothing here fails the run. A branch that conflicts is reported and left
+    # exactly as it was; the sweep is a convenience, and a five-month-old branch
+    # refusing to replay is expected rather than broken. Only the sync itself is
+    # allowed to turn this workflow red.
+    #
+    # always(): still worth sweeping when the upstream sync failed, since the
+    # branches are replayed onto upstream directly and do not depend on it.
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout with full history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # Every branch and its full history: the replays below need both sides.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Replay each eligible branch onto upstream
+        env:
+          GH_TOKEN: ${{ secrets.SYNC_TOKEN || github.token }}
+          PUSH_TOKEN: ${{ secrets.SYNC_TOKEN || github.token }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          REQUESTED_BRANCHES: ${{ inputs.branches }}
+        run: |
+          set -euo pipefail
+
+          OWNER="${GITHUB_REPOSITORY%%/*}"
+          PARENT=$(gh api "repos/$GITHUB_REPOSITORY" --jq '.parent.full_name // empty')
+          if [ -z "$PARENT" ]; then
+            echo "::error::$GITHUB_REPOSITORY is not a fork, so there is no upstream to replay onto."
+            exit 1
+          fi
+
+          # Only the committer of replayed commits; each commit's author rides
+          # through the rebase untouched.
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git remote add upstream "https://github.com/$PARENT.git" 2>/dev/null || true
+          git fetch --quiet upstream "$TRACKED_BRANCH"
+          UPSTREAM=$(git rev-parse FETCH_HEAD)
+
+          # Branches that head an open pull request are left alone. Replaying one
+          # means a force push, which rewrites the pull request, mails everyone
+          # watching it, and detaches review comments from the diff they were
+          # written against. Refreshing those is a deliberate act, not a sweep.
+          PROTECTED=""
+          for REPO in "$PARENT" "$GITHUB_REPOSITORY"; do
+            PR_HEADS=$(
+              gh pr list --repo "$REPO" --state open --limit 200 \
+                --json headRefName,headRepositoryOwner \
+                --jq ".[] | select(.headRepositoryOwner.login == \"$OWNER\") | .headRefName" 2>/dev/null
+            ) || PR_HEADS=""
+            PROTECTED="$PROTECTED $PR_HEADS"
+          done
+
+          if [ -n "${REQUESTED_BRANCHES// /}" ]; then
+            read -r -a CANDIDATES <<< "$REQUESTED_BRANCHES"
+          else
+            mapfile -t CANDIDATES < <(
+              git for-each-ref --format='%(refname:strip=3)' refs/remotes/origin | grep -v '^HEAD$'
+            )
+          fi
+
+          # Never echoed, and kept out of the remote URL so it cannot leak through
+          # a push error message.
+          AUTH_HEADER="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$PUSH_TOKEN" | base64 -w0)"
+
+          # read -a splits on whitespace without expanding the globs against the
+          # working tree, which an unquoted $EXCLUDED_BRANCHES would do.
+          read -r -a EXCLUDE_PATTERNS <<< "$EXCLUDED_BRANCHES"
+
+          REPORT=()
+          MOVED=0
+
+          record() {
+            REPORT+=("| \`$1\` | $2 | $3 |")
+          }
+
+          for BRANCH in "${CANDIDATES[@]}"; do
+            [ -n "$BRANCH" ] || continue
+            [ "$BRANCH" != "$TRACKED_BRANCH" ] || continue
+
+            SKIP=false
+            for PATTERN in "${EXCLUDE_PATTERNS[@]}"; do
+              # shellcheck disable=SC2053
+              [[ "$BRANCH" == $PATTERN ]] && SKIP=true && break
+            done
+            [ "$SKIP" = false ] || continue
+
+            case " $PROTECTED " in
+              *" $BRANCH "*)
+                record "$BRANCH" "left alone" "heads an open pull request"
+                continue
+                ;;
+            esac
+
+            REMOTE_REF="refs/remotes/origin/$BRANCH"
+            if ! git rev-parse --verify --quiet "$REMOTE_REF" >/dev/null; then
+              record "$BRANCH" "skipped" "no such branch on origin"
+              continue
+            fi
+
+            REMOTE_SHA=$(git rev-parse "$REMOTE_REF")
+
+            # A branch rooted in a rewritten history shares no commit with
+            # upstream, so there is nothing to replay it onto.
+            if ! git merge-base "$REMOTE_REF" "$UPSTREAM" >/dev/null 2>&1; then
+              record "$BRANCH" "needs rebuild" "shares no history with \`$PARENT\`"
+              continue
+            fi
+
+            BEHIND=$(git rev-list --count "$REMOTE_REF..$UPSTREAM")
+            if [ "$BEHIND" -eq 0 ]; then
+              record "$BRANCH" "up to date" "already on \`$PARENT\`'s tip"
+              continue
+            fi
+
+            git checkout --quiet --force -B "$BRANCH" "$REMOTE_REF"
+
+            # --empty=drop: a branch swept by the older merge-based job carries a
+            # commit that deleted the fork-only paths, which is a no-op once the
+            # branch is replayed onto upstream, where they never existed.
+            if ! git rebase --empty=drop "$UPSTREAM" >/dev/null 2>&1; then
+              git rebase --abort >/dev/null 2>&1 || true
+              record "$BRANCH" "conflict" "$BEHIND behind; replay by hand"
+              continue
+            fi
+
+            AHEAD=$(git rev-list --count "$UPSTREAM..HEAD")
+
+            if [ "$DRY_RUN" = "true" ]; then
+              record "$BRANCH" "would replay" "$BEHIND upstream commit(s) under $AHEAD own commit(s)"
+              continue
+            fi
+
+            PUSH_STATUS=0
+            PUSH_OUTPUT=$(
+              git -c http.extraheader="$AUTH_HEADER" push \
+                --force-with-lease="$BRANCH:$REMOTE_SHA" \
+                origin "HEAD:refs/heads/$BRANCH" 2>&1
+            ) || PUSH_STATUS=$?
+
+            if [ "$PUSH_STATUS" -eq 0 ]; then
+              record "$BRANCH" "replayed" "took $BEHIND upstream commit(s), kept $AHEAD own"
+              MOVED=$((MOVED + 1))
+            else
+              echo "$PUSH_OUTPUT"
+              if printf '%s' "$PUSH_OUTPUT" | grep -q 'stale info'; then
+                record "$BRANCH" "skipped" "moved while this run was working on it"
+              else
+                echo "::warning::pushing $BRANCH failed; see the job log."
+                record "$BRANCH" "push failed" "see the job log"
+              fi
+            fi
+          done
+
+          {
+            echo "### Branch replays"
+            echo
+            echo "| Branch | Result | Detail |"
+            echo "| --- | --- | --- |"
+            [ "${#REPORT[@]}" -gt 0 ] && printf '%s\n' "${REPORT[@]}"
+            echo
+            echo "Replayed **$MOVED** branch(es). Conflicts and open-pull-request branches are"
+            echo "reported, never forced — neither fails this run."
+          } >> "$GITHUB_STEP_SUMMARY"
