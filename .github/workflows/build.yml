@@ -37,7 +37,11 @@ env:
   # Only place this workflow names the SDK; .github/actions/setup-flutter-git pins the same release.
   FLUTTER_VERSION: "3.47.1"
   # Shared by every release build command; SENTRY_DIST stays per-platform.
-  RELEASE_DART_DEFINES: --dart-define=ENABLE_UPDATE_CHECK=true ${{ github.repository == 'edde746/plezy' && '--dart-define=ENABLE_SENTRY=true' || '' }} --dart-define=GIT_COMMIT=${{ github.sha }} --dart-define=SENTRY_ENVIRONMENT=github --dart-define=ENABLE_DONATIONS=true
+  # ENABLE_UPDATE_CHECK is keyed on the ref rather than hardcoded true: UpdateService
+  # points at edde746/plezy, so an off-main artifact build left with the check on
+  # would offer to replace itself with an upstream release. Upstream only ever
+  # builds refs/heads/main, where this still renders true.
+  RELEASE_DART_DEFINES: --dart-define=ENABLE_UPDATE_CHECK=${{ github.ref == 'refs/heads/main' }} ${{ github.repository == 'edde746/plezy' && '--dart-define=ENABLE_SENTRY=true' || '' }} --dart-define=GIT_COMMIT=${{ github.sha }} --dart-define=SENTRY_ENVIRONMENT=github --dart-define=ENABLE_DONATIONS=true
   TRUSTED_BUILD_CACHE_VERSION: trusted-build-v1
   LINUX_APT_PACKAGES: >
     clang cmake meson ninja-build pkg-config nasm libgtk-3-dev libevdev-dev liblzma-dev
@@ -53,11 +57,22 @@ jobs:
     name: Validate trusted build ref
     runs-on: ubuntu-latest
     permissions: {}
+    env:
+      # Fork-only relaxation. A run that names no release_tag publishes nothing —
+      # create-release is already conditioned on a non-empty tag — so this fork
+      # treats it as an artifact build and allows it from any ref. That is how a
+      # branch gets an APK, a DMG or a Linux package here; Windows and tvOS have
+      # their own single-platform workflows that never needed a gate at all.
+      #
+      # False in edde746/plezy, which keeps the original main-or-nothing rule
+      # because it signs and publishes what this workflow produces. A tagged run
+      # stays main-only everywhere, this fork included.
+      ARTIFACT_BUILD_FROM_ANY_REF: ${{ github.repository != 'edde746/plezy' && inputs.release_tag == '' }}
     steps:
       - name: Require the protected main branch
         shell: bash
         run: |
-          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+          if [[ "$GITHUB_REF" != "refs/heads/main" && "$ARTIFACT_BUILD_FROM_ANY_REF" != "true" ]]; then
             echo "Release builds may only run from refs/heads/main." >&2
             exit 1
           fi
