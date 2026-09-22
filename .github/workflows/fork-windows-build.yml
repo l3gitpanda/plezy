@@ -1,0 +1,118 @@
+name: Fork Windows Build
+run-name: Windows build of ${{ inputs.ref }}
+
+# Fork-only: an unsigned Windows build of any ref, for trying a change out
+# before it goes anywhere near a pull request.
+#
+# build.yml cannot do this. Its validate-trusted-ref job refuses any ref but
+# refs/heads/main, because it is the release path and signs what it produces.
+# This workflow signs nothing and publishes nothing — it drops a zip in the run's
+# artifacts and stops there.
+#
+# The ref to build is an input rather than the ref the workflow runs from, so
+# this file never has to exist on the branch under test. Topic branches head
+# pull requests against the parent repository, and anything on them is proposed
+# upstream in the diff; keeping the file on the default branch alone is the same
+# rule sync-fork.yml follows (see FORK_ONLY_PATHS there, which lists this file).
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch, tag or SHA to build
+        default: main
+        type: string
+      arch:
+        description: Target architecture
+        default: x64
+        type: choice
+        options:
+          - x64
+          - arm64
+
+permissions:
+  contents: read
+
+concurrency:
+  # One build per ref; a re-dispatch supersedes a run still in flight.
+  group: fork-windows-build-${{ inputs.ref }}-${{ inputs.arch }}
+  cancel-in-progress: true
+
+env:
+  # Matches the SDK build.yml and ci.yml pin, and the one setup-flutter-git uses.
+  FLUTTER_VERSION: "3.47.1"
+
+jobs:
+  build-windows:
+    name: Build Windows (${{ inputs.arch }})
+    # Inert in the parent repository, which has its own signed release path.
+    if: github.repository != 'edde746/plezy'
+    runs-on: ${{ inputs.arch == 'arm64' && 'windows-11-arm' || 'windows-latest' }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - name: Cache Windows native dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: build/windows/${{ inputs.arch }}/_deps
+          key: fork-windows-native-${{ inputs.arch }}-${{ hashFiles('windows/CMakeLists.txt', 'mpv-build.lock.json') }}
+
+      # windows-11-arm has no prebuilt SDK archive to download, so the ARM leg
+      # bootstraps Flutter from the pinned commit the same way build.yml does.
+      - name: Setup Flutter
+        if: inputs.arch == 'x64'
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          channel: "stable"
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+          cache-key: "fork-windows-flutter-:os:-:channel:-:version:-:arch:-:hash:"
+          pub-cache: false
+
+      - name: Set up Flutter from its pinned commit
+        if: inputs.arch == 'arm64'
+        uses: ./.github/actions/setup-flutter-git
+
+      - name: Cache Pub dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            ~\AppData\Local\Pub\Cache
+          key: fork-windows-${{ runner.os }}-${{ runner.arch }}-pub-${{ hashFiles('pubspec.yaml', 'pubspec.lock') }}
+
+      - name: Install dependencies
+        shell: pwsh
+        run: flutter pub get --enforce-lockfile --no-example
+
+      - name: Install patched Flutter engine (DComp)
+        shell: pwsh
+        run: |
+          flutter precache --windows
+          .\windows\tool\install-patched-engine.ps1
+
+      # No Sentry, no donations, and the update check stays off: a build from an
+      # arbitrary branch must not offer to replace itself with a release.
+      - name: Build Windows ${{ inputs.arch }}
+        shell: pwsh
+        run: flutter build windows --release --dart-define=GIT_COMMIT=${{ github.sha }}
+
+      - name: Verify the bundle was produced
+        shell: pwsh
+        run: |
+          $bundleDir = "build/windows/${{ inputs.arch }}/runner/Release"
+          if (-not (Test-Path -LiteralPath "$bundleDir/plezy.exe")) {
+            throw "No plezy.exe under $bundleDir"
+          }
+          Get-ChildItem -LiteralPath $bundleDir | Select-Object Name, Length
+
+      - name: Upload the build
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: plezy-windows-${{ inputs.arch }}
+          path: build/windows/${{ inputs.arch }}/runner/Release/
+          if-no-files-found: error
