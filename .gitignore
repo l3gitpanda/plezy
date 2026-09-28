@@ -75,3 +75,6 @@ maestro/**/*.png
 
 server/deploy.sh
 server/Caddyfile
+
+# Prebuilt libmpv prefix fetched by scripts/fetch_linux_libmpv.py for local Linux builds
+libmpv-prefix/
