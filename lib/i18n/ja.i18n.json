@@ -2,6 +2,41 @@
   "app": {
     "title": "Plezy"
   },
+  "appIcon": {
+    "title": "",
+    "defaultIcon": "",
+    "current": "",
+    "locked": "",
+    "lockedHint": "",
+    "changeFailed": "",
+    "launcherHint": "",
+    "tvLauncherHint": "",
+    "names": {
+      "midnight": "",
+      "ember": "",
+      "paper": "",
+      "oled": "",
+      "line": "",
+      "ocean": "",
+      "ultraviolet": "",
+      "matcha": "",
+      "sunset": "",
+      "gold": "",
+      "titanium": "",
+      "glass": "",
+      "crt": "",
+      "vhs": "",
+      "synthwave": "",
+      "pixel": "",
+      "neon": "",
+      "sticker": "",
+      "ticket": "",
+      "pop": "",
+      "strata": "",
+      "facet": "",
+      "tilde": ""
+    }
+  },
   "auth": {
     "signInWithPlex": "Plexでサインイン",
     "showQRCode": "QRコードを表示",
@@ -79,7 +114,9 @@
       "anilist": "AniList",
       "trakt": "Trakt",
       "rottenTomatoesCritic": "Rotten Tomatoes 批評家",
-      "rottenTomatoesAudience": "Rotten Tomatoes 観客"
+      "rottenTomatoesAudience": "Rotten Tomatoes 観客",
+      "metacritic": "Metacritic",
+      "letterboxd": "Letterboxd"
     },
     "notAvailable": "N/A",
     "url": "URL",
@@ -115,6 +152,33 @@
     "latestVersion": "最新バージョンです",
     "checkFailed": "アップデートの確認に失敗しました"
   },
+  "supporter": {
+    "title": "",
+    "intro": "",
+    "presetThemes": "",
+    "presetThemesDescription": "",
+    "customTheme": "",
+    "customThemeDescription": "",
+    "appIcons": "",
+    "appIconsDescription": "",
+    "buy": "",
+    "loadingPrice": "",
+    "restore": "",
+    "pending": "",
+    "thankYouTitle": "",
+    "thankYouBody": "",
+    "tileSubtitle": "",
+    "tileSubtitleThemesOnly": "",
+    "tileUnlocked": "",
+    "errors": {
+      "storeUnavailable": "",
+      "productNotFound": "",
+      "productQueryFailed": "",
+      "purchaseFailed": "",
+      "restoreFailed": "",
+      "nothingToRestore": ""
+    }
+  },
   "settings": {
     "title": "設定",
     "supportDeveloper": "Plezyを支援",
@@ -139,6 +203,11 @@
     "lightTheme": "ライト",
     "darkTheme": "ダーク",
     "oledTheme": "OLED",
+    "emberTheme": "",
+    "glacierTheme": "",
+    "forestTheme": "",
+    "plumTheme": "",
+    "paperTheme": "",
     "libraryDensity": "ライブラリの密度",
     "displayScale": "表示スケール",
     "compact": "コンパクト",
@@ -346,7 +415,7 @@
     "tunneledPlaybackDescription": "動画トンネリングを使用します。HDR再生で画面が黒くなる場合や動きがカクつく場合は無効にしてください。",
     "audioPassthrough": "オーディオパススルー",
     "audioPassthroughDescription": "Dolby/DTS音声を再エンコードせずにレシーバーやテレビに送り、サラウンドを維持します。音が出ない場合は無効にしてください。",
-    "audioPassthroughDescriptionAppleTv": "Dolby Atmosを含むDolby Digital PlusにはApple標準のDolbyデコーダーを使用します。DTSとTrueHDは引き続きマルチチャンネルPCMで再生されます。音が出ない場合は無効にしてください。",
+    "audioPassthroughDescriptionApple": "Dolby Atmosを含むDolby Digital PlusにはApple標準のDolbyデコーダーを使用します。DTSとTrueHDは引き続きマルチチャンネルPCMで再生されます。音が出ない場合は無効にしてください。",
     "audioPassthroughOverriddenByNormalization": "ラウドネス正規化がオンの間はオフ",
     "audioChannelLimit": "",
     "audioChannelLimitDescription": "",
@@ -384,6 +453,12 @@
     "hdrSdrConversionPlayerDescription": "プレーヤーで変換します。色は一定ですが、低価格なTVボックスでは4Kがカクつくことがあります",
     "deinterlace": "デインターレース",
     "deinterlaceDescription": "インターレース映像のくし型ノイズを除去します（mpvプレーヤーのみ）",
+    "deinterlaceOff": "",
+    "deinterlaceOffDescription": "",
+    "deinterlaceVideo": "",
+    "deinterlaceVideoDescription": "",
+    "deinterlaceFilm": "",
+    "deinterlaceFilmDescription": "",
     "requireProfileSelectionOnOpen": "アプリ起動時にプロフィールを確認",
     "requireProfileSelectionOnOpenDescription": "アプリを開くたびにプロフィール選択を表示",
     "forceTvMode": "TVモードを強制",
@@ -439,6 +514,50 @@
     "playerScopeLibrary": "ライブラリごと",
     "playerScopeTitle": "作品ごと",
     "exportDialogTitle": "Plezyの設定をエクスポート"
+  },
+  "themeEditor": {
+    "builtIn": "",
+    "presets": "",
+    "custom": "",
+    "customEmpty": "",
+    "editCustom": "",
+    "editCustomDescription": "",
+    "locked": "",
+    "savedLocked": "",
+    "title": "",
+    "startFrom": "",
+    "startFromDescription": "",
+    "colors": "",
+    "preview": "",
+    "slots": {
+      "bg": "",
+      "surface": "",
+      "outline": "",
+      "text": "",
+      "textMuted": "",
+      "accent": ""
+    },
+    "opacity": "",
+    "hexHint": "",
+    "fromOtherThemes": "",
+    "swatchLabel": "",
+    "contrast": {
+      "textOnBg": "",
+      "textOnSurface": "",
+      "textMutedOnBg": "",
+      "textMutedOnSurface": "",
+      "accentOnBg": "",
+      "accentOnSurface": "",
+      "labelOnAccent": ""
+    },
+    "lowContrast": "",
+    "discardTitle": "",
+    "discardMessage": "",
+    "discard": "",
+    "previewCardTitle": "",
+    "previewCardSubtitle": "",
+    "previewSwitch": "",
+    "previewMutedText": ""
   },
   "search": {
     "hint": "映画、番組、音楽を検索…",
@@ -1082,6 +1201,13 @@
     "moreLikeThis": "似ている作品",
     "titleCount": {
       "other": "${n}作品"
+    },
+    "person": {
+      "born": "",
+      "died": "",
+      "birthplace": "",
+      "dateWithAge": "",
+      "dateWithAgeAtDeath": ""
     }
   },
   "errors": {
@@ -1987,8 +2113,7 @@
     "audioOutputSpatial": "空間オーディオ",
     "audioOutputStereo": "ステレオ",
     "audioNormalization": "ラウドネス正規化",
-    "audioNormalizationDisablesPassthrough": "音声をPCMにデコードします。オンの間はパススルーがオフになります",
-    "audioNormalizationStereoMix": "音声をステレオミックスにデコードします。オンの間はパススルーがオフになります"
+    "audioNormalizationDisablesPassthrough": "音声をPCMにデコードします。オンの間はパススルーがオフになります"
   },
   "performanceOverlay": {
     "color": "色",

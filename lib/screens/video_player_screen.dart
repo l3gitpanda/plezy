@@ -1101,8 +1101,9 @@ class VideoPlayerScreenState extends State<VideoPlayerScreen>
   /// collapses its waiters. Superseded by every [_beginPlaybackAttempt].
   _PlaybackAttempt? _playbackAttempt;
 
-  /// How long the backend may sit on a started load without loading,
-  /// failing, or dying before the attempt gives up on it.
+  /// How long a started load may go without progress — no `file-loaded`, no
+  /// demuxer progress, no failure, no death — before the attempt gives up on
+  /// it. A slow load that keeps moving is not bounded by this (#2635).
   static const Duration _openDeadline = Duration(seconds: 30);
 
   /// Start a new playback attempt: aborts the previous attempt's open,
@@ -1131,12 +1132,13 @@ class VideoPlayerScreenState extends State<VideoPlayerScreen>
       this,
       generation,
       currentPlayer,
-      // Bounds a backend that started the load and then went silent: longer
-      // than the sidecar guard's discovery + file-loaded budget, so it cannot
-      // pre-empt a sidecar-stall verdict. It arms from the backend's load
-      // start, so an open that never starts one is bounded by
-      // [OpenHttp503Watchdog] instead, not by this. A passed deadline is a
-      // failure the user sees, not just aborted waiters.
+      // Bounds a backend that started the load and then stopped moving:
+      // re-armed by every sign of progress, so it fires no earlier than the
+      // sidecar guard's discovery + file-loaded budget and cannot pre-empt a
+      // sidecar-stall verdict. It arms from the backend's load start, so an
+      // open that never starts one is bounded by [OpenHttp503Watchdog]
+      // instead, not by this. A passed deadline is a failure the user sees,
+      // not just aborted waiters.
       PlaybackOpenOutcome.arm(
         currentPlayer,
         deadline: _openDeadline,
@@ -1867,13 +1869,19 @@ class VideoPlayerScreenState extends State<VideoPlayerScreen>
       }
       await currentPlayer.setProperty('hwdec', _getHwdecValue(enableHardwareDecoding));
 
-      // Deinterlacing (#2149) is mpv-only by design — ExoPlayer has no filter
-      // chain. `auto` deinterlaces only content flagged interlaced. Wrapped:
-      // a preference must never abort player initialization (an older core
-      // that rejects `auto` just keeps its default).
-      if (!(Platform.isAndroid && useExoPlayer) && settingsService.read(SettingsService.deinterlace)) {
+      // Deinterlacing (#2149, #2710) is mpv-only by design — ExoPlayer has no
+      // filter chain. Both modes act only on content flagged interlaced. Live
+      // TV keeps plain deinterlacing under Film: broadcast mixes telecined
+      // film with sports and news shot at field rate, which inverse telecine
+      // makes stutter. Wrapped: a preference must never abort player
+      // initialization (a core that rejects the value keeps its default).
+      final deinterlaceMode = settingsService.read(SettingsService.deinterlaceMode);
+      if (!(Platform.isAndroid && useExoPlayer) && deinterlaceMode != DeinterlaceMode.off) {
+        final applied = widget.isLive && deinterlaceMode == DeinterlaceMode.film
+            ? DeinterlaceMode.video
+            : deinterlaceMode;
         try {
-          await currentPlayer.setProperty('deinterlace', 'auto');
+          await currentPlayer.setProperty('deinterlace', applied.mpvValue);
         } catch (e) {
           appLogger.w('VideoPlayerScreen: deinterlace not applied', error: e);
         }
@@ -1962,7 +1970,9 @@ class VideoPlayerScreenState extends State<VideoPlayerScreen>
 
       if (Platform.isIOS) {
         await currentPlayer.setProperty('audio-exclusive', 'yes');
+      }
 
+      if (Platform.isIOS || Platform.isMacOS) {
         // Rasterize subtitles at the video's resolution instead of the
         // display's; the OSD layer upscales them with the video.
         await currentPlayer.setProperty(

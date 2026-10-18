@@ -91,22 +91,6 @@ class _HubDetailScreenState extends State<HubDetailScreen>
     ];
   }
 
-  /// Override to add bounds check for filtered items (sorting can change item order)
-  @override
-  void navigateToGrid() {
-    if (!hasItems) return;
-
-    final targetIndex = shouldRestoreGridFocus && lastFocusedGridIndex! < _filteredItems.length
-        ? lastFocusedGridIndex!
-        : 0;
-
-    setState(() {
-      isAppBarFocused = false;
-    });
-
-    _focusNodeForIndex(targetIndex).requestFocus();
-  }
-
   FocusNode _focusNodeForIndex(int index) => focusNodeForIndex(
     index,
     firstItemFocusNode,
@@ -511,7 +495,12 @@ class _HubDetailScreenState extends State<HubDetailScreen>
             primary: true,
             clipBehavior: Clip.none,
             slivers: [
-              CustomAppBar(title: Text(widget.hub.title), pinned: true, actions: buildFocusableAppBarActions()),
+              CustomAppBar(
+                title: Text(widget.hub.title),
+                pinned: true,
+                actions: buildFocusableAppBarActions(),
+                onBackPressed: popFromAppBar,
+              ),
               if (_errorMessage != null)
                 SliverErrorState(message: _errorMessage!, onRetry: _loadMoreItems)
               else if (_filteredItems.isEmpty && _isLoading)
